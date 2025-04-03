@@ -1,0 +1,9 @@
+{
+"name": "Tether USD", // Название токена
+"symbol": "USDT", // Символ токена
+"decimals": 6, // Количество десятичных знаков
+"description": "Tether USD on TRON Network", // Описание токена
+"website": "https://yourwebsite.com", // Ссылка на сайт проекта
+"logo": "tether-logo.png" // Ссылка на логотип токена
+}
+	

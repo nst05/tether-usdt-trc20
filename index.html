@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tether USD Test - Admin Panel</title>
+    <script src="https://cdn.jsdelivr.net/npm/tronweb@2.12.4/dist/TronWeb.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f9f9f9; color: #333; max-width: 500px; margin: 10px auto; padding: 10px; }
+        h1 { display: flex; align-items: center; gap: 10px; color: #2ca071; font-size: 1.5em; }
+        img { width: 36px; }
+        .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; text-align: center; font-weight: bold; }
+        .active { background: #d4f7d4; border: 1px solid #2ca071; color: #2ca071; }
+        .paused { background: #fff3cd; border: 1px solid #ffcc00; color: #ff9900; }
+        .deprecated { background: #f8d7da; border: 1px solid #dc3545; color: #dc3545; }
+        .blacklisted { background: #d6d6d6; border: 1px solid #888; color: #555; }
+
+        input, button { margin-top: 5px; display: block; width: 100%; padding: 12px; border-radius: 5px; border: 1px solid #ccc; font-size: 1em; }
+        button { background: #2ca071; color: white; border: none; transition: 0.2s; }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .section { background: white; padding: 12px; margin-bottom: 15px; border-radius: 5px; box-shadow: 0 0 5px rgba(0,0,0,0.05); }
+        p { margin: 5px 0; font-size: 0.9em; }
+        @media (max-width: 480px) {
+            body { padding: 5px; }
+            h1 { font-size: 1.2em; }
+            input, button { padding: 10px; font-size: 0.9em; }
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1><img src="tether-logo.png"> Tether USD</h1>
+
+    <div id="status" class="status">Status: loading...</div>
+
+    <div class="section">
+        <p><strong>Connected:</strong> <span id="account">-</span></p>
+        <p><strong>Balance:</strong> <span id="balance">0</span> USDT</p>
+        <p><strong>Owner:</strong> <span id="isOwner">-</span></p>
+    </div>
+
+    <div class="section">
+        <h3>Issue (Mint)</h3>
+        <input type="text" id="mint_to" placeholder="Recipient Address">
+        <input type="number" id="mint_amount" placeholder="Amount (USDT)">
+        <button id="btn_issue" onclick="issue()">Issue</button>
+    </div>
+
+    <div class="section">
+        <h3>Redeem (Burn)</h3>
+        <input type="number" id="redeem_amount" placeholder="Amount (USDT)">
+        <button id="btn_redeem" onclick="redeem()">Redeem</button>
+    </div>
+
+    <div class="section">
+        <h3>Transfer</h3>
+        <input type="text" id="to_addr" placeholder="Recipient">
+        <input type="number" id="transfer_amount" placeholder="Amount (USDT)">
+        <button id="btn_transfer" onclick="transfer()">Transfer</button>
+    </div>
+
+    <div class="section">
+        <h3>Pause / Unpause</h3>
+        <button id="btn_pause" onclick="pause()">Pause</button>
+        <button id="btn_unpause" onclick="unpause()">Unpause</button>
+    </div>
+
+    <div class="section">
+        <h3>Blacklist / Unblacklist</h3>
+        <input type="text" id="bl_addr" placeholder="Address">
+        <button id="btn_bl" onclick="blacklist()">Blacklist</button>
+        <button id="btn_unbl" onclick="unblacklist()">UnBlacklist</button>
+    </div>
+
+    <div class="section">
+        <h3>Redeem BlackFunds</h3>
+        <input type="text" id="rbl_addr" placeholder="Blacklisted Address">
+        <button id="btn_rbf" onclick="redeemBlackFunds()">Redeem BlackFunds</button>
+    </div>
+
+    <div class="section">
+        <h3>Deprecate Contract</h3>
+        <input type="text" id="dep_addr" placeholder="New Contract Address">
+        <button id="btn_deprecate" onclick="deprecate()">Deprecate</button>
+    </div>
+
+    <script>
+        const contractAddress = "YOUR_CONTRACT_ADDRESS";
+        const abi = YOUR_ABI_HERE;
+
+        let tronWeb, contract, account, owner;
+
+        async function connect() {
+            if (!window.tronWeb || !window.tronWeb.defaultAddress.base58) {
+                alert("Please install TronLink and login");
+                return;
+            }
+            tronWeb = window.tronWeb;
+            account = tronWeb.defaultAddress.base58;
+            contract = await tronWeb.contract(abi, contractAddress);
+            document.getElementById("account").innerText = account;
+            owner = await contract.owner().call();
+            document.getElementById("isOwner").innerText = (account === owner) ? "Yes" : "No";
+            update();
+        }
+
+        async function update() {
+            const balance = await contract.balanceOf(account).call();
+            document.getElementById("balance").innerText = (parseFloat(balance) / 1e6).toFixed(6);
+            const paused = await contract.paused().call();
+            const deprecated = await contract.deprecated().call();
+            const blacklisted = await contract.blacklist(account).call();
+
+            const statusBox = document.getElementById("status");
+
+            if (deprecated) {
+                statusBox.className = "status deprecated";
+                statusBox.innerText = "Status: DEPRECATED";
+                disableButtons(true);
+            } else if (paused) {
+                statusBox.className = "status paused";
+                statusBox.innerText = "Status: PAUSED";
+                disableButtons(true);
+            } else if (blacklisted) {
+                statusBox.className = "status blacklisted";
+                statusBox.innerText = "Status: BLACKLISTED";
+                disableButtons(true);
+            } else {
+                statusBox.className = "status active";
+                statusBox.innerText = "Status: ACTIVE";
+                disableButtons(false);
+            }
+        }
+
+        function disableButtons(state) {
+            ["btn_issue", "btn_redeem", "btn_transfer", "btn_bl", "btn_unbl", "btn_rbf", "btn_deprecate"].forEach(id => {
+                document.getElementById(id).disabled = state;
+            });
+        }
+
+        async function issue() {
+            const to = document.getElementById("mint_to").value;
+            const amount = document.getElementById("mint_amount").value * 1e6;
+            await contract.issue(to, amount).send();
+            update();
+        }
+
+        async function redeem() {
+            const amount = document.getElementById("redeem_amount").value * 1e6;
+            await contract.redeem(amount).send();
+            update();
+        }
+
+        async function transfer() {
+            const to = document.getElementById("to_addr").value;
+            const amount = document.getElementById("transfer_amount").value * 1e6;
+            await contract.transfer(to, amount).send();
+            update();
+        }
+
+        async function pause() { await contract.pause().send(); update(); }
+        async function unpause() { await contract.unpause().send(); update(); }
+
+        async function blacklist() {
+            const addr = document.getElementById("bl_addr").value;
+            await contract.addToBlacklist(addr).send();
+            update();
+        }
+
+        async function unblacklist() {
+            const addr = document.getElementById("bl_addr").value;
+            await contract.removeFromBlacklist(addr).send();
+            update();
+        }
+
+        async function redeemBlackFunds() {
+            const addr = document.getElementById("rbl_addr").value;
+            await contract.redeemBlackFunds(addr).send();
+            update();
+        }
+
+        async function deprecate() {
+            const addr = document.getElementById("dep_addr").value;
+            await contract.deprecate(addr).send();
+            update();
+        }
+
+        connect();
+    </script>
+<script>
+// Загрузка ABI из файла abi.json
+fetch('abi.json')
+.then(response => response.json()) // Чтение JSON из файла
+.then(data => {
+const abi = data; // Присваиваем ABI переменной
+console.log('ABI:', abi); // Выводим в консоль для проверки
+
+// Убедимся, что TronWeb доступен, а ABI загружено
+if (typeof tronWeb !== 'undefined' && abi) {
+const contractAddress = "YOUR_CONTRACT_ADDRESS"; // Укажи адрес контракта
+const contract = tronWeb.contract(abi, contractAddress);
+
+// Далее можно использовать contract для вызова методов
+}
+})
+.catch(error => {
+console.error('Error loading ABI:', error);
+});
+</script>
+</body>
+</html>
