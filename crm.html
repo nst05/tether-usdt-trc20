@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM — Исламская Рассрочка</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#1a7a4a;--green-light:#2ca06a;--green-pale:#e8f5ee;
+  --gold:#b8860b;--gold-light:#f0c040;
+  --bg:#f4f6f4;--white:#fff;--gray:#6b7280;--gray-light:#e5e7eb;
+  --red:#dc2626;--blue:#1d4ed8;--text:#111827;
+  --sidebar:220px;--radius:10px;
+}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
+
+/* Sidebar */
+#sidebar{width:var(--sidebar);background:linear-gradient(180deg,#0f4f2e 0%,#1a7a4a 100%);color:#fff;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;transition:.3s}
+.logo{padding:20px 16px;border-bottom:1px solid rgba(255,255,255,.15);text-align:center}
+.logo h2{font-size:1rem;font-weight:700;color:#f0c040;letter-spacing:.5px}
+.logo p{font-size:.7rem;color:rgba(255,255,255,.6);margin-top:2px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:12px 18px;cursor:pointer;transition:.2s;border-left:3px solid transparent;font-size:.88rem}
+.nav-item:hover{background:rgba(255,255,255,.1);border-left-color:var(--gold-light)}
+.nav-item.active{background:rgba(255,255,255,.15);border-left-color:var(--gold-light);font-weight:600}
+.nav-item .icon{font-size:1.1rem;width:22px;text-align:center}
+.nav-section{padding:10px 18px 4px;font-size:.68rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:1px;margin-top:8px}
+
+/* Main */
+#main{margin-left:var(--sidebar);flex:1;display:flex;flex-direction:column;min-height:100vh}
+#topbar{background:var(--white);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--gray-light);position:sticky;top:0;z-index:50}
+#topbar h1{font-size:1.1rem;font-weight:600;color:var(--green)}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.badge{background:var(--green-pale);color:var(--green);padding:4px 10px;border-radius:20px;font-size:.75rem;font-weight:600}
+#content{padding:24px;flex:1}
+
+/* Cards */
+.page{display:none}.page.active{display:block}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat-card{background:var(--white);border-radius:var(--radius);padding:18px;border-left:4px solid var(--green);box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.stat-card.gold{border-left-color:var(--gold)}
+.stat-card.blue{border-left-color:var(--blue)}
+.stat-card.red{border-left-color:var(--red)}
+.stat-val{font-size:1.6rem;font-weight:700;color:var(--green)}
+.stat-card.gold .stat-val{color:var(--gold)}
+.stat-card.blue .stat-val{color:var(--blue)}
+.stat-card.red .stat-val{color:var(--red)}
+.stat-label{font-size:.78rem;color:var(--gray);margin-top:2px}
+
+/* Table */
+.card{background:var(--white);border-radius:var(--radius);box-shadow:0 1px 4px rgba(0,0,0,.06);overflow:hidden;margin-bottom:20px}
+.card-header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--gray-light)}
+.card-title{font-weight:600;font-size:.95rem}
+table{width:100%;border-collapse:collapse}
+th{background:#f9fafb;padding:10px 14px;text-align:left;font-size:.78rem;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+td{padding:11px 14px;border-top:1px solid var(--gray-light);font-size:.87rem}
+tr:hover td{background:#fafff9}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:.85rem;font-weight:500;transition:.2s}
+.btn-primary{background:var(--green);color:#fff}.btn-primary:hover{background:var(--green-light)}
+.btn-gold{background:var(--gold);color:#fff}.btn-gold:hover{opacity:.9}
+.btn-danger{background:var(--red);color:#fff}.btn-danger:hover{opacity:.9}
+.btn-ghost{background:transparent;color:var(--gray);border:1px solid var(--gray-light)}.btn-ghost:hover{background:var(--gray-light)}
+.btn-sm{padding:4px 10px;font-size:.78rem}
+
+/* Status badges */
+.status{display:inline-block;padding:3px 9px;border-radius:20px;font-size:.74rem;font-weight:600}
+.status-active{background:#dcfce7;color:#166534}
+.status-overdue{background:#fee2e2;color:#991b1b}
+.status-paid{background:#dbeafe;color:#1e40af}
+.status-pending{background:#fef9c3;color:#854d0e}
+.status-closed{background:#f3f4f6;color:#6b7280}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--white);border-radius:var(--radius);width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:28px;position:relative}
+.modal h3{font-size:1.05rem;font-weight:700;margin-bottom:18px;color:var(--green)}
+.modal-close{position:absolute;top:14px;right:16px;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray)}
+
+/* Form */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group.full{grid-column:1/-1}
+label{font-size:.78rem;font-weight:600;color:var(--gray)}
+input,select,textarea{padding:9px 12px;border:1px solid var(--gray-light);border-radius:6px;font-size:.87rem;outline:none;transition:.2s;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,122,74,.1)}
+textarea{resize:vertical;min-height:70px}
+.form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--gray-light)}
+
+/* Schedule table */
+.schedule-grid{display:grid;grid-template-columns:auto 1fr 1fr 1fr auto;gap:0;border:1px solid var(--gray-light);border-radius:8px;overflow:hidden;font-size:.83rem}
+.schedule-grid .sh{background:#f9fafb;padding:8px 12px;font-weight:600;color:var(--gray);font-size:.75rem;border-bottom:1px solid var(--gray-light)}
+.schedule-grid .sc{padding:9px 12px;border-top:1px solid var(--gray-light)}
+.schedule-grid .sc:nth-child(10n+1),.schedule-grid .sc:nth-child(10n+2),.schedule-grid .sc:nth-child(10n+3),.schedule-grid .sc:nth-child(10n+4),.schedule-grid .sc:nth-child(10n+5){background:#fafff9}
+
+/* Alerts */
+.alert{padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:.87rem}
+.alert-info{background:#eff6ff;border-left:4px solid #3b82f6;color:#1e40af}
+.alert-warn{background:#fffbeb;border-left:4px solid #f59e0b;color:#92400e}
+.alert-success{background:#f0fdf4;border-left:4px solid #22c55e;color:#166534}
+
+/* Progress */
+.progress-bar{height:8px;background:var(--gray-light);border-radius:4px;overflow:hidden}
+.progress-fill{height:100%;background:var(--green);border-radius:4px;transition:.3s}
+
+/* Search */
+.search-box{position:relative}
+.search-box input{padding-left:32px}
+.search-box::before{content:'🔍';position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:.8rem}
+
+/* Islamic pattern header */
+.page-header{background:linear-gradient(135deg,var(--green) 0%,#0f4f2e 100%);border-radius:var(--radius);padding:20px 24px;margin-bottom:20px;color:#fff;position:relative;overflow:hidden}
+.page-header::after{content:'☪';position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:4rem;opacity:.1}
+.page-header h2{font-size:1.15rem;font-weight:700}
+.page-header p{font-size:.82rem;opacity:.8;margin-top:4px}
+
+/* Mini-chart bars */
+.mini-bars{display:flex;align-items:flex-end;gap:4px;height:50px}
+.mini-bar{flex:1;background:var(--green-pale);border-radius:3px 3px 0 0;min-height:4px;position:relative;cursor:default;transition:.2s}
+.mini-bar:hover{background:var(--green)}
+.mini-bar .tip{display:none;position:absolute;bottom:105%;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:2px 6px;border-radius:4px;font-size:.7rem;white-space:nowrap}
+.mini-bar:hover .tip{display:block}
+
+/* Responsive */
+@media(max-width:768px){
+  #sidebar{width:60px}.logo h2,.logo p,.nav-item span,.nav-section{display:none}
+  #main{margin-left:60px}.stats-grid{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}
+}
+@media(max-width:480px){.stats-grid{grid-template-columns:1fr}}
+
+.empty-state{text-align:center;padding:48px 20px;color:var(--gray)}
+.empty-state .icon{font-size:3rem;margin-bottom:12px}
+.empty-state p{font-size:.9rem}
+
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.72rem;font-weight:600;background:var(--green-pale);color:var(--green);margin-right:4px}
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav id="sidebar">
+  <div class="logo">
+    <h2>☪ ИсламРассрочка</h2>
+    <p>CRM система</p>
+  </div>
+  <div class="nav-section">Основное</div>
+  <div class="nav-item active" onclick="nav('dashboard')"><span class="icon">📊</span><span>Дашборд</span></div>
+  <div class="nav-section">Операции</div>
+  <div class="nav-item" onclick="nav('clients')"><span class="icon">👥</span><span>Клиенты</span></div>
+  <div class="nav-item" onclick="nav('contracts')"><span class="icon">📋</span><span>Договоры</span></div>
+  <div class="nav-item" onclick="nav('payments')"><span class="icon">💰</span><span>Платежи</span></div>
+  <div class="nav-section">Аналитика</div>
+  <div class="nav-item" onclick="nav('calendar')"><span class="icon">📅</span><span>Календарь</span></div>
+  <div class="nav-item" onclick="nav('reports')"><span class="icon">📈</span><span>Отчёты</span></div>
+</nav>
+
+<!-- Main -->
+<div id="main">
+  <div id="topbar">
+    <h1 id="page-title">Дашборд</h1>
+    <div class="topbar-right">
+      <span class="badge">☪ Без риба</span>
+      <span style="font-size:.82rem;color:var(--gray)" id="clock"></span>
+    </div>
+  </div>
+  <div id="content">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-val" id="stat-clients">0</div>
+          <div class="stat-label">👥 Всего клиентов</div>
+        </div>
+        <div class="stat-card gold">
+          <div class="stat-val" id="stat-contracts">0</div>
+          <div class="stat-label">📋 Активных договоров</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-val" id="stat-portfolio">0 ₽</div>
+          <div class="stat-label">💼 Портфель (мурабаха)</div>
+        </div>
+        <div class="stat-card red">
+          <div class="stat-val" id="stat-overdue">0</div>
+          <div class="stat-label">⚠️ Просроченных</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Ближайшие платежи (7 дней)</span>
+          </div>
+          <table>
+            <thead><tr><th>Клиент</th><th>Договор</th><th>Дата</th><th>Сумма</th><th>Статус</th></tr></thead>
+            <tbody id="dash-upcoming"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Поступления по месяцам</span></div>
+          <div style="padding:16px">
+            <div class="mini-bars" id="dash-bars"></div>
+            <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--gray);margin-top:4px" id="dash-bar-labels"></div>
+          </div>
+          <div style="padding:0 16px 16px">
+            <div style="font-size:.78rem;color:var(--gray);margin-bottom:6px">Сбор за сегодня</div>
+            <div style="font-size:1.4rem;font-weight:700;color:var(--green)" id="dash-today">0 ₽</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Просроченные договоры</span></div>
+        <table>
+          <thead><tr><th>Клиент</th><th>Договор</th><th>Товар</th><th>Просрочено дней</th><th>Остаток</th><th>Действие</th></tr></thead>
+          <tbody id="dash-overdue"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CLIENTS -->
+    <div class="page" id="page-clients">
+      <div class="page-header">
+        <h2>Клиентская база</h2>
+        <p>Управление клиентами исламской рассрочки (мурабаха)</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="search-box"><input type="text" placeholder="Поиск клиента..." id="client-search" oninput="renderClients()"></div>
+          <button class="btn btn-primary" onclick="openClientModal()">+ Добавить клиента</button>
+        </div>
+        <table>
+          <thead><tr><th>ФИО</th><th>Телефон</th><th>Паспорт</th><th>Договоров</th><th>Остаток</th><th>Добавлен</th><th>Действия</th></tr></thead>
+          <tbody id="clients-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CONTRACTS -->
+    <div class="page" id="page-contracts">
+      <div class="page-header">
+        <h2>Договоры мурабаха</h2>
+        <p>Исламская рассрочка — без рибы, без процентов, без скрытых комиссий</p>
+      </div>
+      <div class="alert alert-info">☪ В мурабаха продавец указывает себестоимость товара и наценку. Покупатель платит равными долями без начисления процентов на остаток.</div>
+      <div class="card">
+        <div class="card-header">
+          <div class="search-box"><input type="text" placeholder="Поиск договора..." id="contract-search" oninput="renderContracts()"></div>
+          <button class="btn btn-primary" onclick="openContractModal()">+ Новый договор</button>
+        </div>
+        <table>
+          <thead><tr><th>№</th><th>Клиент</th><th>Товар</th><th>Цена мурабаха</th><th>Оплачено</th><th>Остаток</th><th>Взносов</th><th>Статус</th><th>Действия</th></tr></thead>
+          <tbody id="contracts-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PAYMENTS -->
+    <div class="page" id="page-payments">
+      <div class="page-header">
+        <h2>Учёт платежей</h2>
+        <p>Регистрация поступивших взносов по договорам</p>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px">
+        <div class="stat-card"><div class="stat-val" id="pay-stat-today">0 ₽</div><div class="stat-label">Сегодня</div></div>
+        <div class="stat-card gold"><div class="stat-val" id="pay-stat-month">0 ₽</div><div class="stat-label">Этот месяц</div></div>
+        <div class="stat-card blue"><div class="stat-val" id="pay-stat-total">0 ₽</div><div class="stat-label">Всего получено</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="search-box"><input type="text" placeholder="Поиск платежа..." id="pay-search" oninput="renderPayments()"></div>
+          <button class="btn btn-primary" onclick="openPaymentModal()">+ Принять платёж</button>
+        </div>
+        <table>
+          <thead><tr><th>Дата</th><th>Клиент</th><th>Договор</th><th>Сумма</th><th>Взнос №</th><th>Метод</th><th>Остаток по дог.</th><th>Действия</th></tr></thead>
+          <tbody id="payments-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CALENDAR -->
+    <div class="page" id="page-calendar">
+      <div class="page-header">
+        <h2>Календарь платежей</h2>
+        <p>График предстоящих взносов</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title" id="cal-title"></span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="calPrev()">‹ Пред</button>
+            <button class="btn btn-ghost btn-sm" onclick="calNext()">След ›</button>
+          </div>
+        </div>
+        <div style="padding:16px">
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px">
+            <div style="text-align:center;font-size:.75rem;color:var(--gray);font-weight:600;padding:4px">Пн</div>
+            <div style="text-align:center;font-size:.75rem;color:var(--gray);font-weight:600;padding:4px">Вт</div>
+            <div style="text-align:center;font-size:.75rem;color:var(--gray);font-weight:600;padding:4px">Ср</div>
+            <div style="text-align:center;font-size:.75rem;color:var(--gray);font-weight:600;padding:4px">Чт</div>
+            <div style="text-align:center;font-size:.75rem;color:var(--gray);font-weight:600;padding:4px">Пт</div>
+            <div style="text-align:center;font-size:.75rem;color:var(--gray);font-weight:600;padding:4px">Сб</div>
+            <div style="text-align:center;font-size:.75rem;color:var(--gray);font-weight:600;padding:4px">Вс</div>
+          </div>
+          <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
+        </div>
+      </div>
+      <div class="card" id="cal-day-detail" style="display:none">
+        <div class="card-header"><span class="card-title" id="cal-day-title">Платежи за день</span></div>
+        <table>
+          <thead><tr><th>Клиент</th><th>Договор</th><th>Товар</th><th>Сумма взноса</th><th>Статус</th></tr></thead>
+          <tbody id="cal-day-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- REPORTS -->
+    <div class="page" id="page-reports">
+      <div class="page-header">
+        <h2>Отчёты и аналитика</h2>
+        <p>Финансовые показатели портфеля</p>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-val" id="rep-issued">0 ₽</div><div class="stat-label">Выдано (себест.)</div></div>
+        <div class="stat-card gold"><div class="stat-val" id="rep-markup">0 ₽</div><div class="stat-label">Наценка мурабаха</div></div>
+        <div class="stat-card blue"><div class="stat-val" id="rep-collected">0 ₽</div><div class="stat-label">Собрано</div></div>
+        <div class="stat-card red"><div class="stat-val" id="rep-remaining">0 ₽</div><div class="stat-label">Дебиторка</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Топ клиентов по портфелю</span></div>
+          <table>
+            <thead><tr><th>Клиент</th><th>Договоров</th><th>Остаток</th></tr></thead>
+            <tbody id="rep-top-clients"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">По категориям товаров</span></div>
+          <table>
+            <thead><tr><th>Категория</th><th>Дог.</th><th>Объём</th></tr></thead>
+            <tbody id="rep-categories"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Шариатский аудит — проверка соответствия</span></div>
+        <div style="padding:16px" id="rep-sharia"></div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- CLIENT MODAL -->
+<div class="modal-overlay" id="modal-client">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-client')">×</button>
+    <h3 id="client-modal-title">Добавить клиента</h3>
+    <div class="form-grid">
+      <div class="form-group full"><label>ФИО *</label><input id="cf-name" placeholder="Иванов Иван Иванович"></div>
+      <div class="form-group"><label>Телефон *</label><input id="cf-phone" placeholder="+998 90 000 00 00"></div>
+      <div class="form-group"><label>Email</label><input id="cf-email" type="email" placeholder="email@mail.com"></div>
+      <div class="form-group"><label>Серия и номер паспорта</label><input id="cf-passport" placeholder="AB 1234567"></div>
+      <div class="form-group"><label>Дата рождения</label><input id="cf-dob" type="date"></div>
+      <div class="form-group"><label>Адрес</label><input id="cf-address" placeholder="г. Ташкент, ул. Навои, 1"></div>
+      <div class="form-group"><label>Работодатель</label><input id="cf-employer" placeholder="Место работы"></div>
+      <div class="form-group"><label>Ежемесячный доход (₽)</label><input id="cf-income" type="number" placeholder="50000"></div>
+      <div class="form-group full"><label>Поручитель (ФИО, телефон)</label><input id="cf-guarantor" placeholder="Петров Пётр, +998..."></div>
+      <div class="form-group full"><label>Примечания</label><textarea id="cf-notes" placeholder="Дополнительная информация..."></textarea></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-client')">Отмена</button>
+      <button class="btn btn-primary" onclick="saveClient()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONTRACT MODAL -->
+<div class="modal-overlay" id="modal-contract">
+  <div class="modal" style="width:640px">
+    <button class="modal-close" onclick="closeModal('modal-contract')">×</button>
+    <h3 id="contract-modal-title">Новый договор мурабаха</h3>
+    <div class="alert alert-info" style="margin-bottom:14px">
+      ☪ Мурабаха: продавец приобретает товар, затем продаёт клиенту по цене с раскрытой наценкой. Итоговая сумма фиксирована.
+    </div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Клиент *</label>
+        <select id="con-client">
+          <option value="">— Выберите клиента —</option>
+        </select>
+      </div>
+      <div class="form-group full"><label>Наименование товара/услуги *</label><input id="con-item" placeholder="Холодильник Samsung, авто Toyota..."></div>
+      <div class="form-group"><label>Категория товара</label>
+        <select id="con-category">
+          <option>Бытовая техника</option>
+          <option>Электроника</option>
+          <option>Мебель</option>
+          <option>Автомобиль</option>
+          <option>Недвижимость</option>
+          <option>Образование</option>
+          <option>Медицина</option>
+          <option>Прочее</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Себестоимость (₽) *</label><input id="con-cost" type="number" placeholder="100000" oninput="calcMurabaha()"></div>
+      <div class="form-group"><label>Наценка мурабаха (%) *</label><input id="con-markup" type="number" placeholder="20" oninput="calcMurabaha()"></div>
+      <div class="form-group"><label>Цена мурабаха (итого)</label><input id="con-total" readonly style="background:#f9fafb;font-weight:700;color:var(--green)"></div>
+      <div class="form-group"><label>Первоначальный взнос (₽)</label><input id="con-down" type="number" placeholder="0" oninput="calcMurabaha()"></div>
+      <div class="form-group"><label>Количество взносов *</label><input id="con-months" type="number" placeholder="12" min="1" max="120" oninput="calcMurabaha()"></div>
+      <div class="form-group"><label>Ежемесячный взнос</label><input id="con-monthly" readonly style="background:#f9fafb;font-weight:700;color:var(--gold)"></div>
+      <div class="form-group"><label>Дата договора *</label><input id="con-date" type="date"></div>
+      <div class="form-group"><label>Дата первого взноса *</label><input id="con-first-pay" type="date"></div>
+      <div class="form-group full"><label>Поставщик / продавец товара</label><input id="con-supplier" placeholder="ООО «МаркетПлюс»"></div>
+      <div class="form-group"><label>Халяль-статус товара</label>
+        <select id="con-halal">
+          <option value="1">✅ Халяль — подтверждён</option>
+          <option value="0">⚠️ Требует проверки</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Способ погашения</label>
+        <select id="con-pay-method">
+          <option>Наличные</option>
+          <option>Банковский перевод</option>
+          <option>Карта</option>
+          <option>Онлайн</option>
+        </select>
+      </div>
+      <div class="form-group full"><label>Примечания к договору</label><textarea id="con-notes"></textarea></div>
+    </div>
+    <div id="schedule-preview" style="margin-top:14px;display:none">
+      <div style="font-weight:600;font-size:.85rem;margin-bottom:8px;color:var(--green)">График взносов (предпросмотр)</div>
+      <div id="schedule-preview-content"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="previewSchedule()">Предпросмотр графика</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-contract')">Отмена</button>
+      <button class="btn btn-primary" onclick="saveContract()">Создать договор</button>
+    </div>
+  </div>
+</div>
+
+<!-- PAYMENT MODAL -->
+<div class="modal-overlay" id="modal-payment">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-payment')">×</button>
+    <h3>Принять платёж</h3>
+    <div class="form-grid">
+      <div class="form-group full"><label>Договор *</label>
+        <select id="pay-contract" onchange="onPayContractChange()">
+          <option value="">— Выберите договор —</option>
+        </select>
+      </div>
+      <div class="form-group full" id="pay-info-block" style="display:none">
+        <div style="background:var(--green-pale);border-radius:8px;padding:12px;font-size:.84rem">
+          <div><b>Клиент:</b> <span id="pay-info-client"></span></div>
+          <div><b>Товар:</b> <span id="pay-info-item"></span></div>
+          <div style="margin-top:6px;display:flex;gap:16px">
+            <span>Оплачено взносов: <b id="pay-info-done">0</b></span>
+            <span>Остаток: <b id="pay-info-remaining" style="color:var(--red)">0 ₽</b></span>
+          </div>
+          <div class="progress-bar" style="margin-top:8px"><div class="progress-fill" id="pay-info-progress" style="width:0%"></div></div>
+        </div>
+      </div>
+      <div class="form-group"><label>Сумма платежа (₽) *</label><input id="pay-amount" type="number" placeholder="5000"></div>
+      <div class="form-group"><label>Дата платежа *</label><input id="pay-date" type="date"></div>
+      <div class="form-group"><label>Метод оплаты</label>
+        <select id="pay-method">
+          <option>Наличные</option>
+          <option>Банковский перевод</option>
+          <option>Карта</option>
+          <option>Онлайн</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Номер квитанции</label><input id="pay-receipt" placeholder="КВ-0001"></div>
+      <div class="form-group full"><label>Примечание</label><input id="pay-note" placeholder="Комментарий к платежу"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-payment')">Отмена</button>
+      <button class="btn btn-primary" onclick="savePayment()">Принять платёж</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONTRACT DETAIL MODAL -->
+<div class="modal-overlay" id="modal-contract-detail">
+  <div class="modal" style="width:700px">
+    <button class="modal-close" onclick="closeModal('modal-contract-detail')">×</button>
+    <h3 id="detail-title">Договор</h3>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// DATA LAYER — localStorage persistence
+// ============================================================
+const DB = {
+  load(key){try{return JSON.parse(localStorage.getItem('crm_'+key)||'[]')}catch{return[]}},
+  save(key,val){localStorage.setItem('crm_'+key,JSON.stringify(val))},
+  get clients(){return this.load('clients')},
+  set clients(v){this.save('clients',v)},
+  get contracts(){return this.load('contracts')},
+  set contracts(v){this.save('contracts',v)},
+  get payments(){return this.load('payments')},
+  set payments(v){this.save('payments',v)},
+};
+
+let editClientId=null, editContractId=null;
+let calYear=new Date().getFullYear(), calMonth=new Date().getMonth();
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2)}
+function fmt(n){return Number(n).toLocaleString('ru-RU')+'₽'}
+function fmtN(n){return Number(n).toLocaleString('ru-RU')}
+function today(){return new Date().toISOString().slice(0,10)}
+function daysDiff(dateStr){
+  const d=new Date(dateStr),n=new Date();
+  n.setHours(0,0,0,0);d.setHours(0,0,0,0);
+  return Math.round((d-n)/(1000*60*60*24));
+}
+function addMonths(dateStr,n){
+  const d=new Date(dateStr);
+  d.setMonth(d.getMonth()+n);
+  return d.toISOString().slice(0,10);
+}
+function fmtDate(s){if(!s)return'—';const[y,m,d]=s.split('-');return`${d}.${m}.${y}`}
+
+function getContractBalance(c){
+  const paid=DB.payments.filter(p=>p.contractId===c.id).reduce((s,p)=>s+Number(p.amount),0);
+  return Math.max(0,c.totalPrice-paid);
+}
+function getContractPaidCount(c){return DB.payments.filter(p=>p.contractId===c.id).length}
+function getContractStatus(c){
+  const bal=getContractBalance(c);
+  if(bal<=0)return'paid';
+  const sched=buildSchedule(c);
+  const unpaid=sched.filter(s=>!s.paidDate&&s.date<today());
+  if(unpaid.length>0)return'overdue';
+  return'active';
+}
+function statusBadge(s){
+  const map={active:'status-active',overdue:'status-overdue',paid:'status-paid',pending:'status-pending',closed:'status-closed'};
+  const label={active:'Активен',overdue:'Просрочен',paid:'Закрыт',pending:'Ожидание',closed:'Закрыт'};
+  return`<span class="status ${map[s]||''}">${label[s]||s}</span>`;
+}
+function buildSchedule(c){
+  const payments=DB.payments.filter(p=>p.contractId===c.id).sort((a,b)=>a.date>b.date?1:-1);
+  let remaining=c.totalPrice;
+  // Apply down payment first
+  if(c.downPayment>0) remaining=Math.max(0,remaining-c.downPayment);
+  const installment=c.monthlyPayment;
+  const schedule=[];
+  for(let i=0;i<c.months;i++){
+    const date=addMonths(c.firstPayDate,i);
+    const paid=payments[i]||null;
+    schedule.push({num:i+1,date,amount:installment,paidDate:paid?paid.date:null,paidAmount:paid?paid.amount:null});
+  }
+  return schedule;
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function nav(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>{if(n.getAttribute('onclick')===`nav('${page}')`)n.classList.add('active')});
+  const titles={dashboard:'Дашборд',clients:'Клиенты',contracts:'Договоры мурабаха',payments:'Платежи',calendar:'Календарь',reports:'Отчёты'};
+  document.getElementById('page-title').textContent=titles[page]||page;
+  if(page==='dashboard')renderDashboard();
+  if(page==='clients')renderClients();
+  if(page==='contracts')renderContracts();
+  if(page==='payments')renderPayments();
+  if(page==='calendar')renderCalendar();
+  if(page==='reports')renderReports();
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function renderDashboard(){
+  const clients=DB.clients, contracts=DB.contracts, payments=DB.payments;
+  const activeC=contracts.filter(c=>getContractStatus(c)==='active');
+  const overdueC=contracts.filter(c=>getContractStatus(c)==='overdue');
+  const portfolio=contracts.reduce((s,c)=>s+getContractBalance(c),0);
+  document.getElementById('stat-clients').textContent=clients.length;
+  document.getElementById('stat-contracts').textContent=activeC.length;
+  document.getElementById('stat-portfolio').textContent=fmt(portfolio);
+  document.getElementById('stat-overdue').textContent=overdueC.length;
+
+  // Upcoming 7 days
+  const t=today(), t7=addMonths(t,0);
+  const t7date=new Date();t7date.setDate(t7date.getDate()+7);
+  const rows=[];
+  contracts.filter(c=>getContractStatus(c)!=='paid').forEach(c=>{
+    const cl=DB.clients.find(x=>x.id===c.clientId);
+    buildSchedule(c).filter(s=>!s.paidDate&&s.date>=t&&s.date<=t7date.toISOString().slice(0,10)).forEach(s=>{
+      rows.push({client:cl?cl.name:'?',contract:'Дог.'+c.num,date:s.date,amount:s.amount,days:daysDiff(s.date)});
+    });
+  });
+  rows.sort((a,b)=>a.date>b.date?1:-1);
+  const tbody=document.getElementById('dash-upcoming');
+  tbody.innerHTML=rows.slice(0,8).map(r=>`<tr>
+    <td>${r.client}</td><td>${r.contract}</td><td>${fmtDate(r.date)}</td>
+    <td><b>${fmt(r.amount)}</b></td>
+    <td>${r.days===0?'<span class="status status-overdue">Сегодня</span>':r.days<0?`<span class="status status-overdue">-${Math.abs(r.days)}д</span>`:`<span class="status status-active">${r.days}д</span>`}</td>
+  </tr>`).join('')||(rows.length===0?'<tr><td colspan="5" class="empty-state">Нет платежей на 7 дней</td></tr>':'');
+
+  // Overdue
+  const otbody=document.getElementById('dash-overdue');
+  otbody.innerHTML=overdueC.map(c=>{
+    const cl=DB.clients.find(x=>x.id===c.clientId);
+    const sched=buildSchedule(c);
+    const oldest=sched.filter(s=>!s.paidDate&&s.date<today()).sort((a,b)=>a.date>b.date?1:-1)[0];
+    const days=oldest?Math.abs(daysDiff(oldest.date)):0;
+    return`<tr>
+      <td>${cl?cl.name:'?'}</td><td>Дог.${c.num}</td><td>${c.itemName}</td>
+      <td><span class="status status-overdue">${days} дн.</span></td>
+      <td><b style="color:var(--red)">${fmt(getContractBalance(c))}</b></td>
+      <td><button class="btn btn-sm btn-primary" onclick="openPaymentModal('${c.id}')">Принять платёж</button></td>
+    </tr>`;
+  }).join('')||(overdueC.length===0?'<tr><td colspan="6" class="empty-state">Просроченных нет ✅</td></tr>':'');
+
+  // Mini bars — last 6 months
+  const months=[];
+  for(let i=5;i>=0;i--){
+    const d=new Date();d.setMonth(d.getMonth()-i);
+    months.push({y:d.getFullYear(),m:d.getMonth(),label:d.toLocaleString('ru-RU',{month:'short'})});
+  }
+  const barAmounts=months.map(mo=>{
+    return payments.filter(p=>{const d=new Date(p.date);return d.getFullYear()===mo.y&&d.getMonth()===mo.m}).reduce((s,p)=>s+Number(p.amount),0);
+  });
+  const maxBar=Math.max(...barAmounts,1);
+  document.getElementById('dash-bars').innerHTML=barAmounts.map((a,i)=>`<div class="mini-bar" style="height:${Math.round(a/maxBar*100)}%"><span class="tip">${fmt(a)}</span></div>`).join('');
+  document.getElementById('dash-bar-labels').innerHTML=months.map(m=>`<span>${m.label}</span>`).join('');
+
+  // Today
+  const todayPay=payments.filter(p=>p.date===today()).reduce((s,p)=>s+Number(p.amount),0);
+  document.getElementById('dash-today').textContent=fmt(todayPay);
+}
+
+// ============================================================
+// CLIENTS
+// ============================================================
+function renderClients(){
+  const q=(document.getElementById('client-search')?.value||'').toLowerCase();
+  const clients=DB.clients.filter(c=>!q||c.name.toLowerCase().includes(q)||c.phone.includes(q));
+  const tbody=document.getElementById('clients-table');
+  if(!clients.length){tbody.innerHTML=`<tr><td colspan="7"><div class="empty-state"><div class="icon">👤</div><p>Нет клиентов. Добавьте первого!</p></div></td></tr>`;return}
+  tbody.innerHTML=clients.map(c=>{
+    const cons=DB.contracts.filter(x=>x.clientId===c.id);
+    const bal=cons.reduce((s,x)=>s+getContractBalance(x),0);
+    return`<tr>
+      <td><b>${c.name}</b>${c.notes?`<br><small style="color:var(--gray)">${c.notes.slice(0,40)}</small>`:''}</td>
+      <td>${c.phone}</td>
+      <td>${c.passport||'—'}</td>
+      <td><span class="tag">${cons.length}</span></td>
+      <td>${bal>0?`<b style="color:var(--red)">${fmt(bal)}</b>`:'<span style="color:var(--green)">—</span>'}</td>
+      <td>${fmtDate(c.createdAt)}</td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-ghost" onclick="editClient('${c.id}')">✏️</button>
+        <button class="btn btn-sm btn-primary" onclick="openContractModal(null,'${c.id}')">+ Дог.</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteClient('${c.id}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openClientModal(id){
+  editClientId=id||null;
+  document.getElementById('client-modal-title').textContent=id?'Редактировать клиента':'Добавить клиента';
+  const c=id?DB.clients.find(x=>x.id===id):{};
+  ['name','phone','email','passport','dob','address','employer','income','guarantor','notes'].forEach(f=>{
+    document.getElementById('cf-'+f).value=c[f]||'';
+  });
+  openModal('modal-client');
+}
+function editClient(id){openClientModal(id)}
+function saveClient(){
+  const name=document.getElementById('cf-name').value.trim();
+  const phone=document.getElementById('cf-phone').value.trim();
+  if(!name||!phone){alert('Заполните ФИО и телефон');return}
+  const clients=DB.clients;
+  const data={id:editClientId||uid(),name,phone,email:v('cf-email'),passport:v('cf-passport'),dob:v('cf-dob'),address:v('cf-address'),employer:v('cf-employer'),income:v('cf-income'),guarantor:v('cf-guarantor'),notes:v('cf-notes'),createdAt:editClientId?(clients.find(c=>c.id===editClientId)||{}).createdAt:today()};
+  if(editClientId){const i=clients.findIndex(c=>c.id===editClientId);clients[i]=data}else{clients.push(data)}
+  DB.clients=clients;
+  closeModal('modal-client');renderClients();
+}
+function deleteClient(id){
+  if(!confirm('Удалить клиента? Все его договоры также будут удалены.'))return;
+  DB.clients=DB.clients.filter(c=>c.id!==id);
+  DB.contracts=DB.contracts.filter(c=>c.clientId!==id);
+  renderClients();
+}
+function v(id){return document.getElementById(id).value}
+
+// ============================================================
+// CONTRACTS
+// ============================================================
+function renderContracts(){
+  const q=(document.getElementById('contract-search')?.value||'').toLowerCase();
+  let contracts=DB.contracts;
+  if(q)contracts=contracts.filter(c=>{
+    const cl=DB.clients.find(x=>x.id===c.clientId);
+    return c.itemName.toLowerCase().includes(q)||(cl&&cl.name.toLowerCase().includes(q))||('дог'+c.num).includes(q);
+  });
+  const tbody=document.getElementById('contracts-table');
+  if(!contracts.length){tbody.innerHTML=`<tr><td colspan="9"><div class="empty-state"><div class="icon">📋</div><p>Нет договоров</p></div></td></tr>`;return}
+  tbody.innerHTML=contracts.map(c=>{
+    const cl=DB.clients.find(x=>x.id===c.clientId);
+    const bal=getContractBalance(c);
+    const paid=c.totalPrice-bal;
+    const pct=Math.round(paid/c.totalPrice*100);
+    const st=getContractStatus(c);
+    return`<tr>
+      <td><b>№${c.num}</b><br><small style="color:var(--gray)">${fmtDate(c.date)}</small></td>
+      <td>${cl?cl.name:'?'}<br><small style="color:var(--gray)">${cl?cl.phone:''}</small></td>
+      <td>${c.itemName}<br><small class="tag">${c.category||''}</small></td>
+      <td><b>${fmt(c.totalPrice)}</b><br><small style="color:var(--gray)">наценка ${c.markup}%</small></td>
+      <td>${fmt(paid)}<div class="progress-bar" style="margin-top:4px"><div class="progress-fill" style="width:${pct}%"></div></div></td>
+      <td><b style="color:${bal>0?'var(--red)':'var(--green)'}">${fmt(bal)}</b></td>
+      <td>${getContractPaidCount(c)}/${c.months}</td>
+      <td>${statusBadge(st)}</td>
+      <td style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-ghost" onclick="showContractDetail('${c.id}')">👁</button>
+        <button class="btn btn-sm btn-primary" onclick="openPaymentModal('${c.id}')">💰</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteContract('${c.id}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openContractModal(id, preClientId){
+  editContractId=id||null;
+  document.getElementById('contract-modal-title').textContent=id?'Редактировать договор':'Новый договор мурабаха';
+  const clients=DB.clients;
+  const sel=document.getElementById('con-client');
+  sel.innerHTML='<option value="">— Выберите клиента —</option>'+clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  if(id){
+    const c=DB.contracts.find(x=>x.id===id)||{};
+    sel.value=c.clientId||'';
+    ['item','cost','markup','down','months','date','first-pay','supplier','notes'].forEach(f=>{
+      const el=document.getElementById('con-'+f);if(el)el.value=c[f.replace('-','')]||'';
+    });
+    document.getElementById('con-category').value=c.category||'Бытовая техника';
+    document.getElementById('con-halal').value=c.halal??1;
+    document.getElementById('con-pay-method').value=c.payMethod||'Наличные';
+  } else {
+    ['item','cost','markup','down','months','date','first-pay','supplier','notes'].forEach(f=>{
+      const el=document.getElementById('con-'+f);if(el)el.value='';
+    });
+    document.getElementById('con-date').value=today();
+    document.getElementById('con-first-pay').value=addMonths(today(),1);
+    document.getElementById('con-markup').value=20;
+    if(preClientId)sel.value=preClientId;
+  }
+  document.getElementById('con-total').value='';
+  document.getElementById('con-monthly').value='';
+  document.getElementById('schedule-preview').style.display='none';
+  openModal('modal-contract');
+}
+
+function calcMurabaha(){
+  const cost=Number(document.getElementById('con-cost').value)||0;
+  const markup=Number(document.getElementById('con-markup').value)||0;
+  const down=Number(document.getElementById('con-down').value)||0;
+  const months=Number(document.getElementById('con-months').value)||0;
+  const total=Math.round(cost*(1+markup/100));
+  const financed=Math.max(0,total-down);
+  const monthly=months>0?Math.round(financed/months):0;
+  document.getElementById('con-total').value=total?fmtN(total)+' ₽':'';
+  document.getElementById('con-monthly').value=monthly?fmtN(monthly)+' ₽':'';
+}
+
+function previewSchedule(){
+  const months=Number(document.getElementById('con-months').value)||0;
+  const cost=Number(document.getElementById('con-cost').value)||0;
+  const markup=Number(document.getElementById('con-markup').value)||0;
+  const down=Number(document.getElementById('con-down').value)||0;
+  const firstPay=document.getElementById('con-first-pay').value;
+  if(!months||!cost||!firstPay){alert('Заполните поля');return}
+  const total=Math.round(cost*(1+markup/100));
+  const financed=Math.max(0,total-down);
+  const monthly=Math.round(financed/months);
+  const rows=[];
+  for(let i=0;i<Math.min(months,24);i++){
+    const date=addMonths(firstPay,i);
+    rows.push(`<div class="sc">${i+1}</div><div class="sc">${fmtDate(date)}</div><div class="sc">${fmt(monthly)}</div><div class="sc">${fmt(Math.max(0,financed-monthly*i))}</div><div class="sc">—</div>`);
+  }
+  document.getElementById('schedule-preview-content').innerHTML=`<div class="schedule-grid">
+    <div class="sh">№</div><div class="sh">Дата</div><div class="sh">Взнос</div><div class="sh">Остаток до</div><div class="sh">Статус</div>
+    ${rows.join('')}
+  </div>${months>24?`<p style="color:var(--gray);font-size:.8rem;margin-top:8px">... и ещё ${months-24} взносов</p>`:''}`;
+  document.getElementById('schedule-preview').style.display='block';
+}
+
+function saveContract(){
+  const clientId=document.getElementById('con-client').value;
+  const itemName=document.getElementById('con-item').value.trim();
+  const cost=Number(document.getElementById('con-cost').value);
+  const markup=Number(document.getElementById('con-markup').value);
+  const months=Number(document.getElementById('con-months').value);
+  const date=document.getElementById('con-date').value;
+  const firstPayDate=document.getElementById('con-first-pay').value;
+  if(!clientId||!itemName||!cost||!months||!date||!firstPayDate){alert('Заполните обязательные поля');return}
+  const down=Number(document.getElementById('con-down').value)||0;
+  const totalPrice=Math.round(cost*(1+markup/100));
+  const financed=Math.max(0,totalPrice-down);
+  const monthlyPayment=Math.round(financed/months);
+  const contracts=DB.contracts;
+  const maxNum=contracts.length?Math.max(...contracts.map(c=>c.num)):0;
+  const data={
+    id:editContractId||uid(),
+    num:editContractId?(contracts.find(c=>c.id===editContractId)||{}).num:maxNum+1,
+    clientId,itemName,category:document.getElementById('con-category').value,
+    cost,markup,totalPrice,downPayment:down,financed,months,monthlyPayment,
+    date,firstPayDate,
+    supplier:v('con-supplier'),halal:Number(document.getElementById('con-halal').value),
+    payMethod:document.getElementById('con-pay-method').value,
+    notes:v('con-notes'),createdAt:today()
+  };
+  if(editContractId){const i=contracts.findIndex(c=>c.id===editContractId);contracts[i]=data}else{contracts.push(data)}
+  DB.contracts=contracts;
+  closeModal('modal-contract');renderContracts();
+}
+
+function deleteContract(id){
+  if(!confirm('Удалить договор?'))return;
+  DB.contracts=DB.contracts.filter(c=>c.id!==id);
+  DB.payments=DB.payments.filter(p=>p.contractId!==id);
+  renderContracts();
+}
+
+function showContractDetail(id){
+  const c=DB.contracts.find(x=>x.id===id);if(!c)return;
+  const cl=DB.clients.find(x=>x.id===c.clientId);
+  const bal=getContractBalance(c);
+  const paid=c.totalPrice-bal;
+  const pct=Math.round(paid/c.totalPrice*100);
+  const st=getContractStatus(c);
+  const sched=buildSchedule(c);
+  const rows=sched.map(s=>{
+    const overdue=!s.paidDate&&s.date<today();
+    return`<div class="sc">${s.num}</div><div class="sc">${fmtDate(s.date)}</div>
+    <div class="sc">${fmt(s.amount)}</div>
+    <div class="sc">${s.paidDate?`<span class="status status-active">✅ ${fmtDate(s.paidDate)}</span>`:overdue?'<span class="status status-overdue">⚠️ Просрочен</span>':'<span class="status status-pending">⏳ Ожидание</span>'}</div>
+    <div class="sc">${s.paidAmount?fmt(s.paidAmount):'—'}</div>`;
+  }).join('');
+  document.getElementById('detail-title').textContent=`Договор №${c.num} — ${cl?cl.name:'?'}`;
+  document.getElementById('detail-body').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;font-size:.87rem">
+      <div><b>Товар:</b> ${c.itemName}</div>
+      <div><b>Категория:</b> ${c.category}</div>
+      <div><b>Себестоимость:</b> ${fmt(c.cost)}</div>
+      <div><b>Наценка:</b> ${c.markup}%</div>
+      <div><b>Цена мурабаха:</b> <span style="color:var(--green);font-weight:700">${fmt(c.totalPrice)}</span></div>
+      <div><b>Первый взнос:</b> ${fmt(c.downPayment)}</div>
+      <div><b>Ежемесячно:</b> ${fmt(c.monthlyPayment)}</div>
+      <div><b>Взносов:</b> ${c.months} мес.</div>
+      <div><b>Дата договора:</b> ${fmtDate(c.date)}</div>
+      <div><b>Первый платёж:</b> ${fmtDate(c.firstPayDate)}</div>
+      <div><b>Поставщик:</b> ${c.supplier||'—'}</div>
+      <div><b>Халяль:</b> ${c.halal?'✅ Подтверждён':'⚠️ Не проверен'}</div>
+      <div><b>Статус:</b> ${statusBadge(st)}</div>
+      <div><b>Клиент:</b> ${cl?cl.name:'?'} ${cl?cl.phone:''}</div>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:4px">
+        <span>Прогресс оплаты</span><span>${pct}% — ${fmt(paid)} из ${fmt(c.totalPrice)}</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+    </div>
+    <div style="font-weight:600;font-size:.85rem;margin-bottom:8px;color:var(--green)">График платежей</div>
+    <div class="schedule-grid">
+      <div class="sh">№</div><div class="sh">Дата</div><div class="sh">Сумма</div><div class="sh">Статус</div><div class="sh">Оплачено</div>
+      ${rows}
+    </div>
+    <div class="form-actions" style="margin-top:16px">
+      <button class="btn btn-primary" onclick="openPaymentModal('${id}');closeModal('modal-contract-detail')">+ Принять платёж</button>
+    </div>
+  `;
+  openModal('modal-contract-detail');
+}
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+function renderPayments(){
+  const q=(document.getElementById('pay-search')?.value||'').toLowerCase();
+  let payments=DB.payments.slice().sort((a,b)=>b.date>a.date?1:-1);
+  const today_=today(),thisMonth=today_.slice(0,7);
+  const todaySum=payments.filter(p=>p.date===today_).reduce((s,p)=>s+Number(p.amount),0);
+  const monthSum=payments.filter(p=>p.date.slice(0,7)===thisMonth).reduce((s,p)=>s+Number(p.amount),0);
+  const totalSum=payments.reduce((s,p)=>s+Number(p.amount),0);
+  document.getElementById('pay-stat-today').textContent=fmt(todaySum);
+  document.getElementById('pay-stat-month').textContent=fmt(monthSum);
+  document.getElementById('pay-stat-total').textContent=fmt(totalSum);
+  if(q)payments=payments.filter(p=>{
+    const c=DB.contracts.find(x=>x.id===p.contractId);
+    const cl=c?DB.clients.find(x=>x.id===c.clientId):null;
+    return(c&&c.itemName.toLowerCase().includes(q))||(cl&&cl.name.toLowerCase().includes(q));
+  });
+  const tbody=document.getElementById('payments-table');
+  if(!payments.length){tbody.innerHTML=`<tr><td colspan="8"><div class="empty-state"><div class="icon">💰</div><p>Нет платежей</p></div></td></tr>`;return}
+  tbody.innerHTML=payments.map(p=>{
+    const c=DB.contracts.find(x=>x.id===p.contractId);
+    const cl=c?DB.clients.find(x=>x.id===c.clientId):null;
+    const bal=c?getContractBalance(c):0;
+    return`<tr>
+      <td>${fmtDate(p.date)}</td>
+      <td>${cl?cl.name:'?'}</td>
+      <td>${c?`Дог.№${c.num}`:''}<br><small style="color:var(--gray)">${c?c.itemName:''}</small></td>
+      <td><b style="color:var(--green)">${fmt(p.amount)}</b></td>
+      <td>#${p.installmentNum||'?'}</td>
+      <td>${p.method||'—'}</td>
+      <td>${fmt(bal)}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deletePayment('${p.id}')">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function openPaymentModal(contractId){
+  const contracts=DB.contracts.filter(c=>getContractStatus(c)!=='paid');
+  const sel=document.getElementById('pay-contract');
+  sel.innerHTML='<option value="">— Выберите договор —</option>'+contracts.map(c=>{
+    const cl=DB.clients.find(x=>x.id===c.clientId);
+    return`<option value="${c.id}">${cl?cl.name:'?'} — Дог.№${c.num} — ${c.itemName}</option>`;
+  }).join('');
+  if(contractId)sel.value=contractId;
+  document.getElementById('pay-date').value=today();
+  document.getElementById('pay-amount').value='';
+  document.getElementById('pay-receipt').value='';
+  document.getElementById('pay-note').value='';
+  document.getElementById('pay-info-block').style.display='none';
+  onPayContractChange();
+  openModal('modal-payment');
+}
+
+function onPayContractChange(){
+  const id=document.getElementById('pay-contract').value;
+  if(!id){document.getElementById('pay-info-block').style.display='none';return}
+  const c=DB.contracts.find(x=>x.id===id);
+  if(!c)return;
+  const cl=DB.clients.find(x=>x.id===c.clientId);
+  const bal=getContractBalance(c);
+  const paid=c.totalPrice-bal;
+  const pct=Math.round(paid/c.totalPrice*100);
+  const done=getContractPaidCount(c);
+  document.getElementById('pay-info-client').textContent=cl?cl.name:'?';
+  document.getElementById('pay-info-item').textContent=c.itemName;
+  document.getElementById('pay-info-done').textContent=`${done}/${c.months}`;
+  document.getElementById('pay-info-remaining').textContent=fmt(bal);
+  document.getElementById('pay-info-progress').style.width=pct+'%';
+  document.getElementById('pay-info-block').style.display='block';
+  document.getElementById('pay-amount').value=Math.min(c.monthlyPayment,bal);
+}
+
+function savePayment(){
+  const contractId=document.getElementById('pay-contract').value;
+  const amount=Number(document.getElementById('pay-amount').value);
+  const date=document.getElementById('pay-date').value;
+  if(!contractId||!amount||!date){alert('Заполните обязательные поля');return}
+  const c=DB.contracts.find(x=>x.id===contractId);
+  if(!c){alert('Договор не найден');return}
+  const bal=getContractBalance(c);
+  if(amount>bal+0.01){if(!confirm(`Сумма ${fmt(amount)} превышает остаток ${fmt(bal)}. Продолжить?`))return}
+  const payments=DB.payments;
+  const installmentNum=getContractPaidCount(c)+1;
+  payments.push({id:uid(),contractId,amount,date,method:document.getElementById('pay-method').value,receipt:v('pay-receipt'),note:v('pay-note'),installmentNum,createdAt:new Date().toISOString()});
+  DB.payments=payments;
+  closeModal('modal-payment');renderPayments();
+  if(getContractBalance(c)<=0){alert(`✅ Договор №${c.num} полностью погашен!`)}
+}
+
+function deletePayment(id){
+  if(!confirm('Удалить платёж?'))return;
+  DB.payments=DB.payments.filter(p=>p.id!==id);
+  renderPayments();
+}
+
+// ============================================================
+// CALENDAR
+// ============================================================
+function renderCalendar(){
+  const months_ru=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  document.getElementById('cal-title').textContent=`${months_ru[calMonth]} ${calYear}`;
+  const first=new Date(calYear,calMonth,1);
+  const last=new Date(calYear,calMonth+1,0);
+  let startDay=(first.getDay()+6)%7; // Mon=0
+  const grid=document.getElementById('cal-grid');
+  // Collect all schedule entries for this month
+  const schedMap={};
+  DB.contracts.forEach(c=>{
+    if(getContractStatus(c)==='paid')return;
+    buildSchedule(c).forEach(s=>{
+      if(s.date.slice(0,7)===`${calYear}-${String(calMonth+1).padStart(2,'0')}`){
+        const day=Number(s.date.slice(8,10));
+        if(!schedMap[day])schedMap[day]=[];
+        const cl=DB.clients.find(x=>x.id===c.clientId);
+        schedMap[day].push({client:cl?cl.name:'?',contract:`Дог.${c.num}`,item:c.itemName,amount:s.amount,paid:!!s.paidDate,date:s.date});
+      }
+    });
+  });
+  const todayStr=today();
+  let html='';
+  for(let i=0;i<startDay;i++)html+=`<div></div>`;
+  for(let d=1;d<=last.getDate();d++){
+    const dateStr=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const entries=schedMap[d]||[];
+    const isToday=dateStr===todayStr;
+    const hasPaid=entries.some(e=>e.paid);
+    const hasUnpaid=entries.some(e=>!e.paid);
+    const overdue=hasUnpaid&&dateStr<todayStr;
+    let bg='#fff';
+    if(isToday)bg='#e8f5ee';
+    if(overdue)bg='#fee2e2';
+    html+=`<div onclick="showCalDay('${dateStr}')" style="border:1px solid ${isToday?'var(--green)':'var(--gray-light)'};border-radius:6px;padding:6px;min-height:52px;cursor:pointer;background:${bg};transition:.2s" onmouseover="this.style.border='1px solid var(--green)'" onmouseout="this.style.border='1px solid ${isToday?'var(--green)':'var(--gray-light)'}'">
+      <div style="font-size:.8rem;font-weight:${isToday?700:400};color:${isToday?'var(--green)':'var(--text)'}">${d}</div>
+      ${entries.length?`<div style="font-size:.68rem;margin-top:2px">${entries.slice(0,2).map(e=>`<div style="background:${e.paid?'#dcfce7':overdue?'#fee2e2':'#fef9c3'};border-radius:3px;padding:1px 3px;margin-top:1px;color:${e.paid?'#166534':overdue?'#991b1b':'#854d0e'};overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${e.client.split(' ')[0]}: ${fmtN(e.amount)}₽</div>`).join('')}${entries.length>2?`<div style="color:var(--gray);font-size:.65rem">+${entries.length-2} ещё</div>`:''}</div>`:''}
+    </div>`;
+  }
+  grid.innerHTML=html;
+  document.getElementById('cal-day-detail').style.display='none';
+}
+
+function showCalDay(dateStr){
+  const contracts=DB.contracts;
+  const rows=[];
+  contracts.forEach(c=>{
+    buildSchedule(c).filter(s=>s.date===dateStr).forEach(s=>{
+      const cl=DB.clients.find(x=>x.id===c.clientId);
+      const st=s.paidDate?'paid':dateStr<today()?'overdue':'pending';
+      rows.push(`<tr><td>${cl?cl.name:'?'}</td><td>Дог.${c.num}</td><td>${c.itemName}</td><td>${fmt(s.amount)}</td><td>${statusBadge(st)}</td></tr>`);
+    });
+  });
+  document.getElementById('cal-day-title').textContent=`Платежи за ${fmtDate(dateStr)}`;
+  document.getElementById('cal-day-table').innerHTML=rows.join('')||'<tr><td colspan="5" style="text-align:center;color:var(--gray);padding:16px">Нет платежей</td></tr>';
+  document.getElementById('cal-day-detail').style.display='block';
+}
+function calPrev(){calMonth--;if(calMonth<0){calMonth=11;calYear--}renderCalendar()}
+function calNext(){calMonth++;if(calMonth>11){calMonth=0;calYear++}renderCalendar()}
+
+// ============================================================
+// REPORTS
+// ============================================================
+function renderReports(){
+  const contracts=DB.contracts, payments=DB.payments;
+  const issued=contracts.reduce((s,c)=>s+c.cost,0);
+  const markup=contracts.reduce((s,c)=>s+c.totalPrice-c.cost,0);
+  const collected=payments.reduce((s,p)=>s+Number(p.amount),0);
+  const remaining=contracts.reduce((s,c)=>s+getContractBalance(c),0);
+  document.getElementById('rep-issued').textContent=fmt(issued);
+  document.getElementById('rep-markup').textContent=fmt(markup);
+  document.getElementById('rep-collected').textContent=fmt(collected);
+  document.getElementById('rep-remaining').textContent=fmt(remaining);
+
+  // Top clients
+  const clientTotals={};
+  contracts.forEach(c=>{
+    if(!clientTotals[c.clientId])clientTotals[c.clientId]={count:0,bal:0};
+    clientTotals[c.clientId].count++;
+    clientTotals[c.clientId].bal+=getContractBalance(c);
+  });
+  const topClients=Object.entries(clientTotals).sort((a,b)=>b[1].bal-a[1].bal).slice(0,8);
+  document.getElementById('rep-top-clients').innerHTML=topClients.map(([id,d])=>{
+    const cl=DB.clients.find(x=>x.id===id);
+    return`<tr><td>${cl?cl.name:'?'}</td><td>${d.count}</td><td><b>${fmt(d.bal)}</b></td></tr>`;
+  }).join('')||'<tr><td colspan="3" style="text-align:center;color:var(--gray);padding:16px">Нет данных</td></tr>';
+
+  // Categories
+  const cats={};
+  contracts.forEach(c=>{const k=c.category||'Прочее';if(!cats[k]){cats[k]={n:0,v:0}}cats[k].n++;cats[k].v+=c.totalPrice;});
+  document.getElementById('rep-categories').innerHTML=Object.entries(cats).sort((a,b)=>b[1].v-a[1].v).map(([k,d])=>`<tr><td>${k}</td><td>${d.n}</td><td><b>${fmt(d.v)}</b></td></tr>`).join('')||'<tr><td colspan="3" style="text-align:center;color:var(--gray);padding:16px">Нет данных</td></tr>';
+
+  // Sharia audit
+  const nonHalal=contracts.filter(c=>!c.halal);
+  const allOk=nonHalal.length===0;
+  const overdueC=contracts.filter(c=>getContractStatus(c)==='overdue');
+  document.getElementById('rep-sharia').innerHTML=`
+    <div class="alert ${allOk?'alert-success':'alert-warn'}" style="margin-bottom:10px">
+      ${allOk?'✅ Все товары имеют статус халяль':'⚠️ '+nonHalal.length+' договоров без подтверждения халяль: '+nonHalal.map(c=>c.itemName).join(', ')}
+    </div>
+    <div class="alert alert-success" style="margin-bottom:10px">☪ Все договоры оформлены без рибы (процентов). Наценка мурабаха раскрыта клиенту.</div>
+    <div class="alert ${overdueC.length?'alert-warn':'alert-success'}" style="margin-bottom:10px">
+      ${overdueC.length?`⚠️ ${overdueC.length} просроченных договоров. Согласно шариату, штрафные проценты запрещены — рекомендуется провести переговоры.`:'✅ Просроченных договоров нет.'}
+    </div>
+    <div style="font-size:.82rem;color:var(--gray)">Итого договоров: ${contracts.length} | Закрыто: ${contracts.filter(c=>getContractStatus(c)==='paid').length} | Активных: ${contracts.filter(c=>getContractStatus(c)==='active').length}</div>
+  `;
+}
+
+// ============================================================
+// MODAL HELPERS
+// ============================================================
+function openModal(id){document.getElementById(id).classList.add('open')}
+function closeModal(id){document.getElementById(id).classList.remove('open')}
+document.querySelectorAll('.modal-overlay').forEach(m=>{
+  m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')});
+});
+
+// ============================================================
+// CLOCK
+// ============================================================
+function updateClock(){
+  const now=new Date();
+  document.getElementById('clock').textContent=now.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+}
+setInterval(updateClock,1000);updateClock();
+
+// ============================================================
+// DEMO DATA (first run)
+// ============================================================
+function seedDemoData(){
+  if(DB.clients.length)return;
+  const clients=[
+    {id:'c1',name:'Ахмад Каримов',phone:'+998 90 123 45 67',passport:'AA 1234567',address:'г. Ташкент',employer:'ООО «СтройГрупп»',income:3500000,notes:'Надёжный клиент',createdAt:'2024-09-01'},
+    {id:'c2',name:'Фатима Юсупова',phone:'+998 91 234 56 78',passport:'AB 7654321',address:'г. Самарканд',employer:'Школа №5',income:2200000,notes:'',createdAt:'2024-10-15'},
+    {id:'c3',name:'Мухаммад Рашидов',phone:'+998 93 345 67 89',passport:'AC 1122334',address:'г. Бухара',employer:'ИП Рашидов',income:5000000,notes:'',createdAt:'2024-11-01'},
+  ];
+  const contracts=[
+    {id:'k1',num:1,clientId:'c1',itemName:'Холодильник Samsung RF65A',category:'Бытовая техника',cost:4500000,markup:20,totalPrice:5400000,downPayment:900000,financed:4500000,months:12,monthlyPayment:375000,date:'2024-09-05',firstPayDate:'2024-10-05',supplier:'ТехноМарт',halal:1,payMethod:'Наличные',notes:'',createdAt:'2024-09-05'},
+    {id:'k2',num:2,clientId:'c2',itemName:'Ноутбук Lenovo IdeaPad',category:'Электроника',cost:6000000,markup:15,totalPrice:6900000,downPayment:0,financed:6900000,months:18,monthlyPayment:383333,date:'2024-10-20',firstPayDate:'2024-11-20',supplier:'DigitalCity',halal:1,payMethod:'Карта',notes:'',createdAt:'2024-10-20'},
+    {id:'k3',num:3,clientId:'c3',itemName:'Диван угловой «Комфорт»',category:'Мебель',cost:3200000,markup:25,totalPrice:4000000,downPayment:500000,financed:3500000,months:10,monthlyPayment:350000,date:'2024-11-10',firstPayDate:'2024-12-10',supplier:'МебельДом',halal:1,payMethod:'Банковский перевод',notes:'',createdAt:'2024-11-10'},
+  ];
+  // Payments for demo
+  const now=new Date();
+  const payments=[];
+  // k1 — paid 5 months
+  for(let i=0;i<5;i++){
+    const d=new Date('2024-10-05');d.setMonth(d.getMonth()+i);
+    payments.push({id:'p1'+i,contractId:'k1',amount:375000,date:d.toISOString().slice(0,10),method:'Наличные',receipt:`КВ-${100+i}`,installmentNum:i+1,createdAt:d.toISOString()});
+  }
+  // k2 — paid 3 months
+  for(let i=0;i<3;i++){
+    const d=new Date('2024-11-20');d.setMonth(d.getMonth()+i);
+    payments.push({id:'p2'+i,contractId:'k2',amount:383333,date:d.toISOString().slice(0,10),method:'Карта',receipt:`КВ-${200+i}`,installmentNum:i+1,createdAt:d.toISOString()});
+  }
+  // k3 — paid 1
+  payments.push({id:'p31',contractId:'k3',amount:350000,date:'2024-12-10',method:'Банковский перевод',receipt:'КВ-300',installmentNum:1,createdAt:'2024-12-10T10:00:00'});
+  DB.clients=clients;DB.contracts=contracts;DB.payments=payments;
+}
+
+seedDemoData();
+renderDashboard();
+</script>
+</body>
+</html>
