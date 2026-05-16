@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+{% block title %}Принять платёж{% endblock %}
+{% block breadcrumb %}
+  <li class="breadcrumb-item"><a href="{{ url_for('payments_list') }}" class="text-decoration-none" style="color:var(--green)">Платежи</a></li>
+  <li class="breadcrumb-item active">Принять платёж</li>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0"><i class="bi bi-cash-coin me-2 text-success"></i>Принять платёж</h4>
+      {% if contract %}
+      <a href="{{ url_for('contract_detail', contract_id=contract.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>К договору</a>
+      {% endif %}
+    </div>
+
+    {% if contract %}
+    <!-- Contract info -->
+    <div class="card mb-3" style="border-left:4px solid var(--green);">
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="text-muted small">Договор</div>
+            <div class="fw-bold">{{ contract.contract_number }}</div>
+            <div>{{ contract.client.full_name }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="row text-center">
+              <div class="col">
+                <div class="text-muted small">Остаток</div>
+                <div class="fw-bold text-danger">{{ "{:,.0f}".format(contract.remaining_amount) }} ₽</div>
+              </div>
+              <div class="col">
+                <div class="text-muted small">Прогресс</div>
+                <div class="fw-bold">{{ contract.progress_percent }}%</div>
+              </div>
+            </div>
+            <div class="progress mt-2" style="height:6px;">
+              <div class="progress-bar" style="width:{{ contract.progress_percent }}%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pending schedules -->
+    {% if pending_schedules %}
+    <div class="card mb-3">
+      <div class="card-header">Выберите платёж из графика</div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead><tr><th>Платёж #</th><th>Дата</th><th>Сумма</th><th>Оплачено</th><th>Остаток</th><th>Статус</th><th></th></tr></thead>
+          <tbody>
+            {% for s in pending_schedules %}
+            <tr class="{{ 'table-danger' if s.status == 'overdue' else 'table-warning bg-opacity-25' if s.status == 'partial' else '' }}">
+              <td>{{ s.installment_num }}</td>
+              <td>{{ s.due_date.strftime('%d.%m.%Y') }}</td>
+              <td>{{ "{:,.0f}".format(s.amount) }} ₽</td>
+              <td>{{ "{:,.0f}".format(s.paid_amount) }} ₽</td>
+              <td><strong>{{ "{:,.0f}".format(s.remaining) }} ₽</strong></td>
+              <td>
+                {% if s.status == 'overdue' %}<span class="badge badge-overdue">Просрочен</span>
+                {% elif s.status == 'partial' %}<span class="badge badge-partial">Частично</span>
+                {% else %}<span class="badge badge-pending">Ожидает</span>{% endif %}
+              </td>
+              <td>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectSchedule({{ s.id }}, {{ s.remaining }})">
+                  Выбрать
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <!-- Payment form -->
+    <div class="card">
+      <div class="card-header"><i class="bi bi-receipt me-2"></i>Данные платежа</div>
+      <div class="card-body">
+        <form method="post">
+          {{ form.hidden_tag() }}
+          {{ form.contract_id(id="contract_id_field") }}
+          {{ form.schedule_id(id="schedule_id_field") }}
+
+          {% if not contract %}
+          <div class="mb-3">
+            <label class="form-label">Номер договора <span class="text-danger">*</span></label>
+            <input type="text" id="contractSearch" class="form-control" placeholder="Введите номер договора...">
+          </div>
+          {% endif %}
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">{{ form.amount.label.text }} <span class="text-danger">*</span></label>
+              <div class="input-group">
+                {{ form.amount(class="form-control" + (" is-invalid" if form.amount.errors else ""), id="amount_field", placeholder="0.00", step="0.01") }}
+                <span class="input-group-text">₽</span>
+              </div>
+              {% for e in form.amount.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">{{ form.payment_date.label.text }} <span class="text-danger">*</span></label>
+              {{ form.payment_date(class="form-control" + (" is-invalid" if form.payment_date.errors else "")) }}
+              {% for e in form.payment_date.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">{{ form.payment_method.label.text }}</label>
+              {{ form.payment_method(class="form-select") }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">{{ form.receipt_number.label.text }}</label>
+              {{ form.receipt_number(class="form-control", placeholder="ЧЕК-2024-001") }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">{{ form.received_by.label.text }}</label>
+              {{ form.received_by(class="form-control", placeholder="ФИО сотрудника") }}
+            </div>
+            <div class="col-12">
+              <label class="form-label">{{ form.note.label.text }}</label>
+              {{ form.note(class="form-control", rows=2, placeholder="Примечание к платежу...") }}
+            </div>
+          </div>
+          <div class="d-flex gap-2 mt-4">
+            {{ form.submit(class="btn btn-success btn-lg") }}
+            {% if contract %}
+            <a href="{{ url_for('contract_detail', contract_id=contract.id) }}" class="btn btn-outline-secondary btn-lg">Отмена</a>
+            {% else %}
+            <a href="{{ url_for('payments_list') }}" class="btn btn-outline-secondary btn-lg">Отмена</a>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function selectSchedule(scheduleId, remaining) {
+  document.getElementById('schedule_id_field').value = scheduleId;
+  document.getElementById('amount_field').value = remaining.toFixed(2);
+  document.querySelectorAll('tr').forEach(tr => tr.classList.remove('table-primary'));
+  event.target.closest('tr').classList.add('table-primary');
+}
+</script>
+{% endblock %}

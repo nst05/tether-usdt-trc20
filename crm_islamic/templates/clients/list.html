@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+{% block title %}Клиенты{% endblock %}
+{% block breadcrumb %}<li class="breadcrumb-item active">Клиенты</li>{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-people-fill me-2 text-success"></i>Клиенты</h4>
+  <a href="{{ url_for('client_new') }}" class="btn btn-primary"><i class="bi bi-person-plus me-1"></i>Новый клиент</a>
+</div>
+
+<!-- Filters -->
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="Поиск по имени, телефону, ИНН..." value="{{ q }}">
+      </div>
+      <div class="col-md-2">
+        <select name="status" class="form-select form-select-sm">
+          <option value="">Все статусы</option>
+          {% for val, label in status_choices %}
+            <option value="{{ val }}" {% if status_f == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <select name="employment_type" class="form-select form-select-sm">
+          <option value="">Тип занятости</option>
+          {% for val, label in employment_choices %}
+            {% if val %}
+              <option value="{{ val }}" {% if emp_f == val %}selected{% endif %}>{{ label }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">Балл</span>
+          <input type="number" name="score_min" class="form-control" placeholder="от" value="{{ score_min or '' }}" min="0" max="999">
+          <input type="number" name="score_max" class="form-control" placeholder="до" value="{{ score_max or '' }}" min="0" max="999">
+        </div>
+      </div>
+      <div class="col-md-2 d-flex gap-1">
+        <button type="submit" class="btn btn-sm btn-primary flex-fill"><i class="bi bi-search"></i> Найти</button>
+        <a href="{{ url_for('clients_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x"></i></a>
+        <a href="{{ url_for('clients_list', q=q, status=status_f, employment_type=emp_f, score_min=score_min, score_max=score_max, export='csv') }}" class="btn btn-sm btn-outline-success" title="Экспорт CSV"><i class="bi bi-download"></i></a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table id="clientsTable" class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Клиент</th>
+            <th>Телефон</th>
+            <th>Занятость</th>
+            <th>Доход</th>
+            <th>Договоры</th>
+            <th>Балл</th>
+            <th>Статус</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in clients %}
+          <tr>
+            <td>
+              <a href="{{ url_for('client_detail', client_id=c.id) }}" class="fw-bold text-decoration-none">{{ c.full_name }}</a>
+              {% if c.blacklisted %}<span class="badge bg-danger ms-1">ЧС</span>{% endif %}
+              <div class="text-muted small">{{ c.email or '' }}</div>
+            </td>
+            <td>{{ c.phone or '—' }}</td>
+            <td>
+              {% if c.employment_type == 'employed' %}Наёмный
+              {% elif c.employment_type == 'self_employed' %}Самозанятый
+              {% elif c.employment_type == 'business_owner' %}Бизнес
+              {% elif c.employment_type == 'unemployed' %}Безработный
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ "{:,.0f}".format(c.monthly_income or 0) }} ₽</td>
+            <td>
+              <span class="badge bg-secondary">{{ c.contracts.count() }}</span>
+              {% if c.active_contracts_count > 0 %}
+                <span class="badge badge-active">{{ c.active_contracts_count }} акт.</span>
+              {% endif %}
+            </td>
+            <td>
+              {% set score = c.credit_score or 0 %}
+              <span class="fw-bold {% if score >= 700 %}text-success{% elif score >= 500 %}text-warning{% else %}text-danger{% endif %}">
+                {{ score }}
+              </span>
+            </td>
+            <td>
+              {% if c.status == 'active' %}<span class="badge badge-active">Активный</span>
+              {% elif c.status == 'inactive' %}<span class="badge badge-closed">Неактивный</span>
+              {% elif c.status == 'blacklisted' %}<span class="badge badge-overdue">Чёрный список</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex gap-1">
+                <a href="{{ url_for('client_detail', client_id=c.id) }}" class="btn btn-sm btn-outline-primary" title="Просмотр"><i class="bi bi-eye"></i></a>
+                <a href="{{ url_for('client_edit', client_id=c.id) }}" class="btn btn-sm btn-outline-secondary" title="Редактировать"><i class="bi bi-pencil"></i></a>
+                <a href="{{ url_for('contract_new', client_id=c.id) }}" class="btn btn-sm btn-outline-success" title="Новый договор"><i class="bi bi-file-plus"></i></a>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-4">Клиенты не найдены</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+  $('#clientsTable').DataTable({
+    language: {
+      url: 'https://cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json'
+    },
+    pageLength: 25,
+    order: [],
+    columnDefs: [{ orderable: false, targets: [7] }]
+  });
+});
+</script>
+{% endblock %}

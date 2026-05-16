@@ -1,0 +1,373 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumb %}
+  <li class="breadcrumb-item"><a href="{{ url_for('contracts_list') }}" class="text-decoration-none" style="color:var(--green)">Договоры</a></li>
+  <li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+
+{% block head %}
+<style>
+.calc-preview { background:#f8fffe; border:1px solid #d1fae5; border-radius:8px; padding:16px; }
+.calc-preview .row-item { display:flex; justify-content:space-between; border-bottom:1px dashed #e5f5ed; padding:4px 0; }
+.calc-preview .row-item:last-child { border:none; font-weight:700; color:var(--green); }
+.schedule-preview { max-height:200px; overflow-y:auto; font-size:.82rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="fw-bold mb-0"><i class="bi bi-file-earmark-plus me-2 text-success"></i>{{ title }}</h4>
+  <a href="{{ url_for('contracts_list') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Назад</a>
+</div>
+
+<form method="post" id="contractForm">
+  {{ form.hidden_tag() }}
+  {{ form.client_id(id="client_id_hidden") }}
+
+  <div class="row g-3">
+    <!-- Left: form fields -->
+    <div class="col-md-8">
+
+      <!-- Client selector -->
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-person me-2"></i>Клиент</div>
+        <div class="card-body">
+          {% if form.client_id.errors %}
+            <div class="alert alert-danger">{% for e in form.client_id.errors %}{{ e }}{% endfor %}</div>
+          {% endif %}
+          <div class="input-group">
+            <input type="text" id="clientSearch" class="form-control" placeholder="Поиск клиента по имени..." value="{{ client.full_name if client else '' }}">
+            <button type="button" class="btn btn-outline-secondary" onclick="clearClient()"><i class="bi bi-x"></i></button>
+          </div>
+          <div id="clientDropdown" class="list-group mt-1" style="display:none; position:absolute; z-index:999; width:calc(100% - 48px);"></div>
+          {% if client %}
+          <div class="mt-2 d-flex align-items-center gap-2" id="selectedClient">
+            <span class="badge bg-success fs-6">{{ client.full_name }}</span>
+            <small class="text-muted">{{ client.phone or '' }}</small>
+          </div>
+          {% else %}
+          <div id="selectedClient" class="mt-2"></div>
+          {% endif %}
+          <div class="mt-2">
+            <small class="text-muted">Или выберите из списка:</small>
+            <select id="clientSelect" class="form-select form-select-sm mt-1" onchange="selectClientFromList(this.value, this.options[this.selectedIndex].text)">
+              <option value="">— Выбрать клиента —</option>
+              {% for c in clients_all %}
+              <option value="{{ c.id }}" {% if client and client.id == c.id %}selected{% endif %}>{{ c.full_name }} ({{ c.phone or 'нет тел.' }})</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Item info -->
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-box me-2"></i>Информация о товаре</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">{{ form.item_name.label.text }} <span class="text-danger">*</span></label>
+              {{ form.item_name(class="form-control" + (" is-invalid" if form.item_name.errors else ""), placeholder="Холодильник Samsung RF65A") }}
+              {% for e in form.item_name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.item_category.label.text }}</label>
+              {{ form.item_category(class="form-select") }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.item_condition.label.text }}</label>
+              {{ form.item_condition(class="form-select") }}
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">{{ form.item_serial_number.label.text }}</label>
+              {{ form.item_serial_number(class="form-control", placeholder="SN12345678") }}
+            </div>
+            <div class="col-12">
+              <label class="form-label">{{ form.item_description.label.text }}</label>
+              {{ form.item_description(class="form-control", rows=2, placeholder="Краткое описание товара...") }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.supplier_name.label.text }}</label>
+              {{ form.supplier_name(class="form-control", placeholder="М.Видео") }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.supplier_inn.label.text }}</label>
+              {{ form.supplier_inn(class="form-control", placeholder="7812345678") }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.supplier_contract_number.label.text }}</label>
+              {{ form.supplier_contract_number(class="form-control", placeholder="ДПС-2024-001") }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Financials -->
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-calculator me-2"></i>Финансовые условия (Мурабаха)</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">{{ form.cost_price.label.text }} <span class="text-danger">*</span></label>
+              <div class="input-group">
+                {{ form.cost_price(class="form-control calc-input" + (" is-invalid" if form.cost_price.errors else ""), id="cost_price", placeholder="100000", step="0.01") }}
+                <span class="input-group-text">₽</span>
+              </div>
+              {% for e in form.cost_price.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.markup_percent.label.text }}</label>
+              <div class="input-group">
+                {{ form.markup_percent(class="form-control calc-input", id="markup_percent", placeholder="15", step="0.1") }}
+                <span class="input-group-text">%</span>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.total_price.label.text }} <span class="text-danger">*</span></label>
+              <div class="input-group">
+                {{ form.total_price(class="form-control calc-input" + (" is-invalid" if form.total_price.errors else ""), id="total_price", placeholder="115000", step="0.01") }}
+                <span class="input-group-text">₽</span>
+              </div>
+              {% for e in form.total_price.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.down_payment.label.text }}</label>
+              <div class="input-group">
+                {{ form.down_payment(class="form-control calc-input", id="down_payment", placeholder="0", step="0.01") }}
+                <span class="input-group-text">₽</span>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.financed_amount.label.text }} <span class="text-danger">*</span></label>
+              <div class="input-group">
+                {{ form.financed_amount(class="form-control calc-input", id="financed_amount", placeholder="115000", step="0.01") }}
+                <span class="input-group-text">₽</span>
+              </div>
+              {% for e in form.financed_amount.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">{{ form.months.label.text }} <span class="text-danger">*</span></label>
+              {{ form.months(class="form-control calc-input", id="months", placeholder="12", min=1, max=360) }}
+              {% for e in form.months.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.monthly_payment.label.text }} <span class="text-danger">*</span></label>
+              <div class="input-group">
+                {{ form.monthly_payment(class="form-control", id="monthly_payment", placeholder="9583.33", step="0.01") }}
+                <span class="input-group-text">₽</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dates -->
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-calendar me-2"></i>Даты и платежи</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">{{ form.contract_date.label.text }} <span class="text-danger">*</span></label>
+              {{ form.contract_date(class="form-control") }}
+              {% for e in form.contract_date.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.first_payment_date.label.text }} <span class="text-danger">*</span></label>
+              {{ form.first_payment_date(class="form-control") }}
+              {% for e in form.first_payment_date.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">{{ form.payment_day_of_month.label.text }}</label>
+              {{ form.payment_day_of_month(class="form-control", min=1, max=28) }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.payment_method.label.text }}</label>
+              {{ form.payment_method(class="form-select") }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.status.label.text }}</label>
+              {{ form.status(class="form-select") }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sharia -->
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-star me-2" style="color:var(--gold)"></i>Шариатское соответствие</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-3 d-flex align-items-center">
+              <div class="form-check">
+                {{ form.is_halal(class="form-check-input") }}
+                <label class="form-check-label fw-bold">☪ {{ form.is_halal.label.text }}</label>
+              </div>
+            </div>
+            <div class="col-md-3 d-flex align-items-center">
+              <div class="form-check">
+                {{ form.sharia_board_approval(class="form-check-input") }}
+                <label class="form-check-label">{{ form.sharia_board_approval.label.text }}</label>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">{{ form.halal_certificate_number.label.text }}</label>
+              {{ form.halal_certificate_number(class="form-control", placeholder="HAL-2024-001") }}
+            </div>
+            <div class="col-12">
+              <label class="form-label">{{ form.sharia_board_note.label.text }}</label>
+              {{ form.sharia_board_note(class="form-control", rows=2, placeholder="Заключение Шариатского совета...") }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-body">
+          <label class="form-label">{{ form.notes.label.text }}</label>
+          {{ form.notes(class="form-control", rows=3) }}
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        {{ form.submit(class="btn btn-primary btn-lg") }}
+        <a href="{{ url_for('contracts_list') }}" class="btn btn-outline-secondary btn-lg">Отмена</a>
+      </div>
+    </div>
+
+    <!-- Right: calculator preview -->
+    <div class="col-md-4">
+      <div class="card sticky-top" style="top:72px;">
+        <div class="card-header"><i class="bi bi-calculator me-2"></i>Калькулятор Мурабаха</div>
+        <div class="card-body">
+          <div class="calc-preview mb-3" id="calcPreview">
+            <div class="row-item"><span>Себестоимость</span><span id="p_cost">0 ₽</span></div>
+            <div class="row-item"><span>Наценка</span><span id="p_markup">0%</span></div>
+            <div class="row-item"><span>Итого</span><span id="p_total">0 ₽</span></div>
+            <div class="row-item"><span>Первоначальный взнос</span><span id="p_down">0 ₽</span></div>
+            <div class="row-item"><span>Финансируется</span><span id="p_financed">0 ₽</span></div>
+            <div class="row-item"><span>Срок</span><span id="p_months">0 мес.</span></div>
+            <div class="row-item"><span class="text-success fw-bold">Ежемесячный платёж</span><span id="p_monthly" class="text-success fw-bold">0 ₽</span></div>
+          </div>
+          <button type="button" class="btn btn-outline-primary btn-sm w-100 mb-2" onclick="autoCalculate()">
+            <i class="bi bi-lightning me-1"></i>Авторасчёт
+          </button>
+          <hr>
+          <div>
+            <div class="fw-bold mb-2 small">Предварительный график (первые 6)</div>
+            <div class="schedule-preview" id="schedulePreview">
+              <div class="text-muted small text-center py-2">Заполните поля для предпросмотра</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fmt(n) { return n.toLocaleString('ru', {maximumFractionDigits:2}); }
+
+function autoCalculate() {
+  const cost = parseFloat(document.getElementById('cost_price').value) || 0;
+  const markup = parseFloat(document.getElementById('markup_percent').value) || 0;
+  const down = parseFloat(document.getElementById('down_payment').value) || 0;
+  const months = parseInt(document.getElementById('months').value) || 0;
+
+  const total = cost * (1 + markup / 100);
+  const financed = total - down;
+  const monthly = months > 0 ? financed / months : 0;
+
+  document.getElementById('total_price').value = total.toFixed(2);
+  document.getElementById('financed_amount').value = financed.toFixed(2);
+  document.getElementById('monthly_payment').value = monthly.toFixed(2);
+
+  updatePreview(cost, markup, total, down, financed, months, monthly);
+  updateSchedulePreview(months, monthly);
+}
+
+function updatePreview(cost, markup, total, down, financed, months, monthly) {
+  document.getElementById('p_cost').textContent = fmt(cost) + ' ₽';
+  document.getElementById('p_markup').textContent = markup + '%';
+  document.getElementById('p_total').textContent = fmt(total) + ' ₽';
+  document.getElementById('p_down').textContent = fmt(down) + ' ₽';
+  document.getElementById('p_financed').textContent = fmt(financed) + ' ₽';
+  document.getElementById('p_months').textContent = months + ' мес.';
+  document.getElementById('p_monthly').textContent = fmt(monthly) + ' ₽';
+}
+
+function updateSchedulePreview(months, monthly) {
+  const firstDate = document.querySelector('input[name="first_payment_date"]').value;
+  const preview = document.getElementById('schedulePreview');
+  if (!firstDate || !months || !monthly) {
+    preview.innerHTML = '<div class="text-muted small text-center py-2">Укажите дату первого платежа</div>';
+    return;
+  }
+  let html = '<table class="table table-sm"><thead><tr><th>#</th><th>Дата</th><th>Сумма</th></tr></thead><tbody>';
+  const base = new Date(firstDate);
+  const limit = Math.min(months, 6);
+  for (let i = 0; i < limit; i++) {
+    const d = new Date(base);
+    d.setMonth(d.getMonth() + i);
+    const ds = d.toLocaleDateString('ru');
+    html += `<tr><td>${i+1}</td><td>${ds}</td><td>${fmt(monthly)} ₽</td></tr>`;
+  }
+  if (months > 6) html += `<tr><td colspan="3" class="text-muted text-center">... ещё ${months - 6} платежей</td></tr>`;
+  html += '</tbody></table>';
+  preview.innerHTML = html;
+}
+
+// Auto-update on input
+document.querySelectorAll('.calc-input').forEach(el => {
+  el.addEventListener('input', autoCalculate);
+});
+document.querySelector('input[name="first_payment_date"]').addEventListener('change', autoCalculate);
+
+// Client search
+const clients = [
+  {% for c in clients_all %}
+  {id: {{ c.id }}, name: "{{ c.full_name }}", phone: "{{ c.phone or '' }}"},
+  {% endfor %}
+];
+
+document.getElementById('clientSearch').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  const dd = document.getElementById('clientDropdown');
+  if (!q) { dd.style.display = 'none'; return; }
+  const filtered = clients.filter(c => c.name.toLowerCase().includes(q) || c.phone.includes(q)).slice(0, 10);
+  if (!filtered.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = filtered.map(c =>
+    `<a href="#" class="list-group-item list-group-item-action py-1" onclick="selectClient(${c.id},'${c.name}','${c.phone}');return false;">
+      <strong>${c.name}</strong> <small class="text-muted">${c.phone}</small>
+    </a>`
+  ).join('');
+  dd.style.display = 'block';
+});
+
+function selectClient(id, name, phone) {
+  document.getElementById('client_id_hidden').value = id;
+  document.getElementById('clientSearch').value = name;
+  document.getElementById('clientDropdown').style.display = 'none';
+  document.getElementById('selectedClient').innerHTML = `<span class="badge bg-success fs-6">${name}</span> <small class="text-muted">${phone}</small>`;
+  document.getElementById('clientSelect').value = id;
+}
+
+function selectClientFromList(id, text) {
+  if (!id) return;
+  document.getElementById('client_id_hidden').value = id;
+  document.getElementById('clientSearch').value = text.split('(')[0].trim();
+  document.getElementById('selectedClient').innerHTML = `<span class="badge bg-success fs-6">${text.split('(')[0].trim()}</span>`;
+}
+
+function clearClient() {
+  document.getElementById('client_id_hidden').value = '';
+  document.getElementById('clientSearch').value = '';
+  document.getElementById('selectedClient').innerHTML = '';
+  document.getElementById('clientSelect').value = '';
+}
+
+// Initial calc if editing
+autoCalculate();
+</script>
+{% endblock %}

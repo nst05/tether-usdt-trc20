@@ -1,0 +1,290 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumb %}
+  <li class="breadcrumb-item"><a href="{{ url_for('clients_list') }}" class="text-decoration-none" style="color:var(--green)">Клиенты</a></li>
+  <li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+
+{% block head %}
+<style>
+.step-indicator { display:flex; gap:0; margin-bottom:24px; }
+.step { flex:1; text-align:center; padding:10px 4px; border-bottom:3px solid #e5e7eb; cursor:pointer; font-size:.85rem; color:#6b7280; transition:.2s; }
+.step.active { border-bottom-color:var(--green); color:var(--green); font-weight:600; }
+.step.done { border-bottom-color:var(--gold); color:var(--gold); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="fw-bold mb-0"><i class="bi bi-person-fill me-2 text-success"></i>{{ title }}</h4>
+  <a href="{{ url_for('clients_list') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Назад</a>
+</div>
+
+<form method="post">
+  {{ form.hidden_tag() }}
+
+  <!-- Step indicator -->
+  <div class="step-indicator">
+    <div class="step active" onclick="showStep(1)" id="step-ind-1">1. Личные данные</div>
+    <div class="step" onclick="showStep(2)" id="step-ind-2">2. Документы</div>
+    <div class="step" onclick="showStep(3)" id="step-ind-3">3. Адрес</div>
+    <div class="step" onclick="showStep(4)" id="step-ind-4">4. Занятость</div>
+    <div class="step" onclick="showStep(5)" id="step-ind-5">5. Дополнительно</div>
+  </div>
+
+  <!-- Step 1: Personal -->
+  <div class="step-content card p-4" id="step-1">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">{{ form.last_name.label.text }} <span class="text-danger">*</span></label>
+        {{ form.last_name(class="form-control" + (" is-invalid" if form.last_name.errors else ""), placeholder="Алиев") }}
+        {% for e in form.last_name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ form.first_name.label.text }} <span class="text-danger">*</span></label>
+        {{ form.first_name(class="form-control" + (" is-invalid" if form.first_name.errors else ""), placeholder="Руслан") }}
+        {% for e in form.first_name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ form.middle_name.label.text }}</label>
+        {{ form.middle_name(class="form-control", placeholder="Магомедович") }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.birth_date.label.text }}</label>
+        {{ form.birth_date(class="form-control") }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.gender.label.text }}</label>
+        {{ form.gender(class="form-select") }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.nationality.label.text }}</label>
+        {{ form.nationality(class="form-control", placeholder="Российская") }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.citizenship.label.text }}</label>
+        {{ form.citizenship(class="form-control", placeholder="Россия") }}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">{{ form.birth_place.label.text }}</label>
+        {{ form.birth_place(class="form-control", placeholder="г. Москва") }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.marital_status.label.text }}</label>
+        {{ form.marital_status(class="form-select") }}
+      </div>
+      <div class="col-md-1">
+        <label class="form-label">{{ form.children_count.label.text }}</label>
+        {{ form.children_count(class="form-control", min=0) }}
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">{{ form.dependents_count.label.text }}</label>
+        {{ form.dependents_count(class="form-control", min=0) }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.education.label.text }}</label>
+        {{ form.education(class="form-select") }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.status.label.text }}</label>
+        {{ form.status(class="form-select") }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.phone.label.text }}</label>
+        {{ form.phone(class="form-control", placeholder="+7-900-000-00-00") }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.phone2.label.text }}</label>
+        {{ form.phone2(class="form-control", placeholder="+7-900-000-00-01") }}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">{{ form.email.label.text }}</label>
+        {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else ""), placeholder="example@mail.ru") }}
+        {% for e in form.email.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+    </div>
+    <div class="d-flex justify-content-end mt-3">
+      <button type="button" class="btn btn-primary" onclick="showStep(2)">Далее <i class="bi bi-arrow-right"></i></button>
+    </div>
+  </div>
+
+  <!-- Step 2: Documents -->
+  <div class="step-content card p-4 d-none" id="step-2">
+    <div class="row g-3">
+      <div class="col-md-2">
+        <label class="form-label">{{ form.passport_series.label.text }}</label>
+        {{ form.passport_series(class="form-control", placeholder="2214") }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.passport_number.label.text }}</label>
+        {{ form.passport_number(class="form-control", placeholder="345678") }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">{{ form.passport_issued_date.label.text }}</label>
+        {{ form.passport_issued_date(class="form-control") }}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ form.passport_expires_date.label.text }}</label>
+        {{ form.passport_expires_date(class="form-control") }}
+      </div>
+      <div class="col-12">
+        <label class="form-label">{{ form.passport_issued_by.label.text }}</label>
+        {{ form.passport_issued_by(class="form-control", placeholder="УФМС России по г. Москве") }}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ form.inn.label.text }}</label>
+        {{ form.inn(class="form-control", placeholder="7720123456") }}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ form.snils.label.text }}</label>
+        {{ form.snils(class="form-control", placeholder="123-456-789 01") }}
+      </div>
+    </div>
+    <div class="d-flex justify-content-between mt-3">
+      <button type="button" class="btn btn-outline-secondary" onclick="showStep(1)"><i class="bi bi-arrow-left"></i> Назад</button>
+      <button type="button" class="btn btn-primary" onclick="showStep(3)">Далее <i class="bi bi-arrow-right"></i></button>
+    </div>
+  </div>
+
+  <!-- Step 3: Address -->
+  <div class="step-content card p-4 d-none" id="step-3">
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label">{{ form.address_registration.label.text }}</label>
+        {{ form.address_registration(class="form-control", rows=2, placeholder="г. Москва, ул. Ленина, д. 10, кв. 5") }}
+      </div>
+      <div class="col-12">
+        <label class="form-label">{{ form.address_actual.label.text }}</label>
+        {{ form.address_actual(class="form-control", rows=2, placeholder="Фактический адрес (если отличается)") }}
+      </div>
+    </div>
+    <div class="d-flex justify-content-between mt-3">
+      <button type="button" class="btn btn-outline-secondary" onclick="showStep(2)"><i class="bi bi-arrow-left"></i> Назад</button>
+      <button type="button" class="btn btn-primary" onclick="showStep(4)">Далее <i class="bi bi-arrow-right"></i></button>
+    </div>
+  </div>
+
+  <!-- Step 4: Employment -->
+  <div class="step-content card p-4 d-none" id="step-4">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">{{ form.employment_type.label.text }}</label>
+        {{ form.employment_type(class="form-select") }}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ form.work_experience_months.label.text }}</label>
+        {{ form.work_experience_months(class="form-control", min=0, placeholder="36") }}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ form.position.label.text }}</label>
+        {{ form.position(class="form-control", placeholder="Инженер") }}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">{{ form.employer_name.label.text }}</label>
+        {{ form.employer_name(class="form-control", placeholder="ООО Компания") }}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">{{ form.employer_phone.label.text }}</label>
+        {{ form.employer_phone(class="form-control", placeholder="+7-495-000-00-00") }}
+      </div>
+      <div class="col-12">
+        <label class="form-label">{{ form.employer_address.label.text }}</label>
+        {{ form.employer_address(class="form-control", placeholder="г. Москва, ул. Тверская, д. 1") }}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ form.monthly_income.label.text }}</label>
+        <div class="input-group">
+          {{ form.monthly_income(class="form-control", placeholder="50000") }}
+          <span class="input-group-text">₽</span>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ form.additional_income.label.text }}</label>
+        <div class="input-group">
+          {{ form.additional_income(class="form-control", placeholder="0") }}
+          <span class="input-group-text">₽</span>
+        </div>
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <div class="form-check mb-2">
+          {{ form.income_confirmed(class="form-check-input") }}
+          <label class="form-check-label">{{ form.income_confirmed.label.text }}</label>
+        </div>
+      </div>
+    </div>
+    <div class="d-flex justify-content-between mt-3">
+      <button type="button" class="btn btn-outline-secondary" onclick="showStep(3)"><i class="bi bi-arrow-left"></i> Назад</button>
+      <button type="button" class="btn btn-primary" onclick="showStep(5)">Далее <i class="bi bi-arrow-right"></i></button>
+    </div>
+  </div>
+
+  <!-- Step 5: Additional -->
+  <div class="step-content card p-4 d-none" id="step-5">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">{{ form.credit_history_status.label.text }}</label>
+        {{ form.credit_history_status(class="form-select") }}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ form.credit_score.label.text }}</label>
+        {{ form.credit_score(class="form-control", min=0, max=999, placeholder="500") }}
+      </div>
+      <div class="col-md-4 d-flex align-items-end gap-3 pb-1">
+        <div class="form-check">
+          {{ form.own_property(class="form-check-input") }}
+          <label class="form-check-label">{{ form.own_property.label.text }}</label>
+        </div>
+        <div class="form-check">
+          {{ form.own_car(class="form-check-input") }}
+          <label class="form-check-label">{{ form.own_car.label.text }}</label>
+        </div>
+      </div>
+      <div class="col-md-4 d-flex align-items-center gap-3">
+        <div class="form-check">
+          {{ form.blacklisted(class="form-check-input") }}
+          <label class="form-check-label text-danger fw-bold">{{ form.blacklisted.label.text }}</label>
+        </div>
+      </div>
+      <div class="col-12">
+        <label class="form-label">{{ form.blacklist_reason.label.text }}</label>
+        {{ form.blacklist_reason(class="form-control", rows=2, placeholder="Причина добавления в чёрный список") }}
+      </div>
+      <div class="col-12">
+        <label class="form-label">{{ form.notes.label.text }}</label>
+        {{ form.notes(class="form-control", rows=3, placeholder="Любые дополнительные заметки...") }}
+      </div>
+    </div>
+    <div class="d-flex justify-content-between mt-4">
+      <button type="button" class="btn btn-outline-secondary" onclick="showStep(4)"><i class="bi bi-arrow-left"></i> Назад</button>
+      {{ form.submit(class="btn btn-primary btn-lg px-5") }}
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentStep = 1;
+function showStep(n) {
+  document.querySelectorAll('.step-content').forEach(el => el.classList.add('d-none'));
+  document.getElementById('step-' + n).classList.remove('d-none');
+  document.querySelectorAll('.step').forEach((el, i) => {
+    el.classList.remove('active', 'done');
+    if (i + 1 === n) el.classList.add('active');
+    else if (i + 1 < n) el.classList.add('done');
+  });
+  currentStep = n;
+}
+
+// If form has errors, show relevant step
+{% if form.errors %}
+  {% if form.last_name.errors or form.first_name.errors or form.email.errors %}
+    showStep(1);
+  {% elif form.passport_series.errors or form.inn.errors %}
+    showStep(2);
+  {% else %}
+    showStep(5);
+  {% endif %}
+{% endif %}
+</script>
+{% endblock %}

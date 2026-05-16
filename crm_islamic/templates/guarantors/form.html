@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumb %}
+  <li class="breadcrumb-item"><a href="{{ url_for('contracts_list') }}" class="text-decoration-none" style="color:var(--green)">Договоры</a></li>
+  {% if contract %}
+  <li class="breadcrumb-item"><a href="{{ url_for('contract_detail', contract_id=contract.id) }}" class="text-decoration-none" style="color:var(--green)">{{ contract.contract_number }}</a></li>
+  {% endif %}
+  <li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="fw-bold mb-0"><i class="bi bi-shield-fill me-2 text-success"></i>{{ title }}</h4>
+      {% if contract %}
+      <a href="{{ url_for('contract_detail', contract_id=contract.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>К договору</a>
+      {% endif %}
+    </div>
+
+    {% if contract %}
+    <div class="card mb-3" style="border-left:4px solid var(--gold);">
+      <div class="card-body py-2">
+        <strong>Договор:</strong> {{ contract.contract_number }} —
+        {{ contract.client.full_name }} | {{ contract.item_name }}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-header">Данные поручителя</div>
+      <div class="card-body">
+        <form method="post">
+          {{ form.hidden_tag() }}
+          {{ form.contract_id() }}
+          {{ form.client_id() }}
+
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">{{ form.last_name.label.text }} <span class="text-danger">*</span></label>
+              {{ form.last_name(class="form-control" + (" is-invalid" if form.last_name.errors else ""), placeholder="Иванов") }}
+              {% for e in form.last_name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.first_name.label.text }} <span class="text-danger">*</span></label>
+              {{ form.first_name(class="form-control" + (" is-invalid" if form.first_name.errors else ""), placeholder="Иван") }}
+              {% for e in form.first_name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.middle_name.label.text }}</label>
+              {{ form.middle_name(class="form-control", placeholder="Иванович") }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">{{ form.phone.label.text }}</label>
+              {{ form.phone(class="form-control", placeholder="+7-900-000-00-00") }}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ form.relationship.label.text }}</label>
+              {{ form.relationship(class="form-select") }}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ form.guarantor_type.label.text }}</label>
+              {{ form.guarantor_type(class="form-select", onchange="togglePropertyField(this.value)") }}
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">{{ form.passport_series.label.text }}</label>
+              {{ form.passport_series(class="form-control", placeholder="2214") }}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ form.passport_number.label.text }}</label>
+              {{ form.passport_number(class="form-control", placeholder="345678") }}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ form.passport_issued_date.label.text }}</label>
+              {{ form.passport_issued_date(class="form-control") }}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ form.monthly_income.label.text }}</label>
+              <div class="input-group">
+                {{ form.monthly_income(class="form-control", placeholder="50000") }}
+                <span class="input-group-text">₽</span>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label">{{ form.passport_issued_by.label.text }}</label>
+              {{ form.passport_issued_by(class="form-control", placeholder="УФМС России по г. Москве") }}
+            </div>
+            <div class="col-12">
+              <label class="form-label">{{ form.address_registration.label.text }}</label>
+              {{ form.address_registration(class="form-control", rows=2, placeholder="г. Москва, ул. Ленина, д. 1, кв. 1") }}
+            </div>
+            <div class="col-12">
+              <label class="form-label">{{ form.employer_name.label.text }}</label>
+              {{ form.employer_name(class="form-control", placeholder="Место работы") }}
+            </div>
+            <div class="col-12" id="property_field" style="display:none;">
+              <label class="form-label">{{ form.property_description.label.text }}</label>
+              {{ form.property_description(class="form-control", rows=3, placeholder="Описание залогового имущества: адрес, площадь, оценочная стоимость...") }}
+            </div>
+            <div class="col-12">
+              <label class="form-label">{{ form.notes.label.text }}</label>
+              {{ form.notes(class="form-control", rows=2) }}
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 mt-4">
+            {{ form.submit(class="btn btn-primary btn-lg") }}
+            {% if contract %}
+            <a href="{{ url_for('contract_detail', contract_id=contract.id) }}" class="btn btn-outline-secondary btn-lg">Отмена</a>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function togglePropertyField(val) {
+  document.getElementById('property_field').style.display = val === 'property' ? 'block' : 'none';
+}
+// Init
+togglePropertyField(document.querySelector('select[name="guarantor_type"]').value);
+</script>
+{% endblock %}

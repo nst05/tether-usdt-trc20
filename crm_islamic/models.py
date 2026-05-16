@@ -244,6 +244,10 @@ class PaymentSchedule(db.Model):
 
     payments = db.relationship('Payment', backref='schedule', lazy='dynamic')
 
+    @property
+    def remaining(self):
+        return max(0.0, (self.amount or 0.0) - (self.paid_amount or 0.0))
+
     def __repr__(self):
         return f'<PaymentSchedule {self.contract_id}#{self.installment_num}>'
 

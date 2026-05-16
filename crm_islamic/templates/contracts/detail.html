@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% block title %}{{ contract.contract_number }}{% endblock %}
+{% block breadcrumb %}
+  <li class="breadcrumb-item"><a href="{{ url_for('contracts_list') }}" class="text-decoration-none" style="color:var(--green)">Договоры</a></li>
+  <li class="breadcrumb-item active">{{ contract.contract_number }}</li>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Договор {{ contract.contract_number }}</h4>
+    <div class="d-flex gap-2 mt-1 align-items-center">
+      {% if contract.status == 'active' %}<span class="badge badge-active fs-6">Активный</span>
+      {% elif contract.status == 'overdue' %}<span class="badge badge-overdue fs-6">Просрочен</span>
+      {% elif contract.status == 'closed' %}<span class="badge badge-closed fs-6">Закрыт</span>
+      {% elif contract.status == 'draft' %}<span class="badge badge-draft fs-6">Черновик</span>
+      {% elif contract.status == 'cancelled' %}<span class="badge badge-cancelled fs-6">Отменён</span>{% endif %}
+      {% if contract.is_halal %}<span class="badge bg-success">☪ Halal</span>{% endif %}
+      {% if contract.sharia_board_approval %}<span class="badge bg-info">Шариат ✓</span>{% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('payment_new', contract_id=contract.id) }}" class="btn btn-success btn-sm"><i class="bi bi-cash me-1"></i>Принять платёж</a>
+    <a href="{{ url_for('contract_edit', contract_id=contract.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil me-1"></i>Редактировать</a>
+    <a href="{{ url_for('guarantor_new', contract_id=contract.id) }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-person-plus me-1"></i>Поручитель</a>
+    {% if contract.status in ['active', 'overdue', 'draft'] %}
+    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#closeModal"><i class="bi bi-x-circle me-1"></i>Закрыть</button>
+    <form method="post" action="{{ url_for('contract_cancel', contract_id=contract.id) }}" onsubmit="return confirm('Отменить договор?')" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-outline-warning btn-sm"><i class="bi bi-slash-circle me-1"></i>Отменить</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Mini stats -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card text-center p-3">
+      <div class="text-muted small">Сумма финансирования</div>
+      <div class="fw-bold fs-5">{{ "{:,.0f}".format(contract.financed_amount) }} ₽</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center p-3">
+      <div class="text-muted small">Выплачено</div>
+      <div class="fw-bold fs-5 text-success">{{ "{:,.0f}".format(contract.paid_amount) }} ₽</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center p-3">
+      <div class="text-muted small">Остаток</div>
+      <div class="fw-bold fs-5 text-danger">{{ "{:,.0f}".format(contract.remaining_amount) }} ₽</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center p-3">
+      <div class="text-muted small">Следующий платёж</div>
+      {% set np = contract.next_payment %}
+      {% if np %}
+        <div class="fw-bold">{{ np.due_date.strftime('%d.%m.%Y') }}</div>
+        <div class="text-muted small">{{ "{:,.0f}".format(np.amount) }} ₽</div>
+      {% else %}
+        <div class="text-muted">—</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Progress -->
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <div class="d-flex justify-content-between mb-1">
+      <span class="small text-muted">Прогресс выплат</span>
+      <strong>{{ contract.progress_percent }}%</strong>
+    </div>
+    <div class="progress" style="height:10px;">
+      <div class="progress-bar" style="width:{{ contract.progress_percent }}%"></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Left column: contract info -->
+  <div class="col-md-4">
+    <div class="card mb-3">
+      <div class="card-header">Информация о договоре</div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tr><th>Клиент</th><td><a href="{{ url_for('client_detail', client_id=contract.client_id) }}" class="text-decoration-none">{{ contract.client.full_name }}</a></td></tr>
+          <tr><th>Дата договора</th><td>{{ contract.contract_date.strftime('%d.%m.%Y') if contract.contract_date else '—' }}</td></tr>
+          <tr><th>Первый платёж</th><td>{{ contract.first_payment_date.strftime('%d.%m.%Y') if contract.first_payment_date else '—' }}</td></tr>
+          <tr><th>Последний платёж</th><td>{{ contract.last_payment_date.strftime('%d.%m.%Y') if contract.last_payment_date else '—' }}</td></tr>
+          <tr><th>День платежа</th><td>{{ contract.payment_day_of_month }}-е число</td></tr>
+          <tr><th>Срок</th><td>{{ contract.months }} мес.</td></tr>
+          <tr><th>Способ оплаты</th><td>{{ {'cash':'Наличные','bank_transfer':'Банковский перевод','card':'Карта','online':'Онлайн'}.get(contract.payment_method, '—') }}</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="card mb-3">
+      <div class="card-header">Товар</div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tr><th>Наименование</th><td>{{ contract.item_name }}</td></tr>
+          <tr><th>Категория</th><td>{{ {'appliances':'Техника','electronics':'Электроника','furniture':'Мебель','auto':'Авто','real_estate':'Недвижимость','education':'Образование','medical':'Медицина','other':'Другое'}.get(contract.item_category, '—') }}</td></tr>
+          <tr><th>Состояние</th><td>{{ 'Новый' if contract.item_condition == 'new' else 'Б/У' }}</td></tr>
+          <tr><th>Серийный №</th><td>{{ contract.item_serial_number or '—' }}</td></tr>
+          <tr><th>Поставщик</th><td>{{ contract.supplier_name or '—' }}</td></tr>
+        </table>
+        {% if contract.item_description %}<p class="mt-2 mb-0 small text-muted">{{ contract.item_description }}</p>{% endif %}
+      </div>
+    </div>
+    <div class="card mb-3">
+      <div class="card-header">Финансовые условия</div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tr><th>Себестоимость</th><td>{{ "{:,.0f}".format(contract.cost_price) }} ₽</td></tr>
+          <tr><th>Наценка</th><td>{{ contract.markup_percent }}%</td></tr>
+          <tr><th>Итоговая цена</th><td>{{ "{:,.0f}".format(contract.total_price) }} ₽</td></tr>
+          <tr><th>Первоначальный взнос</th><td>{{ "{:,.0f}".format(contract.down_payment) }} ₽</td></tr>
+          <tr><th>Сумма финансирования</th><td><strong>{{ "{:,.0f}".format(contract.financed_amount) }} ₽</strong></td></tr>
+          <tr><th>Ежемесячный платёж</th><td><strong>{{ "{:,.0f}".format(contract.monthly_payment) }} ₽</strong></td></tr>
+        </table>
+      </div>
+    </div>
+    {% if guarantors %}
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between">
+        <span>Поручители</span>
+        <a href="{{ url_for('guarantor_new', contract_id=contract.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-plus"></i></a>
+      </div>
+      <div class="card-body p-0">
+        {% for g in guarantors %}
+        <div class="p-3 border-bottom d-flex justify-content-between align-items-start">
+          <div>
+            <div class="fw-bold">{{ g.full_name }}</div>
+            <div class="small text-muted">{{ g.phone or '—' }}</div>
+            <div class="small">{{ {'parent':'Родитель','spouse':'Супруг','sibling':'Брат/Сестра','friend':'Друг','colleague':'Коллега','other':'Другое'}.get(g.relationship, '') }}</div>
+            <span class="badge bg-light text-dark small">{{ 'Личное' if g.guarantor_type == 'personal' else 'Имущественный залог' }}</span>
+          </div>
+          <form method="post" action="{{ url_for('guarantor_delete', g_id=g.id) }}" onsubmit="return confirm('Удалить поручителя?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if contract.sharia_board_note %}
+    <div class="card mb-3">
+      <div class="card-header">Шариатский совет</div>
+      <div class="card-body"><p class="mb-0">{{ contract.sharia_board_note }}</p></div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Right column: schedule + payments -->
+  <div class="col-md-8">
+    <!-- Schedule -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar3 me-2"></i>График платежей</span>
+        <span class="badge bg-secondary">{{ schedule|length }} платежей</span>
+      </div>
+      <div class="table-responsive" style="max-height:400px; overflow-y:auto;">
+        <table class="table table-sm mb-0">
+          <thead style="position:sticky;top:0;background:#fff;">
+            <tr><th>#</th><th>Дата</th><th>Сумма</th><th>Оплачено</th><th>Остаток</th><th>Статус</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for s in schedule %}
+            <tr class="{{ 'table-danger' if s.status == 'overdue' else 'table-success' if s.status == 'paid' else 'table-warning bg-opacity-25' if s.status == 'partial' else '' }}">
+              <td>{{ s.installment_num }}</td>
+              <td>{{ s.due_date.strftime('%d.%m.%Y') }}</td>
+              <td>{{ "{:,.0f}".format(s.amount) }} ₽</td>
+              <td>{{ "{:,.0f}".format(s.paid_amount) }} ₽</td>
+              <td>{{ "{:,.0f}".format(s.remaining) }} ₽</td>
+              <td>
+                {% if s.status == 'paid' %}<span class="badge badge-paid">Оплачен</span>
+                {% elif s.status == 'overdue' %}<span class="badge badge-overdue">Просрочен</span>
+                {% elif s.status == 'partial' %}<span class="badge badge-partial">Частично</span>
+                {% else %}<span class="badge badge-pending">Ожидает</span>{% endif %}
+              </td>
+              <td>
+                {% if s.status != 'paid' %}
+                <a href="{{ url_for('payment_new', contract_id=contract.id, schedule_id=s.id) }}" class="btn btn-xs btn-outline-success" style="padding:2px 6px;font-size:.75rem;" title="Принять платёж">
+                  <i class="bi bi-cash"></i>
+                </a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Payments history -->
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-cash-stack me-2"></i>История платежей</span>
+        <a href="{{ url_for('payment_new', contract_id=contract.id) }}" class="btn btn-sm btn-success"><i class="bi bi-plus"></i> Принять</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Дата</th><th>Сумма</th><th>Способ</th><th>Квитанция</th><th>Принял</th><th></th></tr></thead>
+          <tbody>
+            {% for p in payments %}
+            <tr>
+              <td>{{ p.payment_date.strftime('%d.%m.%Y') }}</td>
+              <td class="fw-bold text-success">{{ "{:,.0f}".format(p.amount) }} ₽</td>
+              <td>{{ {'cash':'Наличные','bank_transfer':'Банк. перевод','card':'Карта','online':'Онлайн'}.get(p.payment_method, '—') }}</td>
+              <td>{{ p.receipt_number or '—' }}</td>
+              <td>{{ p.received_by or '—' }}</td>
+              <td>
+                <form method="post" action="{{ url_for('payment_delete', payment_id=p.id) }}" onsubmit="return confirm('Удалить платёж?')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-xs btn-outline-danger" style="padding:2px 6px;font-size:.75rem;"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-3">Платежи не зарегистрированы</td></tr>
+            {% endfor %}
+          </tbody>
+          {% if payments %}
+          <tfoot>
+            <tr class="fw-bold">
+              <td>Итого</td>
+              <td>{{ "{:,.0f}".format(contract.paid_amount) }} ₽</td>
+              <td colspan="4"></td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Close Modal -->
+<div class="modal fade" id="closeModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Закрыть договор</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <form method="post" action="{{ url_for('contract_close', contract_id=contract.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <label class="form-label">Причина закрытия</label>
+          <textarea name="reason" class="form-control" rows="3" placeholder="Полное погашение / досрочное закрытие..."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+          <button type="submit" class="btn btn-danger">Закрыть договор</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
