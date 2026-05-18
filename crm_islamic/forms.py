@@ -199,6 +199,13 @@ class GuarantorForm(FlaskForm):
 class ContractForm(FlaskForm):
     client_id = HiddenField('client_id', validators=[DataRequired(message='Выберите клиента')])
 
+    # Contract number (auto-generated, but editable)
+    contract_number = StringField(
+        'Номер договора',
+        validators=[DataRequired(message='Обязательное поле'), Length(max=30)],
+        description='Формат: МУР-2024-001. Генерируется автоматически, можно изменить вручную.'
+    )
+
     # Item
     item_name = StringField('Наименование товара', validators=[DataRequired(message='Обязательное поле'), Length(max=200)])
     item_category = SelectField('Категория', choices=ITEM_CATEGORY_CHOICES, validators=[Optional()])

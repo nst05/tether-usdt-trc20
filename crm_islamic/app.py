@@ -408,11 +408,23 @@ def create_app(config=None):
         form = ContractForm()
         if request.method == 'GET':
             form.contract_date.data = date.today()
+            form.contract_number.data = generate_contract_number()
             if client_id:
                 form.client_id.data = str(client_id)
         if form.validate_on_submit():
+            # Check uniqueness of contract_number
+            existing = db.session.execute(
+                db.select(Contract).where(Contract.contract_number == form.contract_number.data)
+            ).scalar_one_or_none()
+            if existing:
+                form.contract_number.errors.append('Договор с таким номером уже существует')
+                clients_all = db.session.execute(
+                    db.select(Client).where(Client.status == 'active').order_by(Client.last_name)
+                ).scalars().all()
+                return render_template('contracts/form.html', form=form, title='Новый договор',
+                                       contract=None, client=client, clients_all=clients_all)
             contract = Contract(
-                contract_number=generate_contract_number(),
+                contract_number=form.contract_number.data.strip(),
                 client_id=int(form.client_id.data),
                 item_name=form.item_name.data,
                 item_category=form.item_category.data,
@@ -479,6 +491,22 @@ def create_app(config=None):
         if request.method == 'GET':
             form.client_id.data = str(contract.client_id)
         if form.validate_on_submit():
+            # Check uniqueness only if number changed
+            new_num = form.contract_number.data.strip()
+            if new_num != contract.contract_number:
+                existing = db.session.execute(
+                    db.select(Contract).where(Contract.contract_number == new_num)
+                ).scalar_one_or_none()
+                if existing:
+                    form.contract_number.errors.append('Договор с таким номером уже существует')
+                    clients_all = db.session.execute(
+                        db.select(Client).where(Client.status == 'active').order_by(Client.last_name)
+                    ).scalars().all()
+                    return render_template('contracts/form.html', form=form,
+                                           title='Редактировать договор',
+                                           contract=contract, client=contract.client,
+                                           clients_all=clients_all)
+            contract.contract_number = new_num
             contract.item_name = form.item_name.data
             contract.item_category = form.item_category.data
             contract.item_description = form.item_description.data
