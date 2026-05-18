@@ -707,8 +707,26 @@ def create_app(config=None):
             except Exception:
                 pass
         payments = db.session.execute(stmt).scalars().all()
+
+        today = date.today()
+        today_total = db.session.execute(
+            db.select(func.coalesce(func.sum(Payment.amount), 0)).where(
+                Payment.payment_date == today)
+        ).scalar() or 0
+        month_total = db.session.execute(
+            db.select(func.coalesce(func.sum(Payment.amount), 0)).where(
+                extract('year', Payment.payment_date) == today.year,
+                extract('month', Payment.payment_date) == today.month)
+        ).scalar() or 0
+        all_total = db.session.execute(
+            db.select(func.coalesce(func.sum(Payment.amount), 0))
+        ).scalar() or 0
+
         return render_template('payments/list.html', payments=payments, q=q,
-                               date_from=date_from, date_to=date_to)
+                               date_from=date_from, date_to=date_to,
+                               today_total=float(today_total),
+                               month_total=float(month_total),
+                               all_total=float(all_total))
 
     @app.route('/payments/new', methods=['GET', 'POST'])
     def payment_new():
