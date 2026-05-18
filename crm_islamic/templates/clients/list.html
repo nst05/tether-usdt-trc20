@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{% block title %}Клиенты — Мурабаха CRM{% endblock %}
+{% block breadcrumb %}<li class="breadcrumb-item active">Клиенты</li>{% endblock %}
+
+{% block head %}
+<style>
+.avatar-colors { --c0:#059669;--c1:#4f46e5;--c2:#d97706;--c3:#dc2626;--c4:#7c3aed;--c5:#0284c7;--c6:#db2777; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header d-flex justify-content-between align-items-center">
+  <div>
+    <h4><i class="bi bi-people-fill me-2" style="color:#60a5fa;"></i>Клиенты</h4>
+    <p class="subtitle">Управление клиентской базой</p>
+  </div>
+  <a href="{{ url_for('client_new') }}" class="btn btn-primary">
+    <i class="bi bi-person-plus me-1"></i>Новый клиент
+  </a>
+</div>
+
+<!-- Filter bar -->
+<div class="filter-bar mb-3">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-md-4">
+      <label class="form-label">Поиск</label>
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-search" style="color:var(--text-muted);"></i></span>
+        <input type="text" name="q" class="form-control" placeholder="Имя, телефон, ИНН..." value="{{ q }}">
+      </div>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Статус</label>
+      <select name="status" class="form-select">
+        <option value="">Все статусы</option>
+        {% for val, label in status_choices %}
+          <option value="{{ val }}" {% if status_f == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Занятость</label>
+      <select name="employment_type" class="form-select">
+        <option value="">Все типы</option>
+        {% for val, label in employment_choices %}
+          {% if val %}
+            <option value="{{ val }}" {% if emp_f == val %}selected{% endif %}>{{ label }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Балл (от — до)</label>
+      <div class="input-group">
+        <input type="number" name="score_min" class="form-control" placeholder="0" value="{{ score_min or '' }}" min="0" max="999">
+        <input type="number" name="score_max" class="form-control" placeholder="999" value="{{ score_max or '' }}" min="0" max="999">
+      </div>
+    </div>
+    <div class="col-md-2 d-flex gap-2">
+      <button type="submit" class="btn btn-primary flex-fill">
+        <i class="bi bi-search me-1"></i>Найти
+      </button>
+      <a href="{{ url_for('clients_list') }}" class="btn btn-outline-secondary" data-bs-toggle="tooltip" title="Сбросить фильтры">
+        <i class="bi bi-x-lg"></i>
+      </a>
+      <a href="{{ url_for('clients_list', q=q, status=status_f, employment_type=emp_f, score_min=score_min, score_max=score_max, export='csv') }}"
+         class="btn btn-outline-secondary" data-bs-toggle="tooltip" title="Экспорт CSV">
+        <i class="bi bi-download"></i>
+      </a>
+    </div>
+  </form>
+</div>
+
+<!-- Clients table -->
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table id="clientsTable" class="table mb-0 avatar-colors">
+        <thead>
+          <tr>
+            <th>Клиент</th>
+            <th>Телефон</th>
+            <th>Занятость</th>
+            <th>Доход</th>
+            <th>Договоры</th>
+            <th>Балл</th>
+            <th>Статус</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in clients %}
+          {% set av_colors = ['#059669','#4f46e5','#d97706','#dc2626','#7c3aed','#0284c7','#db2777'] %}
+          {% set av_color = av_colors[(c.full_name|length) % 7] %}
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-3">
+                <div class="avatar-circle" style="background:{{ av_color }};">
+                  {{ c.first_name[0] if c.first_name else '?' }}
+                </div>
+                <div>
+                  <a href="{{ url_for('client_detail', client_id=c.id) }}"
+                     class="fw-bold text-decoration-none" style="color:var(--text);">
+                    {{ c.full_name }}
+                  </a>
+                  {% if c.blacklisted %}
+                    <span class="badge badge-overdue ms-1">ЧС</span>
+                  {% endif %}
+                  {% if c.email %}
+                    <div style="font-size:0.78rem; color:var(--text-muted);">{{ c.email }}</div>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+            <td style="color:var(--text-muted);">{{ c.phone or '—' }}</td>
+            <td>
+              <span style="font-size:0.82rem; color:var(--text-muted);">
+                {% if c.employment_type == 'employed' %}Наёмный
+                {% elif c.employment_type == 'self_employed' %}Самозанятый
+                {% elif c.employment_type == 'business_owner' %}Бизнес
+                {% elif c.employment_type == 'unemployed' %}Безработный
+                {% else %}—{% endif %}
+              </span>
+            </td>
+            <td style="font-weight:500;">{{ "{:,.0f}".format(c.monthly_income or 0) }} ₽</td>
+            <td>
+              <span class="badge badge-closed me-1">{{ c.contracts.count() }} всего</span>
+              {% if c.active_contracts_count > 0 %}
+                <span class="badge badge-active">{{ c.active_contracts_count }} акт.</span>
+              {% endif %}
+            </td>
+            <td>
+              {% set score = c.credit_score %}
+              {% if score is none %}
+                <span class="badge badge-closed">—</span>
+              {% elif score >= 700 %}
+                <span class="badge" style="background:#d1fae5; color:#065f46;">{{ score }}</span>
+              {% elif score >= 500 %}
+                <span class="badge" style="background:#fef3c7; color:#92400e;">{{ score }}</span>
+              {% else %}
+                <span class="badge badge-overdue">{{ score }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if c.status == 'active' %}<span class="badge badge-active">Активный</span>
+              {% elif c.status == 'inactive' %}<span class="badge badge-closed">Неактивный</span>
+              {% elif c.status == 'blacklisted' %}<span class="badge badge-overdue">Чёрный список</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex gap-1">
+                <a href="{{ url_for('client_detail', client_id=c.id) }}"
+                   class="btn btn-sm btn-outline-primary"
+                   data-bs-toggle="tooltip" title="Просмотр">
+                  <i class="bi bi-eye"></i>
+                </a>
+                <a href="{{ url_for('client_edit', client_id=c.id) }}"
+                   class="btn btn-sm btn-outline-secondary"
+                   data-bs-toggle="tooltip" title="Редактировать">
+                  <i class="bi bi-pencil"></i>
+                </a>
+                <a href="{{ url_for('contract_new', client_id=c.id) }}"
+                   class="btn btn-sm btn-outline-success"
+                   data-bs-toggle="tooltip" title="Новый договор">
+                  <i class="bi bi-file-plus"></i>
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="8" class="text-center py-5" style="color:var(--text-muted);">
+              <i class="bi bi-people d-block mb-2" style="font-size:2.5rem; color:#e2e8f0;"></i>
+              Клиенты не найдены
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+  $('#clientsTable').DataTable({
+    language: { url: 'https://cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json' },
+    pageLength: 25,
+    order: [],
+    columnDefs: [{ orderable: false, targets: [7] }]
+  });
+});
+</script>
+{% endblock %}

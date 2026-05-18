@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+{% block title %}Платежи — Мурабаха CRM{% endblock %}
+{% block breadcrumb %}<li class="breadcrumb-item active">Платежи</li>{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-start">
+  <div>
+    <h4>История платежей</h4>
+    <p class="subtitle">Все зарегистрированные поступления по договорам</p>
+  </div>
+  <a href="{{ url_for('payment_new') }}" class="btn btn-primary">
+    <i class="bi bi-plus me-1"></i>Принять платёж
+  </a>
+</div>
+
+<!-- Stat Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="stat-card stat-emerald">
+      <div class="stat-label">Сегодня</div>
+      <div class="stat-val" style="font-size:1.6rem;">{{ "{:,.0f}".format(today_total) }} ₽</div>
+      <div class="stat-sub">поступило сегодня</div>
+      <i class="bi bi-calendar-check stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card stat-indigo">
+      <div class="stat-label">Этот месяц</div>
+      <div class="stat-val" style="font-size:1.6rem;">{{ "{:,.0f}".format(month_total) }} ₽</div>
+      <div class="stat-sub">за текущий месяц</div>
+      <i class="bi bi-calendar-month stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card stat-amber">
+      <div class="stat-label">За всё время</div>
+      <div class="stat-val" style="font-size:1.6rem;">{{ "{:,.0f}".format(all_total) }} ₽</div>
+      <div class="stat-sub">суммарно</div>
+      <i class="bi bi-bank stat-icon"></i>
+    </div>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+  <div class="card-body py-3">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label mb-1" style="font-size:.78rem">Поиск по договору</label>
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="Номер договора..." value="{{ q }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label mb-1" style="font-size:.78rem">Дата с</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from or '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label mb-1" style="font-size:.78rem">Дата по</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to or '' }}">
+      </div>
+      <div class="col-md-2 d-flex gap-1">
+        <button type="submit" class="btn btn-sm btn-primary flex-fill"><i class="bi bi-search"></i></button>
+        <a href="{{ url_for('payments_list') }}" class="btn btn-sm btn-outline-secondary" title="Сбросить"><i class="bi bi-x-lg"></i></a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table id="paymentsTable" class="table mb-0">
+        <thead>
+          <tr>
+            <th>Дата</th>
+            <th>Договор</th>
+            <th>Клиент</th>
+            <th>Сумма</th>
+            <th>Способ</th>
+            <th>Квитанция</th>
+            <th>Принял</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set total = namespace(sum=0) %}
+          {% for p in payments %}
+          {% set total.sum = total.sum + p.amount %}
+          <tr>
+            <td>{{ p.payment_date.strftime('%d.%m.%Y') }}</td>
+            <td>
+              <a href="{{ url_for('contract_detail', contract_id=p.contract_id) }}" class="fw-600 text-decoration-none" style="color:var(--primary-dark)">
+                {{ p.contract.contract_number }}
+              </a>
+            </td>
+            <td>{{ p.contract.client.full_name }}</td>
+            <td>
+              <span class="fw-600" style="color:var(--primary-dark);font-size:1rem">
+                {{ "{:,.0f}".format(p.amount) }} ₽
+              </span>
+            </td>
+            <td>
+              <span class="badge" style="background:#f1f5f9;color:#475569;font-weight:500">
+                {{ {'cash':'💵 Наличные','bank_transfer':'🏦 Банк. перевод','card':'💳 Карта','online':'🌐 Онлайн'}.get(p.payment_method,'—') }}
+              </span>
+            </td>
+            <td><code style="font-size:.82rem">{{ p.receipt_number or '—' }}</code></td>
+            <td style="font-size:.85rem;color:var(--text-muted)">{{ p.received_by or '—' }}</td>
+            <td>
+              <form method="post" action="{{ url_for('payment_delete', payment_id=p.id) }}" onsubmit="return confirm('Удалить платёж?')" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" title="Удалить">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="text-center py-5" style="color:var(--text-light)">
+            <i class="bi bi-cash-stack" style="font-size:2.5rem;display:block;margin-bottom:8px;opacity:.3"></i>
+            Платежи не найдены
+          </td></tr>
+          {% endfor %}
+        </tbody>
+        {% if payments %}
+        <tfoot>
+          <tr style="background:#f8fafc;font-weight:700">
+            <td colspan="3">Итого</td>
+            <td style="color:var(--primary-dark)">{{ "{:,.0f}".format(total.sum) }} ₽</td>
+            <td colspan="4"></td>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>.fw-600{font-weight:600}</style>
+<script>
+$(document).ready(function() {
+  $('#paymentsTable').DataTable({
+    language:{url:'https://cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json'},
+    pageLength:25,order:[[0,'desc']],
+    columnDefs:[{orderable:false,targets:[7]}]
+  });
+});
+</script>
+{% endblock %}

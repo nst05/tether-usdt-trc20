@@ -1,0 +1,536 @@
+{% extends 'base.html' %}
+{% block title %}{{ client.full_name }} — Клиент{% endblock %}
+{% block breadcrumb %}
+  <li class="breadcrumb-item">
+    <a href="{{ url_for('clients_list') }}" class="text-decoration-none">Клиенты</a>
+  </li>
+  <li class="breadcrumb-item active">{{ client.full_name }}</li>
+{% endblock %}
+
+{% block content %}
+{% set av_colors = ['#059669','#4f46e5','#d97706','#dc2626','#7c3aed','#0284c7','#db2777'] %}
+{% set av_color = av_colors[(client.full_name|length) % 7] %}
+
+<!-- Top action bar -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <nav aria-label="breadcrumb-mini" style="font-size:0.82rem; color:var(--text-muted);">
+    Карточка клиента
+  </nav>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('client_edit', client_id=client.id) }}"
+       class="btn btn-outline-secondary btn-sm"
+       data-bs-toggle="tooltip" title="Редактировать">
+      <i class="bi bi-pencil me-1"></i>Редактировать
+    </a>
+    <a href="{{ url_for('contract_new', client_id=client.id) }}"
+       class="btn btn-primary btn-sm"
+       data-bs-toggle="tooltip" title="Создать договор">
+      <i class="bi bi-file-plus me-1"></i>Новый договор
+    </a>
+    <form method="post" action="{{ url_for('client_delete', client_id=client.id) }}"
+          onsubmit="return confirm('Деактивировать клиента?')" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-outline-danger btn-sm" data-bs-toggle="tooltip" title="Деактивировать">
+        <i class="bi bi-person-x me-1"></i>Деактивировать
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Profile + Quick Stats -->
+<div class="row g-3 mb-4">
+  <!-- Profile Card -->
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-body text-center py-4">
+        <div class="avatar-lg mx-auto mb-3" style="background:{{ av_color }}; font-size:1.8rem;">
+          {{ client.first_name[0] if client.first_name else '?' }}{{ client.last_name[0] if client.last_name else '' }}
+        </div>
+        <h5 class="fw-bold mb-1">{{ client.full_name }}</h5>
+        {% if client.phone %}
+          <div style="color:var(--text-muted); font-size:0.875rem;">{{ client.phone }}</div>
+        {% endif %}
+        {% if client.email %}
+          <div style="color:var(--text-muted); font-size:0.82rem;">{{ client.email }}</div>
+        {% endif %}
+        <div class="d-flex justify-content-center gap-2 mt-3 flex-wrap">
+          {% if client.status == 'active' %}<span class="badge badge-active">Активный</span>
+          {% elif client.status == 'inactive' %}<span class="badge badge-closed">Неактивный</span>
+          {% elif client.status == 'blacklisted' %}<span class="badge badge-overdue">Чёрный список</span>
+          {% endif %}
+          {% if client.blacklisted %}<span class="badge badge-overdue">В ЧС</span>{% endif %}
+          {% if client.income_confirmed %}<span class="badge badge-active">Доход ✓</span>{% endif %}
+        </div>
+        <div class="section-divider"></div>
+        <!-- Credit Score Ring -->
+        {% set score = client.credit_score or 0 %}
+        {% set score_pct = ((score / 999) * 100)|int %}
+        {% set score_color = '#059669' if score >= 700 else '#d97706' if score >= 500 else '#dc2626' %}
+        <div class="mb-2">
+          <div class="d-flex justify-content-between mb-1">
+            <small style="color:var(--text-muted); font-weight:500; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Кредитный балл</small>
+            <strong style="color:{{ score_color }};">{{ score }} / 999</strong>
+          </div>
+          <div class="progress">
+            <div class="progress-bar" style="width:{{ score_pct }}%; background:{{ score_color }};"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Stats -->
+  <div class="col-lg-8">
+    <div class="row g-3 h-100">
+      <div class="col-6">
+        <div class="card h-100" style="border-left: 4px solid #10b981;">
+          <div class="card-body py-3">
+            <div style="font-size:0.72rem; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:4px;">Договоров</div>
+            <div style="font-size:2rem; font-weight:700; color:var(--text); line-height:1;">{{ contracts|length }}</div>
+            <div style="font-size:0.78rem; color:var(--text-muted);">всего оформлено</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="card h-100" style="border-left: 4px solid #6366f1;">
+          <div class="card-body py-3">
+            <div style="font-size:0.72rem; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:4px;">Финансировано</div>
+            {% set total_financed = contracts | sum(attribute='financed_amount') %}
+            <div style="font-size:1.4rem; font-weight:700; color:var(--text); line-height:1.2;">{{ "{:,.0f}".format(total_financed) }} ₽</div>
+            <div style="font-size:0.78rem; color:var(--text-muted);">суммарно</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="card h-100" style="border-left: 4px solid #ef4444;">
+          <div class="card-body py-3">
+            <div style="font-size:0.72rem; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:4px;">Остаток</div>
+            {% set total_remaining = contracts | sum(attribute='remaining_amount') %}
+            <div style="font-size:1.4rem; font-weight:700; color:#dc2626; line-height:1.2;">{{ "{:,.0f}".format(total_remaining) }} ₽</div>
+            <div style="font-size:0.78rem; color:var(--text-muted);">к оплате</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="card h-100" style="border-left: 4px solid #f59e0b;">
+          <div class="card-body py-3">
+            <div style="font-size:0.72rem; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:4px;">Ежемесячно</div>
+            {% set total_monthly = contracts | selectattr('status', 'in', ['active', 'overdue']) | sum(attribute='monthly_payment') %}
+            <div style="font-size:1.4rem; font-weight:700; color:var(--text); line-height:1.2;">{{ "{:,.0f}".format(total_monthly) }} ₽</div>
+            <div style="font-size:0.78rem; color:var(--text-muted);">плановый платёж</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab Navigation -->
+<ul class="nav nav-tabs mb-3" id="clientTabs">
+  <li class="nav-item">
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-personal">
+      <i class="bi bi-person me-1"></i>Личные данные
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-docs">
+      <i class="bi bi-card-text me-1"></i>Документы
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-work">
+      <i class="bi bi-briefcase me-1"></i>Адрес и работа
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-finance">
+      <i class="bi bi-graph-up me-1"></i>Доходы
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-contracts">
+      <i class="bi bi-file-earmark-text me-1"></i>Договоры
+      <span class="badge badge-closed ms-1">{{ contracts|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-guarantor">
+      <i class="bi bi-shield me-1"></i>Поручительства
+      <span class="badge badge-closed ms-1">{{ guarantor_records|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-notes">
+      <i class="bi bi-sticky me-1"></i>Примечания
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+  <!-- Personal Tab -->
+  <div class="tab-pane fade show active" id="tab-personal">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">Личные данные</div>
+          <div class="card-body p-0">
+            <div class="info-row px-4"><span class="label">ФИО</span><span class="value">{{ client.full_name }}</span></div>
+            <div class="info-row px-4"><span class="label">Дата рождения</span><span class="value">{{ client.birth_date.strftime('%d.%m.%Y') if client.birth_date else '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Место рождения</span><span class="value">{{ client.birth_place or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Пол</span><span class="value">{{ 'Мужской' if client.gender == 'male' else 'Женский' if client.gender == 'female' else '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Гражданство</span><span class="value">{{ client.citizenship or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Национальность</span><span class="value">{{ client.nationality or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Семейное положение</span><span class="value">{{ {'single':'Холост','married':'Женат/Замужем','divorced':'Разведён','widowed':'Вдовец'}.get(client.marital_status, '—') }}</span></div>
+            <div class="info-row px-4"><span class="label">Дети</span><span class="value">{{ client.children_count or 0 }}</span></div>
+            <div class="info-row px-4"><span class="label">Иждивенцы</span><span class="value">{{ client.dependents_count or 0 }}</span></div>
+            <div class="info-row px-4"><span class="label">Образование</span><span class="value">{{ {'school':'Среднее','college':'Ср. специальное','university':'Высшее','postgraduate':'Аспирантура'}.get(client.education, '—') }}</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card mb-3">
+          <div class="card-header">Контакты</div>
+          <div class="card-body p-0">
+            <div class="info-row px-4"><span class="label">Телефон</span><span class="value">{{ client.phone or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Телефон 2</span><span class="value">{{ client.phone2 or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Email</span><span class="value">{{ client.email or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Адрес (прописка)</span><span class="value">{{ client.address_registration or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Адрес (факт.)</span><span class="value">{{ client.address_actual or '—' }}</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">Имущество</div>
+          <div class="card-body">
+            <div class="d-flex gap-4 justify-content-center">
+              <div class="text-center">
+                <div class="mb-2">
+                  <i class="bi bi-house-fill" style="font-size:2.2rem; color:{{ '#059669' if client.own_property else '#e2e8f0' }};"></i>
+                </div>
+                <div class="fw-bold" style="font-size:0.85rem;">{{ 'Есть' if client.own_property else 'Нет' }}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted);">Недвижимость</div>
+              </div>
+              <div class="text-center">
+                <div class="mb-2">
+                  <i class="bi bi-car-front-fill" style="font-size:2.2rem; color:{{ '#059669' if client.own_car else '#e2e8f0' }};"></i>
+                </div>
+                <div class="fw-bold" style="font-size:0.85rem;">{{ 'Есть' if client.own_car else 'Нет' }}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted);">Автомобиль</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Documents Tab -->
+  <div class="tab-pane fade" id="tab-docs">
+    <div class="row g-3">
+      <div class="col-md-5">
+        <div class="card">
+          <div class="card-header">Паспорт и реквизиты</div>
+          <div class="card-body p-0">
+            <div class="info-row px-4"><span class="label">Серия паспорта</span><span class="value">{{ client.passport_series or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Номер паспорта</span><span class="value">{{ client.passport_number or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Кем выдан</span><span class="value">{{ client.passport_issued_by or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Дата выдачи</span><span class="value">{{ client.passport_issued_date.strftime('%d.%m.%Y') if client.passport_issued_date else '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">Срок действия</span><span class="value">{{ client.passport_expires_date.strftime('%d.%m.%Y') if client.passport_expires_date else '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">ИНН</span><span class="value">{{ client.inn or '—' }}</span></div>
+            <div class="info-row px-4"><span class="label">СНИЛС</span><span class="value">{{ client.snils or '—' }}</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-7">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-paperclip me-2"></i>Сканы и документы</span>
+            <span class="badge badge-closed">{{ documents|length }}</span>
+          </div>
+          <div class="card-body">
+            <form method="POST" action="{{ url_for('document_upload') }}" enctype="multipart/form-data" class="mb-3">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="entity_type" value="client">
+              <input type="hidden" name="entity_id" value="{{ client.id }}">
+              <div class="row g-2 align-items-end">
+                <div class="col-md-5">
+                  <label class="form-label form-label-sm">Тип документа</label>
+                  <select name="doc_type" class="form-select form-select-sm">
+                    <option value="passport_front">Паспорт (лицевая)</option>
+                    <option value="passport_back">Паспорт (оборот)</option>
+                    <option value="inn">ИНН</option>
+                    <option value="snils">СНИЛС</option>
+                    <option value="income">Справка о доходах</option>
+                    <option value="photo">Фото</option>
+                    <option value="other">Другое</option>
+                  </select>
+                </div>
+                <div class="col-md-7">
+                  <label class="form-label form-label-sm">Файл (PDF, изображение, DOC)</label>
+                  <input type="file" name="file" class="form-control form-control-sm" accept="image/*,.pdf,.doc,.docx" required>
+                </div>
+                <div class="col-md-9">
+                  <input type="text" name="notes" class="form-control form-control-sm" placeholder="Примечание (необязательно)">
+                </div>
+                <div class="col-md-3">
+                  <button type="submit" class="btn btn-sm btn-primary w-100">
+                    <i class="bi bi-upload me-1"></i>Загрузить
+                  </button>
+                </div>
+              </div>
+            </form>
+            {% if documents %}
+            <div class="list-group list-group-flush">
+              {% for doc in documents %}
+              <div class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi {{ doc.icon }}" style="font-size:1.4rem;color:var(--primary-dark);flex-shrink:0;"></i>
+                  <div>
+                    <div style="font-size:.85rem;font-weight:600;">{{ doc.original_name }}</div>
+                    <div style="font-size:.72rem;color:var(--text-muted);">{{ doc.type_label }} · {{ doc.file_size_kb }} КБ · {{ doc.uploaded_at.strftime('%d.%m.%Y') }}</div>
+                    {% if doc.notes %}<div style="font-size:.72rem;color:var(--text-muted);">{{ doc.notes }}</div>{% endif %}
+                  </div>
+                </div>
+                <div class="d-flex gap-1 ms-2" style="flex-shrink:0;">
+                  <a href="{{ url_for('document_download', doc_id=doc.id) }}" target="_blank" class="btn btn-sm btn-outline-primary" title="Открыть"><i class="bi bi-eye"></i></a>
+                  <a href="{{ url_for('document_download', doc_id=doc.id) }}" download class="btn btn-sm btn-outline-secondary" title="Скачать"><i class="bi bi-download"></i></a>
+                  <form method="POST" action="{{ url_for('document_delete', doc_id=doc.id) }}" onsubmit="return confirm('Удалить файл?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Удалить"><i class="bi bi-trash"></i></button>
+                  </form>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-3" style="color:var(--text-muted);">
+              <i class="bi bi-file-earmark d-block mb-2" style="font-size:2rem;color:#e2e8f0;"></i>
+              Документы не загружены
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Work Tab -->
+  <div class="tab-pane fade" id="tab-work">
+    <div class="card" style="max-width:680px;">
+      <div class="card-header">Занятость</div>
+      <div class="card-body p-0">
+        <div class="info-row px-4"><span class="label">Тип занятости</span><span class="value">{{ {'employed':'Наёмный работник','self_employed':'Самозанятый','business_owner':'Владелец бизнеса','unemployed':'Безработный'}.get(client.employment_type, '—') }}</span></div>
+        <div class="info-row px-4"><span class="label">Работодатель</span><span class="value">{{ client.employer_name or '—' }}</span></div>
+        <div class="info-row px-4"><span class="label">Адрес работодателя</span><span class="value">{{ client.employer_address or '—' }}</span></div>
+        <div class="info-row px-4"><span class="label">Тел. работодателя</span><span class="value">{{ client.employer_phone or '—' }}</span></div>
+        <div class="info-row px-4"><span class="label">Должность</span><span class="value">{{ client.position or '—' }}</span></div>
+        <div class="info-row px-4"><span class="label">Стаж работы</span><span class="value">{{ client.work_experience_months or 0 }} мес.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Finance Tab -->
+  <div class="tab-pane fade" id="tab-finance">
+    <div class="card" style="max-width:600px;">
+      <div class="card-header">Финансы и кредитная история</div>
+      <div class="card-body p-0">
+        <div class="info-row px-4">
+          <span class="label">Ежемесячный доход</span>
+          <span class="value fw-bold" style="color:#059669;">{{ "{:,.0f}".format(client.monthly_income or 0) }} ₽</span>
+        </div>
+        <div class="info-row px-4">
+          <span class="label">Доп. доход</span>
+          <span class="value">{{ "{:,.0f}".format(client.additional_income or 0) }} ₽</span>
+        </div>
+        <div class="info-row px-4">
+          <span class="label">Доход подтверждён</span>
+          <span class="value">{% if client.income_confirmed %}<span class="badge badge-active">Да</span>{% else %}<span class="badge badge-closed">Нет</span>{% endif %}</span>
+        </div>
+        <div class="info-row px-4">
+          <span class="label">Кредитная история</span>
+          <span class="value">
+            <span class="badge {% if client.credit_history_status == 'good' %}badge-active{% elif client.credit_history_status == 'satisfactory' %}badge-partial{% elif client.credit_history_status == 'bad' %}badge-overdue{% else %}badge-closed{% endif %}">
+              {{ {'good':'Хорошая','satisfactory':'Удовлетворительная','bad':'Плохая','none':'Нет данных'}.get(client.credit_history_status, '—') }}
+            </span>
+          </span>
+        </div>
+        <div class="info-row px-4">
+          <span class="label">В чёрном списке</span>
+          <span class="value">{% if client.blacklisted %}<span class="badge badge-overdue">Да</span>{% else %}<span class="badge badge-active">Нет</span>{% endif %}</span>
+        </div>
+        {% if client.blacklist_reason %}
+        <div class="info-row px-4"><span class="label">Причина</span><span class="value">{{ client.blacklist_reason }}</span></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Contracts Tab -->
+  <div class="tab-pane fade" id="tab-contracts">
+    <div class="d-flex justify-content-end mb-3">
+      <a href="{{ url_for('contract_new', client_id=client.id) }}" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus me-1"></i>Новый договор
+      </a>
+    </div>
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead>
+            <tr>
+              <th>№ Договора</th>
+              <th>Товар</th>
+              <th>Сумма</th>
+              <th>Выплачено</th>
+              <th>Прогресс</th>
+              <th>Статус</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in contracts %}
+            <tr class="{{ 'table-overdue' if c.status == 'overdue' else '' }}">
+              <td>
+                <a href="{{ url_for('contract_detail', contract_id=c.id) }}"
+                   class="fw-bold text-decoration-none" style="color:var(--primary-dark);">
+                  {{ c.contract_number }}
+                </a>
+              </td>
+              <td style="font-size:0.85rem;">{{ c.item_name }}</td>
+              <td style="font-weight:500;">{{ "{:,.0f}".format(c.financed_amount) }} ₽</td>
+              <td style="color:#059669; font-weight:500;">{{ "{:,.0f}".format(c.paid_amount) }} ₽</td>
+              <td style="min-width:130px;">
+                <div class="progress mb-1"><div class="progress-bar" style="width:{{ c.progress_percent }}%;"></div></div>
+                <small style="color:var(--text-muted);">{{ c.progress_percent }}%</small>
+              </td>
+              <td>
+                {% if c.status == 'active' %}<span class="badge badge-active">Активный</span>
+                {% elif c.status == 'overdue' %}<span class="badge badge-overdue">Просрочен</span>
+                {% elif c.status == 'closed' %}<span class="badge badge-closed">Закрыт</span>
+                {% elif c.status == 'draft' %}<span class="badge badge-draft">Черновик</span>
+                {% elif c.status == 'cancelled' %}<span class="badge badge-cancelled">Отменён</span>{% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('contract_detail', contract_id=c.id) }}"
+                   class="btn btn-sm btn-outline-primary"
+                   data-bs-toggle="tooltip" title="Открыть">
+                  <i class="bi bi-eye"></i>
+                </a>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted py-4">Нет договоров</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Guarantor Tab -->
+  <div class="tab-pane fade" id="tab-guarantor">
+    {% set client_guarantors = guarantor_records | selectattr('contract_id', 'none') | list %}
+    {% set contract_guarantors = guarantor_records | rejectattr('contract_id', 'none') | list %}
+
+    <!-- Client-level guarantors -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="mb-0" style="color:var(--primary-dark);">Поручители клиента</h6>
+      <a href="{{ url_for('guarantor_new', client_id=client.id) }}" class="btn btn-sm btn-outline-primary">
+        <i class="bi bi-person-plus me-1"></i>Добавить поручителя
+      </a>
+    </div>
+    {% if client_guarantors %}
+    <div class="row g-3 mb-4">
+      {% for g in client_guarantors %}
+      <div class="col-md-6">
+        <div class="card" style="border-left:4px solid var(--gold);">
+          <div class="card-body py-3">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <div style="font-weight:700;">{{ g.full_name }}</div>
+                <div style="font-size:.82rem;color:var(--text-muted);">{{ g.phone or '—' }}{% if g.email %} · {{ g.email }}{% endif %}</div>
+                <div class="d-flex gap-1 mt-1 flex-wrap">
+                  <span class="badge badge-closed">{{ 'Личное' if g.guarantor_type == 'personal' else 'Залог' }}</span>
+                  {% if g.relationship %}<span class="badge badge-pending">{{ {'parent':'Родитель','spouse':'Супруг/а','sibling':'Брат/Сестра','friend':'Друг','colleague':'Коллега','other':'Другое'}.get(g.relationship, g.relationship) }}</span>{% endif %}
+                </div>
+                {% if g.passport_series or g.passport_number %}
+                <div style="font-size:.76rem;color:var(--text-muted);margin-top:4px;">Паспорт: {{ g.passport_series or '' }} {{ g.passport_number or '' }}</div>
+                {% endif %}
+                {% if g.employer_name %}
+                <div style="font-size:.76rem;color:var(--text-muted);">Работа: {{ g.employer_name }}</div>
+                {% endif %}
+                {% if g.monthly_income %}
+                <div style="font-size:.76rem;color:var(--text-muted);">Доход: {{ "{:,.0f}".format(g.monthly_income) }} ₽/мес</div>
+                {% endif %}
+              </div>
+              <div class="d-flex gap-1">
+                <a href="{{ url_for('guarantor_edit', g_id=g.id) }}" class="btn btn-sm btn-outline-secondary" title="Редактировать"><i class="bi bi-pencil"></i></a>
+                <form method="post" action="{{ url_for('guarantor_delete', g_id=g.id) }}" onsubmit="return confirm('Удалить поручителя?')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-danger" title="Удалить"><i class="bi bi-trash"></i></button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-3 mb-4" style="color:var(--text-muted);">
+      <i class="bi bi-shield d-block mb-2" style="font-size:2rem;color:#e2e8f0;"></i>
+      Нет поручителей, привязанных к клиенту
+    </div>
+    {% endif %}
+
+    <!-- Contract-linked guarantor records -->
+    {% if contract_guarantors %}
+    <h6 class="mb-3" style="color:var(--primary-dark);">Поручительства по договорам</h6>
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead>
+            <tr><th>Договор</th><th>Клиент по договору</th><th>Тип</th><th>Отношение</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for g in contract_guarantors %}
+            <tr>
+              <td>
+                <a href="{{ url_for('contract_detail', contract_id=g.contract_id) }}"
+                   class="text-decoration-none fw-bold" style="color:var(--primary-dark);">
+                  {{ g.contract.contract_number if g.contract else '—' }}
+                </a>
+              </td>
+              <td>{{ g.contract.client.full_name if g.contract else '—' }}</td>
+              <td><span class="badge badge-closed">{{ 'Личное' if g.guarantor_type == 'personal' else 'Залог' }}</span></td>
+              <td style="color:var(--text-muted);">{{ {'parent':'Родитель','spouse':'Супруг','sibling':'Брат/Сестра','friend':'Друг','colleague':'Коллега','other':'Другое'}.get(g.relationship, '—') }}</td>
+              <td>
+                {% if g.contract_id %}
+                <a href="{{ url_for('contract_detail', contract_id=g.contract_id) }}" class="btn btn-sm btn-outline-primary" title="Договор"><i class="bi bi-eye"></i></a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Notes Tab -->
+  <div class="tab-pane fade" id="tab-notes">
+    <div class="card" style="max-width:680px;">
+      <div class="card-body">
+        {% if client.notes %}
+          <p style="color:var(--text); line-height:1.7;">{{ client.notes }}</p>
+        {% else %}
+          <div class="text-center py-3" style="color:var(--text-muted);">
+            <i class="bi bi-sticky d-block mb-2" style="font-size:2rem; color:#e2e8f0;"></i>
+            Заметки отсутствуют.
+            <a href="{{ url_for('client_edit', client_id=client.id) }}" style="color:var(--primary-dark);">Добавить заметку</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
