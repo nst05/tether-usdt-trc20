@@ -1,4 +1,5 @@
 import os
+import sys
 import csv
 import io
 from datetime import date, datetime, timedelta
@@ -22,10 +23,25 @@ from . import backup as backup_module
 
 
 def create_app(config=None):
-    app = Flask(__name__)
+    # Resolve template/static paths when running as PyInstaller bundle
+    if getattr(sys, 'frozen', False):
+        base_dir = sys._MEIPASS
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    app = Flask(
+        __name__,
+        template_folder=os.path.join(base_dir, 'templates'),
+        static_folder=os.path.join(base_dir, 'static') if os.path.isdir(os.path.join(base_dir, 'static')) else None,
+    )
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'islamic-crm-secret-key-2024-murabaha')
-    
-    db_path = os.path.join(os.path.dirname(__file__), 'crm_islamic.db')
+
+    # DB lives next to the executable when frozen, otherwise next to this file
+    if getattr(sys, 'frozen', False):
+        db_dir = os.environ.get('CRM_DB_DIR', os.path.dirname(sys.executable))
+    else:
+        db_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(db_dir, 'crm_islamic.db')
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['WTF_CSRF_ENABLED'] = True
