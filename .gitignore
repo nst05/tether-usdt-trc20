@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite3
+backups/
+uploads/
+instance/
+.env
+dist/
+build/
+*.spec
