@@ -2,81 +2,74 @@
 {% block title %}Клиенты — Мурабаха CRM{% endblock %}
 {% block breadcrumb %}<li class="breadcrumb-item active">Клиенты</li>{% endblock %}
 
-{% block head %}
-<style>
-.avatar-colors { --c0:#059669;--c1:#4f46e5;--c2:#d97706;--c3:#dc2626;--c4:#7c3aed;--c5:#0284c7;--c6:#db2777; }
-</style>
-{% endblock %}
-
 {% block content %}
-<!-- Page Header -->
 <div class="page-header d-flex justify-content-between align-items-center">
   <div>
     <h4><i class="bi bi-people-fill me-2" style="color:#60a5fa;"></i>Клиенты</h4>
-    <p class="subtitle">Управление клиентской базой</p>
+    <p class="subtitle">Управление клиентской базой · <span id="visibleCount">{{ clients|length }}</span> из {{ clients|length }}</p>
   </div>
-  <a href="{{ url_for('client_new') }}" class="btn btn-primary">
-    <i class="bi bi-person-plus me-1"></i>Новый клиент
-  </a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('clients_list', export='csv') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-download me-1"></i>CSV
+    </a>
+    <a href="{{ url_for('client_new') }}" class="btn btn-primary">
+      <i class="bi bi-person-plus me-1"></i>Новый клиент
+    </a>
+  </div>
 </div>
 
-<!-- Filter bar -->
-<div class="filter-bar mb-3">
-  <form method="get" class="row g-2 align-items-end">
-    <div class="col-md-4">
-      <label class="form-label">Поиск</label>
-      <div class="input-group">
-        <span class="input-group-text"><i class="bi bi-search" style="color:var(--text-muted);"></i></span>
-        <input type="text" name="q" class="form-control" placeholder="Имя, телефон, ИНН..." value="{{ q }}">
+<!-- Фильтры — живая фильтрация без перезагрузки -->
+<div class="card mb-3">
+  <div class="card-body py-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label mb-1" style="font-size:.78rem">Поиск</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-search" style="color:var(--text-muted);"></i></span>
+          <input type="text" id="liveSearch" class="form-control" placeholder="Имя, телефон, email, ИНН..." autofocus>
+          <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('liveSearch').value='';filterTable()"><i class="bi bi-x-lg"></i></button>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label mb-1" style="font-size:.78rem">Статус</label>
+        <select id="filterStatus" class="form-select" onchange="filterTable()">
+          <option value="">Все статусы</option>
+          <option value="active">Активный</option>
+          <option value="inactive">Неактивный</option>
+          <option value="blacklisted">Чёрный список</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label mb-1" style="font-size:.78rem">Занятость</label>
+        <select id="filterEmp" class="form-select" onchange="filterTable()">
+          <option value="">Все типы</option>
+          <option value="employed">Наёмный</option>
+          <option value="self_employed">Самозанятый</option>
+          <option value="business_owner">Бизнес</option>
+          <option value="unemployed">Безработный</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label mb-1" style="font-size:.78rem">Кред. балл (от — до)</label>
+        <div class="input-group">
+          <input type="number" id="filterScoreMin" class="form-control" placeholder="0" min="0" max="999" oninput="filterTable()">
+          <input type="number" id="filterScoreMax" class="form-control" placeholder="999" min="0" max="999" oninput="filterTable()">
+        </div>
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-outline-secondary w-100" onclick="resetFilters()">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Сбросить
+        </button>
       </div>
     </div>
-    <div class="col-md-2">
-      <label class="form-label">Статус</label>
-      <select name="status" class="form-select">
-        <option value="">Все статусы</option>
-        {% for val, label in status_choices %}
-          <option value="{{ val }}" {% if status_f == val %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-2">
-      <label class="form-label">Занятость</label>
-      <select name="employment_type" class="form-select">
-        <option value="">Все типы</option>
-        {% for val, label in employment_choices %}
-          {% if val %}
-            <option value="{{ val }}" {% if emp_f == val %}selected{% endif %}>{{ label }}</option>
-          {% endif %}
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-2">
-      <label class="form-label">Балл (от — до)</label>
-      <div class="input-group">
-        <input type="number" name="score_min" class="form-control" placeholder="0" value="{{ score_min or '' }}" min="0" max="999">
-        <input type="number" name="score_max" class="form-control" placeholder="999" value="{{ score_max or '' }}" min="0" max="999">
-      </div>
-    </div>
-    <div class="col-md-2 d-flex gap-2">
-      <button type="submit" class="btn btn-primary flex-fill">
-        <i class="bi bi-search me-1"></i>Найти
-      </button>
-      <a href="{{ url_for('clients_list') }}" class="btn btn-outline-secondary" data-bs-toggle="tooltip" title="Сбросить фильтры">
-        <i class="bi bi-x-lg"></i>
-      </a>
-      <a href="{{ url_for('clients_list', q=q, status=status_f, employment_type=emp_f, score_min=score_min, score_max=score_max, export='csv') }}"
-         class="btn btn-outline-secondary" data-bs-toggle="tooltip" title="Экспорт CSV">
-        <i class="bi bi-download"></i>
-      </a>
-    </div>
-  </form>
+  </div>
 </div>
 
-<!-- Clients table -->
+<!-- Таблица клиентов -->
 <div class="card">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table id="clientsTable" class="table mb-0 avatar-colors">
+      <table class="table mb-0" id="clientsTable">
         <thead>
           <tr>
             <th>Клиент</th>
@@ -89,11 +82,16 @@
             <th>Действия</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="clientsBody">
           {% for c in clients %}
           {% set av_colors = ['#059669','#4f46e5','#d97706','#dc2626','#7c3aed','#0284c7','#db2777'] %}
           {% set av_color = av_colors[(c.full_name|length) % 7] %}
-          <tr>
+          <tr
+            data-search="{{ (c.full_name + ' ' + (c.phone or '') + ' ' + (c.email or '') + ' ' + (c.inn or '') + ' ' + (c.phone2 or ''))|lower }}"
+            data-status="{{ c.status }}"
+            data-emp="{{ c.employment_type or '' }}"
+            data-score="{{ c.credit_score or 0 }}"
+          >
             <td>
               <div class="d-flex align-items-center gap-3">
                 <div class="avatar-circle" style="background:{{ av_color }};">
@@ -104,24 +102,18 @@
                      class="fw-bold text-decoration-none" style="color:var(--text);">
                     {{ c.full_name }}
                   </a>
-                  {% if c.blacklisted %}
-                    <span class="badge badge-overdue ms-1">ЧС</span>
-                  {% endif %}
-                  {% if c.email %}
-                    <div style="font-size:0.78rem; color:var(--text-muted);">{{ c.email }}</div>
-                  {% endif %}
+                  {% if c.blacklisted %}<span class="badge badge-overdue ms-1">ЧС</span>{% endif %}
+                  {% if c.email %}<div style="font-size:0.78rem;color:var(--text-muted);">{{ c.email }}</div>{% endif %}
                 </div>
               </div>
             </td>
             <td style="color:var(--text-muted);">{{ c.phone or '—' }}</td>
-            <td>
-              <span style="font-size:0.82rem; color:var(--text-muted);">
-                {% if c.employment_type == 'employed' %}Наёмный
-                {% elif c.employment_type == 'self_employed' %}Самозанятый
-                {% elif c.employment_type == 'business_owner' %}Бизнес
-                {% elif c.employment_type == 'unemployed' %}Безработный
-                {% else %}—{% endif %}
-              </span>
+            <td style="font-size:0.82rem;color:var(--text-muted);">
+              {% if c.employment_type == 'employed' %}Наёмный
+              {% elif c.employment_type == 'self_employed' %}Самозанятый
+              {% elif c.employment_type == 'business_owner' %}Бизнес
+              {% elif c.employment_type == 'unemployed' %}Безработный
+              {% else %}—{% endif %}
             </td>
             <td style="font-weight:500;">{{ "{:,.0f}".format(c.monthly_income or 0) }} ₽</td>
             <td>
@@ -131,16 +123,11 @@
               {% endif %}
             </td>
             <td>
-              {% set score = c.credit_score %}
-              {% if score is none %}
-                <span class="badge badge-closed">—</span>
-              {% elif score >= 700 %}
-                <span class="badge" style="background:#d1fae5; color:#065f46;">{{ score }}</span>
-              {% elif score >= 500 %}
-                <span class="badge" style="background:#fef3c7; color:#92400e;">{{ score }}</span>
-              {% else %}
-                <span class="badge badge-overdue">{{ score }}</span>
-              {% endif %}
+              {% set score = c.credit_score or 0 %}
+              {% if score >= 700 %}<span class="badge" style="background:#d1fae5;color:#065f46;">{{ score }}</span>
+              {% elif score >= 500 %}<span class="badge" style="background:#fef3c7;color:#92400e;">{{ score }}</span>
+              {% elif score > 0 %}<span class="badge badge-overdue">{{ score }}</span>
+              {% else %}<span class="badge badge-closed">—</span>{% endif %}
             </td>
             <td>
               {% if c.status == 'active' %}<span class="badge badge-active">Активный</span>
@@ -150,29 +137,17 @@
             </td>
             <td>
               <div class="d-flex gap-1">
-                <a href="{{ url_for('client_detail', client_id=c.id) }}"
-                   class="btn btn-sm btn-outline-primary"
-                   data-bs-toggle="tooltip" title="Просмотр">
-                  <i class="bi bi-eye"></i>
-                </a>
-                <a href="{{ url_for('client_edit', client_id=c.id) }}"
-                   class="btn btn-sm btn-outline-secondary"
-                   data-bs-toggle="tooltip" title="Редактировать">
-                  <i class="bi bi-pencil"></i>
-                </a>
-                <a href="{{ url_for('contract_new', client_id=c.id) }}"
-                   class="btn btn-sm btn-outline-success"
-                   data-bs-toggle="tooltip" title="Новый договор">
-                  <i class="bi bi-file-plus"></i>
-                </a>
+                <a href="{{ url_for('client_detail', client_id=c.id) }}" class="btn btn-sm btn-outline-primary" title="Просмотр"><i class="bi bi-eye"></i></a>
+                <a href="{{ url_for('client_edit', client_id=c.id) }}" class="btn btn-sm btn-outline-secondary" title="Редактировать"><i class="bi bi-pencil"></i></a>
+                <a href="{{ url_for('contract_new', client_id=c.id) }}" class="btn btn-sm btn-outline-success" title="Новый договор"><i class="bi bi-file-plus"></i></a>
               </div>
             </td>
           </tr>
           {% else %}
-          <tr>
+          <tr id="emptyRow">
             <td colspan="8" class="text-center py-5" style="color:var(--text-muted);">
-              <i class="bi bi-people d-block mb-2" style="font-size:2.5rem; color:#e2e8f0;"></i>
-              Клиенты не найдены
+              <i class="bi bi-people d-block mb-2" style="font-size:2.5rem;color:#e2e8f0;"></i>
+              Клиентов пока нет
             </td>
           </tr>
           {% endfor %}
@@ -181,17 +156,53 @@
     </div>
   </div>
 </div>
+
+<!-- Пустой результат поиска -->
+<div id="noResults" class="text-center py-5" style="display:none;color:var(--text-muted);">
+  <i class="bi bi-search d-block mb-2" style="font-size:2.5rem;color:#e2e8f0;"></i>
+  Ничего не найдено — попробуйте изменить фильтры
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-$(document).ready(function() {
-  $('#clientsTable').DataTable({
-    language: { url: 'https://cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json' },
-    pageLength: 25,
-    order: [],
-    columnDefs: [{ orderable: false, targets: [7] }]
+function filterTable() {
+  const q = document.getElementById('liveSearch').value.toLowerCase().trim();
+  const status = document.getElementById('filterStatus').value;
+  const emp = document.getElementById('filterEmp').value;
+  const sMin = parseInt(document.getElementById('filterScoreMin').value) || 0;
+  const sMax = parseInt(document.getElementById('filterScoreMax').value) || 999;
+
+  const rows = document.querySelectorAll('#clientsBody tr[data-search]');
+  let visible = 0;
+
+  rows.forEach(row => {
+    const matchQ = !q || row.dataset.search.includes(q);
+    const matchStatus = !status || row.dataset.status === status;
+    const matchEmp = !emp || row.dataset.emp === emp;
+    const score = parseInt(row.dataset.score) || 0;
+    const matchScore = score >= sMin && score <= sMax;
+
+    const show = matchQ && matchStatus && matchEmp && matchScore;
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
   });
-});
+
+  document.getElementById('visibleCount').textContent = visible;
+  document.getElementById('noResults').style.display = (visible === 0 && rows.length > 0) ? 'block' : 'none';
+}
+
+function resetFilters() {
+  document.getElementById('liveSearch').value = '';
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('filterEmp').value = '';
+  document.getElementById('filterScoreMin').value = '';
+  document.getElementById('filterScoreMax').value = '';
+  filterTable();
+  document.getElementById('liveSearch').focus();
+}
+
+// Живой поиск при вводе
+document.getElementById('liveSearch').addEventListener('input', filterTable);
 </script>
 {% endblock %}

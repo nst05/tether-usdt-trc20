@@ -274,33 +274,9 @@ def create_app(config=None):
 
     @app.route('/clients')
     def clients_list():
-        q = request.args.get('q', '').strip()
-        status_f = request.args.get('status', '')
-        emp_f = request.args.get('employment_type', '')
-        score_min = request.args.get('score_min', type=int)
-        score_max = request.args.get('score_max', type=int)
-
-        stmt = db.select(Client)
-        if q:
-            like = f'%{q}%'
-            stmt = stmt.where(
-                (Client.last_name.ilike(like)) |
-                (Client.first_name.ilike(like)) |
-                (Client.middle_name.ilike(like)) |
-                (Client.phone.ilike(like)) |
-                (Client.inn.ilike(like))
-            )
-        if status_f:
-            stmt = stmt.where(Client.status == status_f)
-        if emp_f:
-            stmt = stmt.where(Client.employment_type == emp_f)
-        if score_min is not None:
-            stmt = stmt.where(Client.credit_score >= score_min)
-        if score_max is not None:
-            stmt = stmt.where(Client.credit_score <= score_max)
-
-        stmt = stmt.order_by(desc(Client.created_at))
-        clients = db.session.execute(stmt).scalars().all()
+        clients = db.session.execute(
+            db.select(Client).order_by(desc(Client.created_at))
+        ).scalars().all()
 
         # Export CSV
         if request.args.get('export') == 'csv':
@@ -319,11 +295,7 @@ def create_app(config=None):
             return Response(generate(), mimetype='text/csv',
                             headers={'Content-Disposition': 'attachment;filename=clients.csv'})
 
-        return render_template('clients/list.html', clients=clients,
-                               q=q, status_f=status_f, emp_f=emp_f,
-                               score_min=score_min, score_max=score_max,
-                               status_choices=STATUS_CHOICES,
-                               employment_choices=EMPLOYMENT_CHOICES)
+        return render_template('clients/list.html', clients=clients)
 
     @app.route('/clients/new', methods=['GET', 'POST'])
     def client_new():
