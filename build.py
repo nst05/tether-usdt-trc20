@@ -1,6 +1,7 @@
 """
-Сборка CRM Исламская рассрочка в одиночный .exe
+Сборка CRM Исламская рассрочка — автономное GUI приложение.
 Запуск: python build.py
+Результат: dist/CRM_Murabaha.exe
 """
 import subprocess
 import sys
@@ -23,38 +24,39 @@ def run(cmd, **kw):
 
 def main():
     print("=" * 60)
-    print("  ☪  Сборка CRM Исламская рассрочка (одиночный .exe)")
+    print("  ☪  Сборка CRM Исламская рассрочка — GUI приложение")
     print("=" * 60)
 
-    # 1. Проверка Python версии
     if sys.version_info < (3, 10):
-        print("[ОШИБКА] Требуется Python 3.10 или новее.")
+        print("[ОШИБКА] Требуется Python 3.10+")
         sys.exit(1)
 
-    # 2. Установка зависимостей
+    # 1. Зависимости
     print("\n[1/4] Установка зависимостей...")
     run([sys.executable, '-m', 'pip', 'install',
-         '-r', REQS, 'pyinstaller>=6.0', '--quiet'])
+         '-r', REQS,
+         'pywebview>=4.4',
+         'pyinstaller>=6.0',
+         '--quiet'])
 
-    # 3. Очистка предыдущей сборки
+    # 2. Очистка
     print("\n[2/4] Очистка предыдущей сборки...")
-    for folder in ['build', os.path.join(DIST, 'crm_islamic')]:
-        path = os.path.join(ROOT, folder)
-        if os.path.exists(path):
-            shutil.rmtree(path)
-            print(f"  Удалено: {path}")
-    # Удалить старый одиночный exe если был
-    old_exe = os.path.join(DIST, 'crm_islamic.exe')
+    for folder in ['build']:
+        p = os.path.join(ROOT, folder)
+        if os.path.exists(p):
+            shutil.rmtree(p)
+            print(f"  Удалено: {p}")
+    old_exe = os.path.join(DIST, 'CRM_Murabaha.exe')
     if os.path.exists(old_exe):
         os.remove(old_exe)
+        print(f"  Удалено: {old_exe}")
 
-    # 4. Компиляция
-    print("\n[3/4] Компиляция (это займёт 1-3 минуты)...")
+    # 3. Компиляция
+    print("\n[3/4] Компиляция (2–5 минут)...")
     run([sys.executable, '-m', 'PyInstaller', '--noconfirm', SPEC], cwd=ROOT)
 
-    # 5. Итог
-    exe_name = 'crm_islamic.exe' if sys.platform == 'win32' else 'crm_islamic'
-    exe_path = os.path.join(DIST, exe_name)
+    # 4. Результат
+    exe_path = os.path.join(DIST, 'CRM_Murabaha.exe')
 
     print("\n[4/4] Готово!")
     print("=" * 60)
@@ -63,13 +65,10 @@ def main():
         print(f"  Файл:   {exe_path}")
         print(f"  Размер: {size_mb:.1f} МБ")
         print()
-        print("  Запуск:")
-        print(f"    {exe_path}")
-        print("    Откройте браузер: http://localhost:5000")
-        print()
-        print("  База данных и загруженные файлы хранятся рядом с .exe")
+        print("  Запуск: двойной клик на CRM_Murabaha.exe")
+        print("  База данных и файлы хранятся рядом с .exe")
     else:
-        print("[ОШИБКА] Файл не найден — проверьте вывод выше.")
+        print("[ОШИБКА] Файл не создан — проверьте вывод выше.")
     print("=" * 60)
 
 

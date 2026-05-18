@@ -1,13 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec — одиночный .exe для CRM Исламская рассрочка.
+PyInstaller spec — автономное GUI приложение CRM Исламская рассрочка.
 Сборка:  python build.py
-         или: pyinstaller crm_islamic.spec
-Результат: dist/crm_islamic.exe
+Результат: dist/CRM_Murabaha.exe  (одиночный файл, без консоли)
 """
 
 import os
-import sys
 
 block_cipher = None
 
@@ -15,13 +13,14 @@ ROOT = os.path.abspath('.')
 PKG  = os.path.join(ROOT, 'crm_islamic')
 
 a = Analysis(
-    [os.path.join(PKG, 'run.py')],
+    [os.path.join(ROOT, 'gui_run.py')],
     pathex=[ROOT, PKG],
     binaries=[],
     datas=[
         (os.path.join(PKG, 'templates'), 'templates'),
     ],
     hiddenimports=[
+        # Flask и расширения
         'flask',
         'flask.templating',
         'flask_sqlalchemy',
@@ -34,11 +33,13 @@ a = Analysis(
         'wtforms.fields.datetime',
         'wtforms.fields.numeric',
         'wtforms.fields.simple',
+        # SQLAlchemy
         'sqlalchemy',
         'sqlalchemy.dialects.sqlite',
         'sqlalchemy.orm',
         'sqlalchemy.ext.declarative',
         'sqlalchemy.pool',
+        # Прочие зависимости Flask
         'email_validator',
         'idna',
         'dateutil',
@@ -53,29 +54,21 @@ a = Analysis(
         'werkzeug.security',
         'itsdangerous',
         'click',
-        'csv',
-        'io',
-        'json',
-        'os',
-        'sys',
-        'uuid',
-        'mimetypes',
+        # pywebview (Windows backend — Edge WebView2)
+        'webview',
+        'webview.platforms.winforms',
+        'webview.platforms.cef',
+        'clr',
+        # Стандартные
+        'csv', 'io', 'json', 'os', 'sys',
+        'uuid', 'mimetypes', 'socket', 'threading',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'tkinter',
-        'matplotlib',
-        'numpy',
-        'pandas',
-        'PIL',
-        'PyQt5',
-        'PyQt6',
-        'wx',
-        'scipy',
-        'IPython',
-        'notebook',
+        'tkinter', 'matplotlib', 'numpy', 'pandas',
+        'PIL', 'PyQt5', 'PyQt6', 'wx', 'scipy', 'IPython',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -85,20 +78,20 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-# Одиночный .exe — все данные упакованы внутрь
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
     a.zipfiles,
     a.datas,
-    name='crm_islamic',
+    name='CRM_Murabaha',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,       # консоль показывает адрес http://localhost:5000
-    icon=None,          # укажите путь к .ico если нужна иконка
+    console=False,      # без консоли — сразу GUI окно
+    windowed=True,
+    icon=None,          # укажите .ico если нужна иконка
 )
