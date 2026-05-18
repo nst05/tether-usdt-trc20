@@ -10,3 +10,4 @@ instance/
 dist/
 build/
 *.spec
+build.py
