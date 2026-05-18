@@ -9,5 +9,3 @@ instance/
 .env
 dist/
 build/
-*.spec
-build.py
