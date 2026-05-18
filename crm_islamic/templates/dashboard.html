@@ -2,107 +2,138 @@
 {% block title %}Дашборд — Мурабаха CRM{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<!-- Page Header -->
+<div class="page-header d-flex justify-content-between align-items-start">
   <div>
-    <h4 class="mb-0 fw-bold">Дашборд</h4>
-    <small class="text-muted">{{ today.strftime('%A, %d %B %Y') }}</small>
+    <h4>Добро пожаловать 👋</h4>
+    <p class="subtitle">{{ today.strftime('%A, %d %B %Y') }}</p>
   </div>
   <div class="d-flex gap-2">
-    <a href="{{ url_for('client_new') }}" class="btn btn-primary btn-sm"><i class="bi bi-person-plus me-1"></i>Новый клиент</a>
-    <a href="{{ url_for('contract_new') }}" class="btn btn-gold btn-sm"><i class="bi bi-plus-circle me-1"></i>Новый договор</a>
+    <a href="{{ url_for('client_new') }}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-person-plus me-1"></i>Новый клиент
+    </a>
+    <a href="{{ url_for('contract_new') }}" class="btn btn-sm btn-gold">
+      <i class="bi bi-plus-lg me-1"></i>Новый договор
+    </a>
   </div>
 </div>
 
 <!-- STAT CARDS -->
 <div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
-    <div class="stat-card" style="background:linear-gradient(135deg,#0f4f2e,#1a7a4a); color:#fff;">
-      <small>Клиенты</small>
-      <h2>{{ total_clients }}</h2>
-      <div style="font-size:.8rem; opacity:.7">активных клиентов</div>
-      <i class="bi bi-people-fill icon"></i>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card stat-emerald">
+      <div class="stat-label">Клиенты</div>
+      <div class="stat-val">{{ total_clients }}</div>
+      <div class="stat-sub">всего в системе</div>
+      <i class="bi bi-people-fill stat-icon"></i>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="stat-card" style="background:linear-gradient(135deg,#c9a227,#e8bb3a); color:#fff;">
-      <small>Договоры</small>
-      <h2>{{ active_contracts }}</h2>
-      <div style="font-size:.8rem; opacity:.8">активных</div>
-      <i class="bi bi-file-text-fill icon"></i>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card stat-amber">
+      <div class="stat-label">Договоры</div>
+      <div class="stat-val">{{ active_contracts }}</div>
+      <div class="stat-sub">активных</div>
+      <i class="bi bi-file-earmark-text-fill stat-icon"></i>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="stat-card" style="background:linear-gradient(135deg,#1e40af,#3b82f6); color:#fff;">
-      <small>Портфель</small>
-      <h2 style="font-size:1.4rem;">{{ "{:,.0f}".format(portfolio) }} ₽</h2>
-      <div style="font-size:.8rem; opacity:.8">финансируемая сумма</div>
-      <i class="bi bi-wallet2 icon"></i>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card stat-indigo">
+      <div class="stat-label">Портфель</div>
+      <div class="stat-val" style="font-size:1.4rem;">{{ "{:,.0f}".format(portfolio) }} ₽</div>
+      <div class="stat-sub">финансируется</div>
+      <i class="bi bi-wallet2 stat-icon"></i>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="stat-card" style="background:linear-gradient(135deg,#991b1b,#dc2626); color:#fff;">
-      <small>Просрочки</small>
-      <h2>{{ overdue_contracts }}</h2>
-      <div style="font-size:.8rem; opacity:.8">договоров просрочено</div>
-      <i class="bi bi-exclamation-triangle-fill icon"></i>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card stat-rose">
+      <div class="stat-label">Просрочки</div>
+      <div class="stat-val">{{ overdue_contracts }}</div>
+      <div class="stat-sub">договоров</div>
+      <i class="bi bi-exclamation-triangle-fill stat-icon"></i>
     </div>
   </div>
 </div>
 
-<!-- TODAY CARD + CHARTS -->
+<!-- CHARTS ROW -->
 <div class="row g-3 mb-4">
-  <div class="col-md-8">
+  <div class="col-lg-8">
     <div class="card h-100">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-graph-up text-success me-2"></i>Поступления за 12 месяцев</span>
+        <span><i class="bi bi-graph-up me-2" style="color:var(--primary);"></i>Поступления за 12 месяцев</span>
       </div>
       <div class="card-body">
         <canvas id="monthlyChart" height="80"></canvas>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="card mb-3">
-      <div class="card-body text-center">
-        <div class="text-muted small mb-1">Сегодняшние поступления</div>
-        <div style="font-size:2rem; font-weight:700; color:var(--green)">{{ "{:,.0f}".format(today_collected) }} ₽</div>
-        <div class="text-muted small">{{ today.strftime('%d.%m.%Y') }}</div>
+  <div class="col-lg-4">
+    <!-- Today collected -->
+    <div class="card mb-3" style="background: linear-gradient(135deg,#f0fdf4,#dcfce7); border-color:#bbf7d0;">
+      <div class="card-body text-center py-3">
+        <div class="text-muted small mb-1" style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.06em; font-weight:600; color:#059669;">Сегодняшние поступления</div>
+        <div style="font-size:1.9rem; font-weight:700; color:#047857; line-height:1.1;">
+          {{ "{:,.0f}".format(today_collected) }} ₽
+        </div>
+        <div style="font-size:0.78rem; color:#6b7280; margin-top:3px;">{{ today.strftime('%d.%m.%Y') }}</div>
       </div>
     </div>
+    <!-- Status doughnut -->
     <div class="card">
-      <div class="card-header"><i class="bi bi-pie-chart me-2"></i>Договоры по статусам</div>
-      <div class="card-body">
-        <canvas id="statusChart" height="160"></canvas>
+      <div class="card-header"><i class="bi bi-pie-chart me-2" style="color:var(--primary);"></i>По статусам</div>
+      <div class="card-body" style="padding-top:12px;">
+        <canvas id="statusChart" height="170"></canvas>
       </div>
     </div>
   </div>
 </div>
 
-<!-- UPCOMING + OVERDUE TABLES -->
+<!-- TABLES ROW -->
 <div class="row g-3">
+  <!-- Upcoming payments -->
   <div class="col-md-6">
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-calendar-check text-warning me-2"></i>Платежи (ближайшие 7 дней)</span>
-        <span class="badge bg-warning text-dark">{{ upcoming|length }}</span>
+        <span><i class="bi bi-calendar-check me-2" style="color:var(--gold);"></i>Платежи (ближайшие 7 дней)</span>
+        <span class="badge" style="background:#fef3c7; color:#92400e;">{{ upcoming|length }}</span>
       </div>
       <div class="table-responsive">
-        <table class="table table-hover mb-0">
-          <thead><tr><th>Дата</th><th>Договор</th><th>Клиент</th><th>Сумма</th></tr></thead>
+        <table class="table mb-0">
+          <thead>
+            <tr>
+              <th>Дата</th>
+              <th>Договор</th>
+              <th>Клиент</th>
+              <th>Сумма</th>
+            </tr>
+          </thead>
           <tbody>
             {% for s in upcoming %}
             <tr>
               <td>
-                {% if s.due_date == today %}<span class="badge bg-danger">Сегодня</span>
-                {% elif s.due_date < today %}<span class="text-danger fw-bold">{{ s.due_date.strftime('%d.%m') }}</span>
-                {% else %}{{ s.due_date.strftime('%d.%m.%Y') }}{% endif %}
+                {% if s.due_date == today %}
+                  <span class="badge badge-overdue">Сегодня</span>
+                {% elif s.due_date < today %}
+                  <span class="fw-600 text-danger" style="font-weight:600;">{{ s.due_date.strftime('%d.%m') }}</span>
+                {% else %}
+                  <span style="color:var(--text-muted);">{{ s.due_date.strftime('%d.%m.%Y') }}</span>
+                {% endif %}
               </td>
-              <td><a href="{{ url_for('contract_detail', contract_id=s.contract_id) }}" class="text-decoration-none">{{ s.contract.contract_number }}</a></td>
-              <td>{{ s.contract.client.full_name }}</td>
-              <td class="fw-bold">{{ "{:,.0f}".format(s.amount) }} ₽</td>
+              <td>
+                <a href="{{ url_for('contract_detail', contract_id=s.contract_id) }}"
+                   class="text-decoration-none fw-bold" style="color:var(--primary-dark);">
+                  {{ s.contract.contract_number }}
+                </a>
+              </td>
+              <td style="color:var(--text-muted);">{{ s.contract.client.full_name }}</td>
+              <td><span class="fw-bold" style="color:var(--text);">{{ "{:,.0f}".format(s.amount) }} ₽</span></td>
             </tr>
             {% else %}
-            <tr><td colspan="4" class="text-center text-muted py-3">Нет предстоящих платежей</td></tr>
+            <tr>
+              <td colspan="4" class="text-center py-4" style="color:var(--text-muted);">
+                <i class="bi bi-calendar-check d-block mb-2" style="font-size:1.8rem; color:#d1fae5;"></i>
+                Нет предстоящих платежей
+              </td>
+            </tr>
             {% endfor %}
           </tbody>
         </table>
@@ -110,20 +141,33 @@
     </div>
   </div>
 
+  <!-- Overdue contracts -->
   <div class="col-md-6">
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-exclamation-circle text-danger me-2"></i>Просроченные договоры</span>
-        <span class="badge bg-danger">{{ overdue_list|length }}</span>
+        <span><i class="bi bi-exclamation-circle me-2" style="color:var(--danger);"></i>Просроченные договоры</span>
+        <span class="badge badge-overdue">{{ overdue_list|length }}</span>
       </div>
       <div class="table-responsive">
-        <table class="table table-hover mb-0">
-          <thead><tr><th>Договор</th><th>Клиент</th><th>Просрочка</th><th>Действие</th></tr></thead>
+        <table class="table mb-0">
+          <thead>
+            <tr>
+              <th>Договор</th>
+              <th>Клиент</th>
+              <th>Просрочка</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
             {% for c in overdue_list %}
             <tr class="table-overdue">
-              <td><a href="{{ url_for('contract_detail', contract_id=c.id) }}" class="text-decoration-none fw-bold">{{ c.contract_number }}</a></td>
-              <td>{{ c.client.full_name }}</td>
+              <td>
+                <a href="{{ url_for('contract_detail', contract_id=c.id) }}"
+                   class="text-decoration-none fw-bold" style="color:var(--danger-dark);">
+                  {{ c.contract_number }}
+                </a>
+              </td>
+              <td style="font-size:0.85rem;">{{ c.client.full_name }}</td>
               <td>
                 {% set overdue_s = c.overdue_schedules %}
                 {% if overdue_s %}
@@ -132,13 +176,20 @@
                 {% endif %}
               </td>
               <td>
-                <a href="{{ url_for('payment_new', contract_id=c.id) }}" class="btn btn-sm btn-success" title="Принять платёж">
+                <a href="{{ url_for('payment_new', contract_id=c.id) }}"
+                   class="btn btn-sm btn-success"
+                   data-bs-toggle="tooltip" title="Принять платёж">
                   <i class="bi bi-cash"></i>
                 </a>
               </td>
             </tr>
             {% else %}
-            <tr><td colspan="4" class="text-center text-muted py-3">Нет просрочек</td></tr>
+            <tr>
+              <td colspan="4" class="text-center py-4" style="color:var(--text-muted);">
+                <i class="bi bi-check-circle d-block mb-2" style="font-size:1.8rem; color:#d1fae5;"></i>
+                Нет просрочек
+              </td>
+            </tr>
             {% endfor %}
           </tbody>
         </table>
@@ -150,29 +201,57 @@
 
 {% block scripts %}
 <script>
-fetch('/api/reports/monthly').then(r=>r.json()).then(data => {
+// Monthly bar chart
+fetch('/api/reports/monthly').then(r => r.json()).then(data => {
   const ctx = document.getElementById('monthlyChart').getContext('2d');
   new Chart(ctx, {
     type: 'bar',
     data: {
       labels: data.map(d => d.month),
       datasets: [{
-        label: 'Поступления, ₽',
+        label: 'Поступления',
         data: data.map(d => d.amount),
-        backgroundColor: 'rgba(15, 79, 46, 0.7)',
-        borderColor: '#0f4f2e',
-        borderWidth: 1,
-        borderRadius: 4,
+        backgroundColor: function(ctx) {
+          const chart = ctx.chart;
+          const {ctx: canvasCtx, chartArea} = chart;
+          if (!chartArea) return 'rgba(16,185,129,0.7)';
+          const gradient = canvasCtx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          gradient.addColorStop(0, 'rgba(16,185,129,0.85)');
+          gradient.addColorStop(1, 'rgba(16,185,129,0.15)');
+          return gradient;
+        },
+        borderColor: '#10b981',
+        borderWidth: 2,
+        borderRadius: 8,
+        borderSkipped: false,
       }]
     },
     options: {
-      responsive: true, plugins: { legend: { display: false } },
-      scales: { y: { ticks: { callback: v => v.toLocaleString('ru') } } }
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0f172a',
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: {
+            label: ctx => ' ' + ctx.parsed.y.toLocaleString('ru') + ' ₽'
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#64748b' } },
+        y: {
+          grid: { color: '#f1f5f9' },
+          ticks: { callback: v => v.toLocaleString('ru'), font: { size: 11 }, color: '#64748b' }
+        }
+      }
     }
   });
 });
 
-fetch('/api/reports/stats').then(r=>r.json()).then(data => {
+// Status doughnut
+fetch('/api/reports/stats').then(r => r.json()).then(data => {
   const ctx2 = document.getElementById('statusChart').getContext('2d');
   const s = data.by_status;
   new Chart(ctx2, {
@@ -181,11 +260,27 @@ fetch('/api/reports/stats').then(r=>r.json()).then(data => {
       labels: ['Активный', 'Просрочен', 'Закрыт', 'Черновик', 'Отменён'],
       datasets: [{
         data: [s.active, s.overdue, s.closed, s.draft, s.cancelled],
-        backgroundColor: ['#1a7a4a','#dc2626','#6b7280','#3b82f6','#f59e0b'],
-        borderWidth: 2, borderColor: '#fff',
+        backgroundColor: ['#10b981', '#ef4444', '#94a3b8', '#6366f1', '#f59e0b'],
+        borderWidth: 3,
+        borderColor: '#fff',
+        hoverBorderWidth: 3,
       }]
     },
-    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
+    options: {
+      responsive: true,
+      cutout: '65%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { font: { size: 11 }, color: '#475569', padding: 12, usePointStyle: true, pointStyleWidth: 8 }
+        },
+        tooltip: {
+          backgroundColor: '#0f172a',
+          padding: 10,
+          cornerRadius: 8,
+        }
+      }
+    }
   });
 });
 </script>
