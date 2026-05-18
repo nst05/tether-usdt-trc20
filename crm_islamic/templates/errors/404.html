@@ -1,10 +1,12 @@
 {% extends 'base.html' %}
 {% block title %}404 — Страница не найдена{% endblock %}
 {% block content %}
-<div class="text-center py-5">
-  <div style="font-size:6rem; color:#e5e7eb;">404</div>
-  <h3>Страница не найдена</h3>
-  <p class="text-muted">Запрашиваемая страница не существует или была удалена.</p>
-  <a href="{{ url_for('dashboard') }}" class="btn btn-primary">На главную</a>
+<div class="text-center py-5" style="max-width:480px;margin:0 auto">
+  <div style="font-size:7rem;font-weight:900;line-height:1;background:linear-gradient(135deg,var(--primary-dark),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">404</div>
+  <h4 class="mt-2 mb-2">Страница не найдена</h4>
+  <p style="color:var(--text-muted)">Запрашиваемая страница не существует или была удалена. Проверьте адрес и попробуйте снова.</p>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-primary mt-2">
+    <i class="bi bi-house me-1"></i>На главную
+  </a>
 </div>
 {% endblock %}

@@ -1,85 +1,109 @@
 {% extends 'base.html' %}
-{% block title %}Отчёты{% endblock %}
+{% block title %}Отчёты — Мурабаха CRM{% endblock %}
 {% block breadcrumb %}<li class="breadcrumb-item active">Отчёты</li>{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0"><i class="bi bi-bar-chart-fill me-2 text-success"></i>Аналитика и отчёты</h4>
+<div class="page-header">
+  <h4>Аналитика и отчёты</h4>
+  <p class="subtitle">Финансовые показатели портфеля мурабаха</p>
 </div>
 
-<!-- Key metrics (loaded via JS) -->
-<div class="row g-3 mb-4" id="metricsRow">
-  <div class="col-md-3">
-    <div class="stat-card" style="background:linear-gradient(135deg,#0f4f2e,#1a7a4a); color:#fff;">
-      <small>Общий портфель</small>
-      <h2 id="m_portfolio" style="font-size:1.5rem;">...</h2>
-      <i class="bi bi-briefcase-fill icon"></i>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="stat-card" style="background:linear-gradient(135deg,#c9a227,#e8bb3a); color:#fff;">
-      <small>Всего получено</small>
-      <h2 id="m_collected" style="font-size:1.5rem;">...</h2>
-      <i class="bi bi-cash-stack icon"></i>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="stat-card" style="background:linear-gradient(135deg,#1e40af,#3b82f6); color:#fff;">
-      <small>Халал-соответствие</small>
-      <h2 id="m_halal">...%</h2>
-      <i class="bi bi-star-fill icon"></i>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="stat-card" style="background:linear-gradient(135deg,#991b1b,#dc2626); color:#fff;">
-      <small>Просрочено</small>
-      <h2 id="m_overdue">...</h2>
-      <i class="bi bi-exclamation-triangle-fill icon"></i>
-    </div>
-  </div>
-</div>
-
-<!-- Charts row -->
+<!-- Key metrics -->
 <div class="row g-3 mb-4">
-  <div class="col-md-8">
+  <div class="col-6 col-lg-3">
+    <div class="stat-card stat-emerald">
+      <div class="stat-label">Общий портфель</div>
+      <div class="stat-val" id="m_portfolio" style="font-size:1.4rem">...</div>
+      <div class="stat-sub">активных договоров</div>
+      <i class="bi bi-briefcase-fill stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card stat-amber">
+      <div class="stat-label">Всего получено</div>
+      <div class="stat-val" id="m_collected" style="font-size:1.4rem">...</div>
+      <div class="stat-sub">за всё время</div>
+      <i class="bi bi-cash-stack stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card stat-indigo">
+      <div class="stat-label">Халал-соответствие</div>
+      <div class="stat-val" id="m_halal">...%</div>
+      <div class="stat-sub">договоров соответствуют</div>
+      <i class="bi bi-star-fill stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card stat-rose">
+      <div class="stat-label">Просрочено</div>
+      <div class="stat-val" id="m_overdue">...</div>
+      <div class="stat-sub">договоров</div>
+      <i class="bi bi-exclamation-triangle-fill stat-icon"></i>
+    </div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-8">
     <div class="card h-100">
-      <div class="card-header"><i class="bi bi-bar-chart me-2"></i>Ежемесячные поступления (12 месяцев)</div>
+      <div class="card-header">
+        <i class="bi bi-bar-chart-line me-2" style="color:var(--primary)"></i>Ежемесячные поступления (12 месяцев)
+      </div>
       <div class="card-body"><canvas id="monthlyBar" height="80"></canvas></div>
     </div>
   </div>
-  <div class="col-md-4">
+  <div class="col-lg-4">
     <div class="card h-100">
-      <div class="card-header"><i class="bi bi-pie-chart me-2"></i>Портфель по категориям</div>
+      <div class="card-header">
+        <i class="bi bi-pie-chart me-2" style="color:var(--gold)"></i>Портфель по категориям
+      </div>
       <div class="card-body"><canvas id="categoryDoughnut" height="180"></canvas></div>
     </div>
   </div>
 </div>
 
 <div class="row g-3 mb-4">
-  <div class="col-md-6">
+  <div class="col-md-5">
     <div class="card h-100">
-      <div class="card-header"><i class="bi bi-pie-chart me-2"></i>Договоры по статусам</div>
-      <div class="card-body"><canvas id="statusPie" height="160"></canvas></div>
+      <div class="card-header">
+        <i class="bi bi-pie-chart me-2" style="color:var(--blue)"></i>Договоры по статусам
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="statusPie" style="max-height:220px"></canvas>
+      </div>
     </div>
   </div>
-  <div class="col-md-6">
+  <div class="col-md-7">
     <div class="card h-100">
-      <div class="card-header"><i class="bi bi-shield-check me-2" style="color:var(--gold)"></i>Шариатский аудит</div>
+      <div class="card-header">
+        <i class="bi bi-shield-check me-2" style="color:var(--gold)"></i>Шариатский аудит
+      </div>
       <div class="card-body">
-        <div class="text-center mb-3">
-          <div style="font-size:3rem; font-weight:800; color:var(--green);" id="sharia_pct">—</div>
-          <div class="text-muted">% договоров Halal</div>
+        <div class="d-flex align-items-center gap-4 mb-3">
+          <div style="font-size:3rem;font-weight:800;color:var(--primary-dark)" id="sharia_pct">—</div>
+          <div>
+            <div style="font-weight:600">% договоров Halal</div>
+            <div style="font-size:.82rem;color:var(--text-muted)">соответствуют нормам ислама</div>
+          </div>
         </div>
-        <div class="progress mb-3" style="height:16px;">
-          <div class="progress-bar bg-success" id="sharia_bar" style="width:0%"></div>
+        <div class="progress mb-4" style="height:10px">
+          <div class="progress-bar" id="sharia_bar" style="width:0%"></div>
         </div>
-        <div class="small text-muted">
-          <p>Все договоры проходят проверку соответствия принципам исламского финансирования (Мурабаха). Отсутствие рибы (ссудного процента) гарантировано структурой договора.</p>
-          <ul class="mb-0">
-            <li>Фиксированная наценка вместо процентной ставки</li>
-            <li>Товар передаётся клиенту после оплаты</li>
-            <li>Одобрение Шариатского совета</li>
-          </ul>
+        <div style="font-size:.83rem;color:var(--text-muted)">
+          <div class="d-flex align-items-start gap-2 mb-2">
+            <i class="bi bi-check-circle-fill text-success mt-1" style="flex-shrink:0"></i>
+            <span>Фиксированная наценка вместо процентной ставки (риба запрещена)</span>
+          </div>
+          <div class="d-flex align-items-start gap-2 mb-2">
+            <i class="bi bi-check-circle-fill text-success mt-1" style="flex-shrink:0"></i>
+            <span>Товар передаётся клиенту после полного оформления договора</span>
+          </div>
+          <div class="d-flex align-items-start gap-2">
+            <i class="bi bi-check-circle-fill text-success mt-1" style="flex-shrink:0"></i>
+            <span>Возможность одобрения Шариатским советом</span>
+          </div>
         </div>
       </div>
     </div>
@@ -88,12 +112,18 @@
 
 <!-- Overdue analysis -->
 <div class="card">
-  <div class="card-header"><i class="bi bi-exclamation-circle-fill text-danger me-2"></i>Анализ просрочек</div>
+  <div class="card-header">
+    <i class="bi bi-exclamation-circle-fill me-2" style="color:var(--danger)"></i>Анализ просрочек
+  </div>
   <div class="table-responsive">
-    <table class="table table-hover mb-0" id="overdueTable">
-      <thead><tr><th>Договор</th><th>Клиент</th><th>Дней просрочки</th><th>Сумма просрочки</th><th>Действие</th></tr></thead>
+    <table class="table mb-0">
+      <thead>
+        <tr><th>Договор</th><th>Клиент</th><th>Дней просрочки</th><th>Сумма просрочки</th><th>Действие</th></tr>
+      </thead>
       <tbody id="overdueBody">
-        <tr><td colspan="5" class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка...</td></tr>
+        <tr><td colspan="5" class="text-center py-3 text-muted">
+          <span class="spinner-border spinner-border-sm me-2"></span>Загрузка...
+        </td></tr>
       </tbody>
     </table>
   </div>
@@ -102,90 +132,81 @@
 
 {% block scripts %}
 <script>
-const CATS = {
-  appliances:'Бытовая техника', electronics:'Электроника', furniture:'Мебель',
-  auto:'Автомобиль', real_estate:'Недвижимость', education:'Образование',
-  medical:'Медицина', other:'Другое'
-};
-const STATUS_LABELS = {draft:'Черновик', active:'Активный', overdue:'Просрочен', closed:'Закрыт', cancelled:'Отменён'};
-const STATUS_COLORS = {draft:'#3b82f6', active:'#1a7a4a', overdue:'#dc2626', closed:'#6b7280', cancelled:'#f59e0b'};
+const CATS = {appliances:'Бытовая техника',electronics:'Электроника',furniture:'Мебель',auto:'Автомобиль',real_estate:'Недвижимость',education:'Образование',medical:'Медицина',other:'Другое'};
+const STATUS_LABELS = {draft:'Черновик',active:'Активный',overdue:'Просрочен',closed:'Закрыт',cancelled:'Отменён'};
+const STATUS_COLORS = {draft:'#6366f1',active:'#10b981',overdue:'#ef4444',closed:'#94a3b8',cancelled:'#f59e0b'};
 
-fetch('/api/reports/monthly').then(r=>r.json()).then(data => {
-  new Chart(document.getElementById('monthlyBar'), {
-    type: 'bar',
-    data: {
-      labels: data.map(d => d.month),
-      datasets: [{
-        label: 'Поступления, ₽',
-        data: data.map(d => d.amount),
-        backgroundColor: data.map((d,i) => i === data.length-1 ? 'rgba(201,162,39,0.8)' : 'rgba(15,79,46,0.7)'),
-        borderColor: data.map((d,i) => i === data.length-1 ? '#c9a227' : '#0f4f2e'),
-        borderWidth: 1, borderRadius: 4,
+fetch('/api/reports/monthly').then(r=>r.json()).then(data=>{
+  const ctx = document.getElementById('monthlyBar').getContext('2d');
+  const grad = ctx.createLinearGradient(0,0,0,280);
+  grad.addColorStop(0,'rgba(16,185,129,0.85)');
+  grad.addColorStop(1,'rgba(16,185,129,0.1)');
+  new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels:data.map(d=>d.month),
+      datasets:[{
+        label:'Поступления, ₽',data:data.map(d=>d.amount),
+        backgroundColor:grad,borderColor:'#10b981',borderWidth:2,
+        borderRadius:8,borderSkipped:false,
       }]
     },
-    options: {
-      responsive:true, plugins:{legend:{display:false}},
-      scales:{ y:{ ticks:{ callback: v => v.toLocaleString('ru') } } }
+    options:{
+      responsive:true,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'  '+ctx.parsed.y.toLocaleString('ru')+' ₽'}}},
+      scales:{
+        x:{grid:{display:false}},
+        y:{grid:{color:'#f1f5f9'},ticks:{callback:v=>v.toLocaleString('ru')}}
+      }
     }
   });
 });
 
-fetch('/api/reports/stats').then(r=>r.json()).then(data => {
-  // Metrics
-  document.getElementById('m_portfolio').textContent = data.total_portfolio.toLocaleString('ru', {maximumFractionDigits:0}) + ' ₽';
-  document.getElementById('m_collected').textContent = data.total_collected.toLocaleString('ru', {maximumFractionDigits:0}) + ' ₽';
-  document.getElementById('m_halal').textContent = data.sharia_compliance_pct + '%';
-  document.getElementById('m_overdue').textContent = data.by_status.overdue || 0;
+fetch('/api/reports/stats').then(r=>r.json()).then(data=>{
+  document.getElementById('m_portfolio').textContent = data.total_portfolio.toLocaleString('ru',{maximumFractionDigits:0})+' ₽';
+  document.getElementById('m_collected').textContent = data.total_collected.toLocaleString('ru',{maximumFractionDigits:0})+' ₽';
+  document.getElementById('m_halal').textContent = data.sharia_compliance_pct+'%';
+  document.getElementById('m_overdue').textContent = data.by_status.overdue||0;
+  document.getElementById('sharia_pct').textContent = data.sharia_compliance_pct+'%';
+  document.getElementById('sharia_bar').style.width = data.sharia_compliance_pct+'%';
 
-  // Sharia
-  document.getElementById('sharia_pct').textContent = data.sharia_compliance_pct + '%';
-  document.getElementById('sharia_bar').style.width = data.sharia_compliance_pct + '%';
-
-  // Category doughnut
-  const catKeys = Object.keys(data.by_category).filter(k => data.by_category[k] > 0);
-  new Chart(document.getElementById('categoryDoughnut'), {
-    type: 'doughnut',
-    data: {
-      labels: catKeys.map(k => CATS[k] || k),
-      datasets: [{
-        data: catKeys.map(k => data.by_category[k]),
-        backgroundColor: ['#0f4f2e','#1a7a4a','#c9a227','#3b82f6','#f59e0b','#8b5cf6','#ef4444','#6b7280'],
-        borderWidth: 2, borderColor: '#fff',
-      }]
+  const catKeys = Object.keys(data.by_category).filter(k=>data.by_category[k]>0);
+  new Chart(document.getElementById('categoryDoughnut'),{
+    type:'doughnut',
+    data:{
+      labels:catKeys.map(k=>CATS[k]||k),
+      datasets:[{data:catKeys.map(k=>data.by_category[k]),
+        backgroundColor:['#10b981','#f59e0b','#6366f1','#3b82f6','#ef4444','#8b5cf6','#f97316','#94a3b8'],
+        borderWidth:3,borderColor:'#fff'}]
     },
-    options: { responsive:true, plugins:{ legend:{ position:'bottom', labels:{font:{size:11}} } } }
+    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:11},padding:12}}}}
   });
 
-  // Status pie
-  const statKeys = Object.keys(data.by_status).filter(k => data.by_status[k] > 0);
-  new Chart(document.getElementById('statusPie'), {
-    type: 'doughnut',
-    data: {
-      labels: statKeys.map(k => STATUS_LABELS[k] || k),
-      datasets: [{
-        data: statKeys.map(k => data.by_status[k]),
-        backgroundColor: statKeys.map(k => STATUS_COLORS[k] || '#ccc'),
-        borderWidth: 2, borderColor: '#fff',
-      }]
+  const statKeys = Object.keys(data.by_status).filter(k=>data.by_status[k]>0);
+  new Chart(document.getElementById('statusPie'),{
+    type:'doughnut',
+    data:{
+      labels:statKeys.map(k=>STATUS_LABELS[k]||k),
+      datasets:[{data:statKeys.map(k=>data.by_status[k]),
+        backgroundColor:statKeys.map(k=>STATUS_COLORS[k]||'#ccc'),
+        borderWidth:3,borderColor:'#fff'}]
     },
-    options: { responsive:true, plugins:{ legend:{ position:'bottom', labels:{font:{size:11}} } } }
+    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:11},padding:12}}}}
   });
 
-  // Overdue table
   const tbody = document.getElementById('overdueBody');
-  if (!data.overdue_data.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-success py-3"><i class="bi bi-check-circle me-2"></i>Просрочек нет</td></tr>';
+  if(!data.overdue_data.length){
+    tbody.innerHTML='<tr><td colspan="5" class="text-center py-4" style="color:var(--primary-dark)"><i class="bi bi-check-circle-fill me-2"></i>Просрочек нет — отличный результат!</td></tr>';
     return;
   }
-  tbody.innerHTML = data.overdue_data.map(d => `
-    <tr class="table-overdue">
-      <td><a href="/contracts/${d.id}" class="fw-bold text-decoration-none">${d.contract_number}</a></td>
+  tbody.innerHTML = data.overdue_data.map(d=>`
+    <tr style="background:#fff5f5">
+      <td><a href="/contracts/${d.id}" class="fw-bold text-decoration-none" style="color:var(--primary-dark)">${d.contract_number}</a></td>
       <td>${d.client}</td>
       <td><span class="badge badge-overdue">${d.days_overdue} дн.</span></td>
-      <td class="fw-bold text-danger">${d.overdue_amount.toLocaleString('ru')} ₽</td>
-      <td><a href="/payments/new?contract_id=${d.id}" class="btn btn-sm btn-success"><i class="bi bi-cash me-1"></i>Принять</a></td>
-    </tr>
-  `).join('');
+      <td style="color:var(--danger);font-weight:600">${d.overdue_amount.toLocaleString('ru')} ₽</td>
+      <td><a href="/payments/new?contract_id=${d.id}" class="btn btn-sm btn-primary"><i class="bi bi-cash me-1"></i>Принять</a></td>
+    </tr>`).join('');
 });
 </script>
 {% endblock %}

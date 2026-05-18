@@ -1,23 +1,29 @@
 {% extends 'base.html' %}
-{% block title %}{{ title }}{% endblock %}
+{% block title %}{{ title }} — Мурабаха CRM{% endblock %}
 {% block breadcrumb %}
-  <li class="breadcrumb-item"><a href="{{ url_for('contracts_list') }}" class="text-decoration-none" style="color:var(--green)">Договоры</a></li>
+  <li class="breadcrumb-item"><a href="{{ url_for('contracts_list') }}" class="text-decoration-none">Договоры</a></li>
   <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
 
 {% block head %}
 <style>
-.calc-preview { background:#f8fffe; border:1px solid #d1fae5; border-radius:8px; padding:16px; }
-.calc-preview .row-item { display:flex; justify-content:space-between; border-bottom:1px dashed #e5f5ed; padding:4px 0; }
-.calc-preview .row-item:last-child { border:none; font-weight:700; color:var(--green); }
-.schedule-preview { max-height:200px; overflow-y:auto; font-size:.82rem; }
+.calc-preview { background: linear-gradient(135deg,#f0fdf4,#dcfce7); border:1px solid #bbf7d0; border-radius:var(--radius); padding:18px; }
+.calc-preview .row-item { display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed #d1fae5; padding:8px 0; font-size:.875rem; }
+.calc-preview .row-item:last-child { border:none; font-weight:700; font-size:1rem; }
+.calc-preview .row-item:last-child span:last-child { color:#047857; font-size:1.3rem; }
+.schedule-preview { max-height:220px; overflow-y:auto; font-size:.8rem; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0"><i class="bi bi-file-earmark-plus me-2 text-success"></i>{{ title }}</h4>
-  <a href="{{ url_for('contracts_list') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Назад</a>
+  <div class="page-header mb-0">
+    <h4><i class="bi bi-file-earmark-plus me-2" style="color:#f59e0b;"></i>{{ title }}</h4>
+    <p class="subtitle">Договор исламского финансирования Мурабаха</p>
+  </div>
+  <a href="{{ url_for('contracts_list') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Назад
+  </a>
 </div>
 
 <form method="post" id="contractForm">
@@ -30,39 +36,66 @@
 
       <!-- Client selector -->
       <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-person me-2"></i>Клиент</div>
+        <div class="card-header"><i class="bi bi-person me-2" style="color:#60a5fa;"></i>Клиент</div>
         <div class="card-body">
           {% if form.client_id.errors %}
-            <div class="alert alert-danger">{% for e in form.client_id.errors %}{{ e }}{% endfor %}</div>
+            <div class="alert alert-danger py-2 mb-3">{% for e in form.client_id.errors %}{{ e }}{% endfor %}</div>
           {% endif %}
-          <div class="input-group">
-            <input type="text" id="clientSearch" class="form-control" placeholder="Поиск клиента по имени..." value="{{ client.full_name if client else '' }}">
-            <button type="button" class="btn btn-outline-secondary" onclick="clearClient()"><i class="bi bi-x"></i></button>
+          <div class="mb-2">
+            <label class="form-label">Поиск клиента</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-search" style="color:var(--text-muted);"></i></span>
+              <input type="text" id="clientSearch" class="form-control" placeholder="Введите имя или телефон..." value="{{ client.full_name if client else '' }}">
+              <button type="button" class="btn btn-outline-secondary" onclick="clearClient()" data-bs-toggle="tooltip" title="Очистить"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div id="clientDropdown" class="list-group mt-1" style="display:none; position:absolute; z-index:999; width:calc(100% - 60px); box-shadow:var(--shadow-lg); border-radius:var(--radius-sm); overflow:hidden;"></div>
           </div>
-          <div id="clientDropdown" class="list-group mt-1" style="display:none; position:absolute; z-index:999; width:calc(100% - 48px);"></div>
-          {% if client %}
-          <div class="mt-2 d-flex align-items-center gap-2" id="selectedClient">
-            <span class="badge bg-success fs-6">{{ client.full_name }}</span>
-            <small class="text-muted">{{ client.phone or '' }}</small>
-          </div>
-          {% else %}
-          <div id="selectedClient" class="mt-2"></div>
-          {% endif %}
-          <div class="mt-2">
-            <small class="text-muted">Или выберите из списка:</small>
-            <select id="clientSelect" class="form-select form-select-sm mt-1" onchange="selectClientFromList(this.value, this.options[this.selectedIndex].text)">
+          <div class="mb-2">
+            <label class="form-label">Или выберите из списка</label>
+            <select id="clientSelect" class="form-select" onchange="selectClientFromList(this.value, this.options[this.selectedIndex].text)">
               <option value="">— Выбрать клиента —</option>
               {% for c in clients_all %}
               <option value="{{ c.id }}" {% if client and client.id == c.id %}selected{% endif %}>{{ c.full_name }} ({{ c.phone or 'нет тел.' }})</option>
               {% endfor %}
             </select>
           </div>
+          {% if client %}
+          <div id="selectedClient">
+            <span class="badge badge-active" style="font-size:0.85rem; padding:6px 12px;">
+              <i class="bi bi-person-check me-1"></i>{{ client.full_name }}
+            </span>
+            <small class="text-muted ms-2">{{ client.phone or '' }}</small>
+          </div>
+          {% else %}
+          <div id="selectedClient" class="mt-2"></div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Contract number -->
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-hash me-2"></i>Номер договора</div>
+        <div class="card-body">
+          <div class="row g-3 align-items-end">
+            <div class="col-md-5">
+              <label class="form-label">{{ form.contract_number.label.text }} <span class="text-danger">*</span></label>
+              {{ form.contract_number(class="form-control fw-bold"+(" is-invalid" if form.contract_number.errors else ""), placeholder="МУР-2024-001") }}
+              {% for e in form.contract_number.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+              <div class="form-text">{{ form.contract_number.description }}</div>
+            </div>
+            <div class="col-md-7">
+              <div class="alert alert-light border mb-0 py-2 px-3" style="font-size:.82rem">
+                <i class="bi bi-info-circle text-primary me-1"></i>
+                Номер генерируется автоматически. Вы можете изменить его на любой удобный формат.
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- Item info -->
       <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-box me-2"></i>Информация о товаре</div>
+        <div class="card-header"><i class="bi bi-box me-2" style="color:#a78bfa;"></i>Информация о товаре</div>
         <div class="card-body">
           <div class="row g-3">
             <div class="col-md-8">
@@ -104,7 +137,7 @@
 
       <!-- Financials -->
       <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-calculator me-2"></i>Финансовые условия (Мурабаха)</div>
+        <div class="card-header"><i class="bi bi-calculator me-2" style="color:#10b981;"></i>Финансовые условия Мурабаха</div>
         <div class="card-body">
           <div class="row g-3">
             <div class="col-md-4">
@@ -163,7 +196,7 @@
 
       <!-- Dates -->
       <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-calendar me-2"></i>Даты и платежи</div>
+        <div class="card-header"><i class="bi bi-calendar3 me-2" style="color:#6366f1;"></i>Условия и даты</div>
         <div class="card-body">
           <div class="row g-3">
             <div class="col-md-4">
@@ -193,8 +226,8 @@
       </div>
 
       <!-- Sharia -->
-      <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-star me-2" style="color:var(--gold)"></i>Шариатское соответствие</div>
+      <div class="card mb-3" style="border-color:#fde68a;">
+        <div class="card-header" style="background:linear-gradient(to right, #fffbeb, #fef3c7);"><i class="bi bi-star-fill me-2" style="color:var(--gold);"></i>Шариатское соответствие</div>
         <div class="card-body">
           <div class="row g-3">
             <div class="col-md-3 d-flex align-items-center">
@@ -236,26 +269,36 @@
 
     <!-- Right: calculator preview -->
     <div class="col-md-4">
-      <div class="card sticky-top" style="top:72px;">
-        <div class="card-header"><i class="bi bi-calculator me-2"></i>Калькулятор Мурабаха</div>
-        <div class="card-body">
-          <div class="calc-preview mb-3" id="calcPreview">
-            <div class="row-item"><span>Себестоимость</span><span id="p_cost">0 ₽</span></div>
-            <div class="row-item"><span>Наценка</span><span id="p_markup">0%</span></div>
-            <div class="row-item"><span>Итого</span><span id="p_total">0 ₽</span></div>
-            <div class="row-item"><span>Первоначальный взнос</span><span id="p_down">0 ₽</span></div>
-            <div class="row-item"><span>Финансируется</span><span id="p_financed">0 ₽</span></div>
-            <div class="row-item"><span>Срок</span><span id="p_months">0 мес.</span></div>
-            <div class="row-item"><span class="text-success fw-bold">Ежемесячный платёж</span><span id="p_monthly" class="text-success fw-bold">0 ₽</span></div>
+      <div class="sticky-top" style="top:76px;">
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-calculator me-2" style="color:#10b981;"></i>Калькулятор Мурабаха</div>
+          <div class="card-body p-0">
+            <div class="calc-preview m-3" id="calcPreview">
+              <div class="row-item"><span style="color:var(--text-muted);">Себестоимость</span><span id="p_cost">0 ₽</span></div>
+              <div class="row-item"><span style="color:var(--text-muted);">Наценка</span><span id="p_markup">0%</span></div>
+              <div class="row-item"><span style="color:var(--text-muted);">Итого</span><span id="p_total">0 ₽</span></div>
+              <div class="row-item"><span style="color:var(--text-muted);">Первонач. взнос</span><span id="p_down">0 ₽</span></div>
+              <div class="row-item"><span style="color:var(--text-muted);">Финансируется</span><span id="p_financed">0 ₽</span></div>
+              <div class="row-item"><span style="color:var(--text-muted);">Срок</span><span id="p_months">0 мес.</span></div>
+              <div class="row-item"><span style="font-weight:700;">Ежемес. платёж</span><span id="p_monthly">0 ₽</span></div>
+            </div>
+            <div class="px-3 pb-3">
+              <button type="button" class="btn btn-outline-primary btn-sm w-100" onclick="autoCalculate()">
+                <i class="bi bi-lightning-fill me-1"></i>Авторасчёт
+              </button>
+            </div>
           </div>
-          <button type="button" class="btn btn-outline-primary btn-sm w-100 mb-2" onclick="autoCalculate()">
-            <i class="bi bi-lightning me-1"></i>Авторасчёт
-          </button>
-          <hr>
-          <div>
-            <div class="fw-bold mb-2 small">Предварительный график (первые 6)</div>
+        </div>
+        <div class="card">
+          <div class="card-header" style="font-size:0.82rem;">
+            <i class="bi bi-table me-2" style="color:#6366f1;"></i>Предварительный график
+          </div>
+          <div class="card-body p-0">
             <div class="schedule-preview" id="schedulePreview">
-              <div class="text-muted small text-center py-2">Заполните поля для предпросмотра</div>
+              <div class="text-center py-4" style="color:var(--text-muted); font-size:0.82rem;">
+                <i class="bi bi-calculator d-block mb-2" style="font-size:1.5rem; color:#e2e8f0;"></i>
+                Заполните поля для предпросмотра
+              </div>
             </div>
           </div>
         </div>

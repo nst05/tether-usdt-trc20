@@ -1,28 +1,37 @@
 {% extends 'base.html' %}
-{% block title %}Резервные копии{% endblock %}
+{% block title %}Резервные копии — Мурабаха CRM{% endblock %}
 {% block breadcrumb %}<li class="breadcrumb-item active">Резервные копии</li>{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0"><i class="bi bi-cloud-arrow-up-fill me-2 text-success"></i>Резервные копии</h4>
+<div class="page-header d-flex justify-content-between align-items-start">
+  <div>
+    <h4>Резервные копии</h4>
+    <p class="subtitle">Экспорт и восстановление данных системы</p>
+  </div>
   <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createBackupModal">
-    <i class="bi bi-plus-circle me-1"></i>Создать резервную копию
+    <i class="bi bi-cloud-upload me-1"></i>Создать копию
   </button>
 </div>
 
 <!-- Info card -->
-<div class="card mb-3" style="border-left:4px solid var(--gold);">
+<div class="card mb-4" style="border-left:4px solid var(--primary);background:linear-gradient(135deg,#f0fdf9,#fff)">
   <div class="card-body">
     <div class="row align-items-center">
-      <div class="col-md-8">
-        <h6 class="mb-1">Резервное копирование данных</h6>
-        <p class="mb-0 text-muted small">
-          Резервные копии включают все данные системы: клиентов, договоры, графики платежей и историю платежей.
-          Файлы сохраняются в формате JSON и доступны для скачивания.
-        </p>
+      <div class="col-md-9">
+        <div class="d-flex align-items-center gap-3">
+          <i class="bi bi-shield-check" style="font-size:2.5rem;color:var(--primary)"></i>
+          <div>
+            <div class="fw-600 mb-1">Ваши данные в безопасности</div>
+            <div style="font-size:.85rem;color:var(--text-muted)">
+              Резервные копии включают все данные: клиентов, договоры, графики платежей и историю платежей.
+              Файлы сохраняются в формате JSON и доступны для скачивания и восстановления.
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="col-md-4 text-end">
-        <div class="badge bg-success fs-6">{{ backups|length }} копий</div>
+      <div class="col-md-3 text-end">
+        <div style="font-size:2rem;font-weight:700;color:var(--primary-dark)">{{ backups|length }}</div>
+        <div style="font-size:.8rem;color:var(--text-muted)">резервных копий</div>
       </div>
     </div>
   </div>
@@ -31,7 +40,7 @@
 <div class="card">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover mb-0">
+      <table class="table mb-0">
         <thead>
           <tr>
             <th>Дата создания</th>
@@ -45,37 +54,51 @@
         <tbody>
           {% for b in backups %}
           <tr>
-            <td>{{ b.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
-            <td><code>{{ b.filename }}</code></td>
-            <td>{{ b.file_size_kb }} КБ</td>
             <td>
-              {% if b.backup_type == 'manual' %}<span class="badge bg-primary">Ручная</span>
-              {% else %}<span class="badge bg-secondary">Авто</span>{% endif %}
+              <div class="fw-500">{{ b.created_at.strftime('%d.%m.%Y') }}</div>
+              <div style="font-size:.75rem;color:var(--text-muted)">{{ b.created_at.strftime('%H:%M') }}</div>
             </td>
-            <td>{{ b.notes or '—' }}</td>
+            <td><code style="font-size:.82rem;color:var(--primary-dark)">{{ b.filename }}</code></td>
+            <td>
+              <span class="badge" style="background:#f1f5f9;color:#475569;font-weight:500">
+                {{ b.file_size_kb }} КБ
+              </span>
+            </td>
+            <td>
+              {% if b.backup_type=='manual' %}
+              <span class="badge" style="background:#ede9fe;color:#5b21b6">Ручная</span>
+              {% else %}
+              <span class="badge badge-closed">Авто</span>
+              {% endif %}
+            </td>
+            <td style="font-size:.85rem;color:var(--text-muted)">{{ b.notes or '—' }}</td>
             <td>
               <div class="d-flex gap-1">
-                <a href="{{ url_for('backup_download', backup_id=b.id) }}" class="btn btn-sm btn-outline-primary" title="Скачать">
+                <a href="{{ url_for('backup_download', backup_id=b.id) }}" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Скачать">
                   <i class="bi bi-download"></i>
                 </a>
-                <form method="post" action="{{ url_for('backup_restore', backup_id=b.id) }}" onsubmit="return confirm('Восстановить базу данных из этой копии? Все текущие данные будут перезаписаны!')">
+                <form method="post" action="{{ url_for('backup_restore', backup_id=b.id) }}" onsubmit="return confirm('⚠️ Восстановить базу данных из этой копии?\n\nВСЕ текущие данные будут перезаписаны! Это необратимо.')">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn btn-sm btn-outline-warning" title="Восстановить"><i class="bi bi-arrow-counterclockwise"></i></button>
+                  <button class="btn btn-sm btn-outline-warning" data-bs-toggle="tooltip" title="Восстановить">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                  </button>
                 </form>
                 <form method="post" action="{{ url_for('backup_delete', backup_id=b.id) }}" onsubmit="return confirm('Удалить резервную копию?')">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn btn-sm btn-outline-danger" title="Удалить"><i class="bi bi-trash"></i></button>
+                  <button class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" title="Удалить">
+                    <i class="bi bi-trash"></i>
+                  </button>
                 </form>
               </div>
             </td>
           </tr>
           {% else %}
           <tr>
-            <td colspan="6" class="text-center text-muted py-5">
-              <i class="bi bi-cloud-slash" style="font-size:3rem; color:#ccc; display:block; margin-bottom:12px;"></i>
-              Резервные копии отсутствуют.<br>
-              <button class="btn btn-primary mt-3" data-bs-toggle="modal" data-bs-target="#createBackupModal">
-                Создать первую копию
+            <td colspan="6" class="text-center py-5">
+              <i class="bi bi-cloud-slash" style="font-size:3rem;color:#cbd5e1;display:block;margin-bottom:12px"></i>
+              <div style="color:var(--text-muted);margin-bottom:12px">Резервные копии отсутствуют</div>
+              <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createBackupModal">
+                <i class="bi bi-plus-circle me-1"></i>Создать первую копию
               </button>
             </td>
           </tr>
@@ -86,30 +109,36 @@
   </div>
 </div>
 
-<!-- Create backup modal -->
+<!-- Create modal -->
 <div class="modal fade" id="createBackupModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-cloud-upload me-2"></i>Создать резервную копию</h5>
+      <div class="modal-header" style="border-bottom:1px solid var(--border)">
+        <h5 class="modal-title"><i class="bi bi-cloud-upload me-2" style="color:var(--primary)"></i>Создать резервную копию</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="post" action="{{ url_for('backup_create') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
-          <div class="alert alert-info small">
-            <i class="bi bi-info-circle me-1"></i>
-            Будет создан JSON-файл со всеми данными системы. Процесс займёт несколько секунд.
+          <div class="alert" style="background:#f0fdf9;border:1px solid #a7f3d0;color:#065f46;font-size:.85rem">
+            <i class="bi bi-info-circle me-2"></i>
+            Будет создан JSON-файл со всеми данными системы. Файл можно скачать и использовать для восстановления.
           </div>
-          <label class="form-label">Примечание (необязательно)</label>
+          <label class="form-label">Примечание <span style="color:var(--text-muted);font-weight:normal">(необязательно)</span></label>
           <textarea name="note" class="form-control" rows="2" placeholder="Описание копии, причина создания..."></textarea>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-          <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-upload me-1"></i>Создать</button>
+        <div class="modal-footer" style="border-top:1px solid var(--border)">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-cloud-upload me-1"></i>Создать копию
+          </button>
         </div>
       </form>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<style>.fw-500{font-weight:500}.fw-600{font-weight:600}</style>
 {% endblock %}
