@@ -193,6 +193,63 @@
       <div class="card-body"><p style="margin:0; font-size:0.875rem; color:var(--text-muted);">{{ contract.sharia_board_note }}</p></div>
     </div>
     {% endif %}
+
+    <!-- Document upload -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-paperclip me-2"></i>Документы и сканы</span>
+        <span class="badge badge-closed">{{ documents|length }}</span>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('document_upload') }}" enctype="multipart/form-data" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="entity_type" value="contract">
+          <input type="hidden" name="entity_id" value="{{ contract.id }}">
+          <div class="mb-2">
+            <select name="doc_type" class="form-select form-select-sm">
+              <option value="contract">Договор</option>
+              <option value="passport_front">Паспорт (лицевая)</option>
+              <option value="passport_back">Паспорт (оборот)</option>
+              <option value="income">Справка о доходах</option>
+              <option value="other">Другое</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <input type="file" name="file" class="form-control form-control-sm" accept="image/*,.pdf,.doc,.docx" required>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary w-100">
+            <i class="bi bi-upload me-1"></i>Загрузить
+          </button>
+        </form>
+        {% if documents %}
+        <div class="list-group list-group-flush">
+          {% for doc in documents %}
+          <div class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2 overflow-hidden">
+              <i class="bi {{ doc.icon }}" style="font-size:1.2rem;color:var(--primary-dark);flex-shrink:0;"></i>
+              <div class="overflow-hidden">
+                <div style="font-size:.8rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ doc.original_name }}</div>
+                <div style="font-size:.7rem;color:var(--text-muted);">{{ doc.type_label }} · {{ doc.file_size_kb }} КБ</div>
+              </div>
+            </div>
+            <div class="d-flex gap-1 ms-1" style="flex-shrink:0;">
+              <a href="{{ url_for('document_download', doc_id=doc.id) }}" target="_blank" class="btn btn-outline-primary" style="padding:3px 7px;font-size:.75rem;border-radius:6px;" title="Открыть"><i class="bi bi-eye"></i></a>
+              <form method="POST" action="{{ url_for('document_delete', doc_id=doc.id) }}" onsubmit="return confirm('Удалить файл?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger" style="padding:3px 7px;font-size:.75rem;border-radius:6px;" title="Удалить"><i class="bi bi-trash"></i></button>
+              </form>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-2" style="color:var(--text-muted);font-size:.82rem;">
+          <i class="bi bi-file-earmark d-block mb-1" style="font-size:1.5rem;color:#e2e8f0;"></i>
+          Нет загруженных файлов
+        </div>
+        {% endif %}
+      </div>
+    </div>
   </div>
 
   <!-- Right: Schedule + Payments -->

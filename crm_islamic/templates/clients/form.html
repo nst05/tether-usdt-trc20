@@ -41,6 +41,7 @@
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab3" type="button"><span class="step-badge me-1">3</span>Документы</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab4" type="button"><span class="step-badge me-1">4</span>Занятость</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab5" type="button"><span class="step-badge me-1">5</span>Финансы</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab6" type="button"><span class="step-badge me-1">6</span>Поручители</button></li>
       </ul>
 
       <div class="tab-content p-4">
@@ -268,6 +269,86 @@
             </div>
           </div>
         </div>
+        <!-- TAB 6 – Поручители -->
+        <div class="tab-pane fade" id="tab6">
+          <input type="hidden" name="guarantor_count" id="guarantorCount" value="0">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+              <div class="section-label mb-0">Поручители по клиенту</div>
+              <div style="font-size:.8rem;color:var(--text-muted)">Поручители, привязанные к этому клиенту (не к конкретному договору). Их можно назначить на договор позже.</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-primary" onclick="addGuarantor()">
+              <i class="bi bi-person-plus me-1"></i>Добавить поручителя
+            </button>
+          </div>
+
+          {% if client and client_guarantors %}
+          <div class="alert alert-info d-flex gap-2 align-items-start mb-3" style="font-size:.83rem;">
+            <i class="bi bi-info-circle-fill mt-1" style="flex-shrink:0"></i>
+            <span>Существующие поручители показаны ниже. При сохранении они будут заменены данными из этой формы.</span>
+          </div>
+          {% endif %}
+
+          <div id="guarantorsContainer">
+            {% if client_guarantors %}
+              {% for g in client_guarantors %}
+              <div class="guarantor-block card mb-3" style="border:1px solid var(--border);border-left:4px solid var(--gold);">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                  <span style="font-weight:600;font-size:.9rem;"><i class="bi bi-shield-fill me-2" style="color:var(--gold)"></i>Поручитель {{ loop.index }}</span>
+                  <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeGuarantor(this)"><i class="bi bi-trash"></i></button>
+                </div>
+                <div class="card-body">
+                  <div class="row g-3 mb-3">
+                    <div class="col-md-4"><label class="form-label form-label-sm">Фамилия <span class="text-danger">*</span></label><input type="text" name="g_{{ loop.index0 }}_last_name" class="form-control form-control-sm" value="{{ g.last_name or '' }}" required></div>
+                    <div class="col-md-4"><label class="form-label form-label-sm">Имя <span class="text-danger">*</span></label><input type="text" name="g_{{ loop.index0 }}_first_name" class="form-control form-control-sm" value="{{ g.first_name or '' }}" required></div>
+                    <div class="col-md-4"><label class="form-label form-label-sm">Отчество</label><input type="text" name="g_{{ loop.index0 }}_middle_name" class="form-control form-control-sm" value="{{ g.middle_name or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label form-label-sm">Дата рождения</label><input type="date" name="g_{{ loop.index0 }}_birth_date" class="form-control form-control-sm" value="{{ g.birth_date.strftime('%Y-%m-%d') if g.birth_date else '' }}"></div>
+                    <div class="col-md-3"><label class="form-label form-label-sm">Телефон</label><input type="text" name="g_{{ loop.index0 }}_phone" class="form-control form-control-sm" value="{{ g.phone or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label form-label-sm">Email</label><input type="email" name="g_{{ loop.index0 }}_email" class="form-control form-control-sm" value="{{ g.email or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label form-label-sm">Отношение к клиенту</label>
+                      <select name="g_{{ loop.index0 }}_relationship" class="form-select form-select-sm">
+                        <option value="">---</option>
+                        {% for val,lbl in [('parent','Родитель'),('spouse','Супруг/а'),('sibling','Брат/Сестра'),('friend','Друг'),('colleague','Коллега'),('other','Другое')] %}
+                        <option value="{{ val }}" {{ 'selected' if g.relationship == val }}>{{ lbl }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                  </div>
+                  <hr class="my-2">
+                  <div class="row g-3 mb-2">
+                    <div class="col-md-2"><label class="form-label form-label-sm">Серия паспорта</label><input type="text" name="g_{{ loop.index0 }}_passport_series" class="form-control form-control-sm" value="{{ g.passport_series or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label form-label-sm">Номер паспорта</label><input type="text" name="g_{{ loop.index0 }}_passport_number" class="form-control form-control-sm" value="{{ g.passport_number or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label form-label-sm">Дата выдачи</label><input type="date" name="g_{{ loop.index0 }}_passport_issued_date" class="form-control form-control-sm" value="{{ g.passport_issued_date.strftime('%Y-%m-%d') if g.passport_issued_date else '' }}"></div>
+                    <div class="col-md-2"><label class="form-label form-label-sm">ИНН</label><input type="text" name="g_{{ loop.index0 }}_inn" class="form-control form-control-sm" value="{{ g.inn or '' }}"></div>
+                    <div class="col-md-2"><label class="form-label form-label-sm">СНИЛС</label><input type="text" name="g_{{ loop.index0 }}_snils" class="form-control form-control-sm" value="{{ g.snils or '' }}"></div>
+                    <div class="col-12"><label class="form-label form-label-sm">Кем выдан паспорт</label><input type="text" name="g_{{ loop.index0 }}_passport_issued_by" class="form-control form-control-sm" value="{{ g.passport_issued_by or '' }}"></div>
+                    <div class="col-12"><label class="form-label form-label-sm">Адрес прописки</label><textarea name="g_{{ loop.index0 }}_address_registration" class="form-control form-control-sm" rows="2">{{ g.address_registration or '' }}</textarea></div>
+                    <div class="col-md-6"><label class="form-label form-label-sm">Работодатель</label><input type="text" name="g_{{ loop.index0 }}_employer_name" class="form-control form-control-sm" value="{{ g.employer_name or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label form-label-sm">Должность</label><input type="text" name="g_{{ loop.index0 }}_position" class="form-control form-control-sm" value="{{ g.position or '' }}"></div>
+                    <div class="col-md-3"><label class="form-label form-label-sm">Доход (₽/мес)</label><input type="number" name="g_{{ loop.index0 }}_monthly_income" class="form-control form-control-sm" value="{{ g.monthly_income or 0 }}" min="0"></div>
+                    <div class="col-md-4"><label class="form-label form-label-sm">Тип поручительства</label>
+                      <select name="g_{{ loop.index0 }}_guarantor_type" class="form-select form-select-sm">
+                        <option value="personal" {{ 'selected' if g.guarantor_type == 'personal' }}>Личное поручительство</option>
+                        <option value="property" {{ 'selected' if g.guarantor_type == 'property' }}>Имущественный залог</option>
+                      </select>
+                    </div>
+                    {% if g.guarantor_type == 'property' %}
+                    <div class="col-12"><label class="form-label form-label-sm">Описание имущества</label><textarea name="g_{{ loop.index0 }}_property_description" class="form-control form-control-sm" rows="2">{{ g.property_description or '' }}</textarea></div>
+                    {% endif %}
+                    <div class="col-12"><label class="form-label form-label-sm">Примечания</label><textarea name="g_{{ loop.index0 }}_notes" class="form-control form-control-sm" rows="2">{{ g.notes or '' }}</textarea></div>
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            {% endif %}
+          </div>
+
+          <div id="noGuarantors" class="{{ 'd-none' if client_guarantors else '' }}" style="text-align:center;padding:2rem;color:var(--text-muted);">
+            <i class="bi bi-shield d-block mb-2" style="font-size:2.5rem;color:#e2e8f0;"></i>
+            Поручители не добавлены. Нажмите «Добавить поручителя».
+          </div>
+        </div>
+
       </div><!-- /tab-content -->
     </div>
   </div>
@@ -283,4 +364,82 @@
 
 {% block scripts %}
 <style>.fw-600{font-weight:600}</style>
+<script>
+// Guarantor count tracks TOTAL guarantors rendered (existing pre-filled + new)
+let gCount = {{ client_guarantors|length if client_guarantors else 0 }};
+document.getElementById('guarantorCount').value = gCount;
+
+function addGuarantor() {
+  const i = gCount++;
+  document.getElementById('guarantorCount').value = gCount;
+  document.getElementById('noGuarantors').classList.add('d-none');
+  const tpl = `
+  <div class="guarantor-block card mb-3" style="border:1px solid var(--border);border-left:4px solid var(--gold);">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+      <span style="font-weight:600;font-size:.9rem;"><i class="bi bi-shield-fill me-2" style="color:var(--gold)"></i>Поручитель ${i+1}</span>
+      <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeGuarantor(this)"><i class="bi bi-trash"></i></button>
+    </div>
+    <div class="card-body">
+      <div class="row g-3 mb-3">
+        <div class="col-md-4"><label class="form-label form-label-sm">Фамилия <span class="text-danger">*</span></label><input type="text" name="g_${i}_last_name" class="form-control form-control-sm" required placeholder="Иванов"></div>
+        <div class="col-md-4"><label class="form-label form-label-sm">Имя <span class="text-danger">*</span></label><input type="text" name="g_${i}_first_name" class="form-control form-control-sm" required placeholder="Иван"></div>
+        <div class="col-md-4"><label class="form-label form-label-sm">Отчество</label><input type="text" name="g_${i}_middle_name" class="form-control form-control-sm" placeholder="Иванович"></div>
+        <div class="col-md-3"><label class="form-label form-label-sm">Дата рождения</label><input type="date" name="g_${i}_birth_date" class="form-control form-control-sm"></div>
+        <div class="col-md-3"><label class="form-label form-label-sm">Телефон</label><input type="text" name="g_${i}_phone" class="form-control form-control-sm" placeholder="+7 900 000 00 00"></div>
+        <div class="col-md-3"><label class="form-label form-label-sm">Email</label><input type="email" name="g_${i}_email" class="form-control form-control-sm" placeholder="email@example.com"></div>
+        <div class="col-md-3"><label class="form-label form-label-sm">Отношение к клиенту</label>
+          <select name="g_${i}_relationship" class="form-select form-select-sm">
+            <option value="">---</option>
+            <option value="parent">Родитель</option>
+            <option value="spouse">Супруг/а</option>
+            <option value="sibling">Брат/Сестра</option>
+            <option value="friend">Друг</option>
+            <option value="colleague">Коллега</option>
+            <option value="other">Другое</option>
+          </select>
+        </div>
+      </div>
+      <hr class="my-2">
+      <div class="row g-3 mb-2">
+        <div class="col-md-2"><label class="form-label form-label-sm">Серия паспорта</label><input type="text" name="g_${i}_passport_series" class="form-control form-control-sm" placeholder="1234"></div>
+        <div class="col-md-3"><label class="form-label form-label-sm">Номер паспорта</label><input type="text" name="g_${i}_passport_number" class="form-control form-control-sm" placeholder="567890"></div>
+        <div class="col-md-3"><label class="form-label form-label-sm">Дата выдачи</label><input type="date" name="g_${i}_passport_issued_date" class="form-control form-control-sm"></div>
+        <div class="col-md-2"><label class="form-label form-label-sm">ИНН</label><input type="text" name="g_${i}_inn" class="form-control form-control-sm"></div>
+        <div class="col-md-2"><label class="form-label form-label-sm">СНИЛС</label><input type="text" name="g_${i}_snils" class="form-control form-control-sm"></div>
+        <div class="col-12"><label class="form-label form-label-sm">Кем выдан паспорт</label><input type="text" name="g_${i}_passport_issued_by" class="form-control form-control-sm" placeholder="УФМС России по г. Москве"></div>
+        <div class="col-12"><label class="form-label form-label-sm">Адрес прописки</label><textarea name="g_${i}_address_registration" class="form-control form-control-sm" rows="2" placeholder="Индекс, область, город, улица, дом, кв."></textarea></div>
+        <div class="col-12"><label class="form-label form-label-sm">Фактический адрес</label><textarea name="g_${i}_address_actual" class="form-control form-control-sm" rows="2" placeholder="Если отличается от прописки"></textarea></div>
+        <div class="col-md-5"><label class="form-label form-label-sm">Работодатель</label><input type="text" name="g_${i}_employer_name" class="form-control form-control-sm" placeholder="ООО «Компания»"></div>
+        <div class="col-md-4"><label class="form-label form-label-sm">Должность</label><input type="text" name="g_${i}_position" class="form-control form-control-sm" placeholder="Менеджер"></div>
+        <div class="col-md-3"><label class="form-label form-label-sm">Доход (₽/мес)</label><input type="number" name="g_${i}_monthly_income" class="form-control form-control-sm" value="0" min="0"></div>
+        <div class="col-md-5"><label class="form-label form-label-sm">Тип поручительства</label>
+          <select name="g_${i}_guarantor_type" class="form-select form-select-sm" onchange="togglePropDesc(this, ${i})">
+            <option value="personal">Личное поручительство</option>
+            <option value="property">Имущественный залог</option>
+          </select>
+        </div>
+        <div class="col-12" id="propDesc_${i}" style="display:none">
+          <label class="form-label form-label-sm">Описание залогового имущества</label>
+          <textarea name="g_${i}_property_description" class="form-control form-control-sm" rows="2" placeholder="Адрес, площадь, кадастровый номер, оценочная стоимость..."></textarea>
+        </div>
+        <div class="col-12"><label class="form-label form-label-sm">Примечания</label><textarea name="g_${i}_notes" class="form-control form-control-sm" rows="2" placeholder="Дополнительные сведения..."></textarea></div>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('guarantorsContainer').insertAdjacentHTML('beforeend', tpl);
+}
+
+function removeGuarantor(btn) {
+  btn.closest('.guarantor-block').remove();
+  // Do NOT decrement gCount — indices must stay unique so server skips removed blocks (empty fields)
+  if (!document.querySelectorAll('.guarantor-block').length) {
+    document.getElementById('noGuarantors').classList.remove('d-none');
+  }
+}
+
+function togglePropDesc(sel, i) {
+  const el = document.getElementById('propDesc_' + i);
+  if (el) el.style.display = sel.value === 'property' ? 'block' : 'none';
+}
+</script>
 {% endblock %}

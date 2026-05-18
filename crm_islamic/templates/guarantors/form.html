@@ -1,9 +1,12 @@
 {% extends 'base.html' %}
 {% block title %}{{ title }} — Мурабаха CRM{% endblock %}
 {% block breadcrumb %}
-<li class="breadcrumb-item"><a href="{{ url_for('contracts_list') }}">Договоры</a></li>
 {% if contract %}
+<li class="breadcrumb-item"><a href="{{ url_for('contracts_list') }}">Договоры</a></li>
 <li class="breadcrumb-item"><a href="{{ url_for('contract_detail', contract_id=contract.id) }}">{{ contract.contract_number }}</a></li>
+{% elif client_obj %}
+<li class="breadcrumb-item"><a href="{{ url_for('clients_list') }}">Клиенты</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('client_detail', client_id=client_obj.id) }}">{{ client_obj.full_name }}</a></li>
 {% endif %}
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
@@ -12,11 +15,15 @@
 <div class="page-header d-flex justify-content-between align-items-start">
   <div>
     <h4>{{ title }}</h4>
-    <p class="subtitle">Данные поручителя по договору</p>
+    <p class="subtitle">Данные поручителя</p>
   </div>
   {% if contract %}
   <a href="{{ url_for('contract_detail', contract_id=contract.id) }}" class="btn btn-outline-secondary btn-sm">
     <i class="bi bi-arrow-left me-1"></i>К договору
+  </a>
+  {% elif client_obj %}
+  <a href="{{ url_for('client_detail', client_id=client_obj.id) }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>К клиенту
   </a>
   {% endif %}
 </div>
@@ -25,14 +32,20 @@
 <div class="card mb-4" style="border-left:4px solid var(--gold)">
   <div class="card-body py-2">
     <i class="bi bi-file-earmark-text me-2" style="color:var(--gold)"></i>
-    <strong>{{ contract.contract_number }}</strong> —
-    {{ contract.client.full_name }} | {{ contract.item_name }}
+    <strong>{{ contract.contract_number }}</strong> — {{ contract.client.full_name }} | {{ contract.item_name }}
+  </div>
+</div>
+{% elif client_obj %}
+<div class="card mb-4" style="border-left:4px solid var(--primary)">
+  <div class="card-body py-2">
+    <i class="bi bi-person me-2" style="color:var(--primary)"></i>
+    Поручитель для клиента: <strong>{{ client_obj.full_name }}</strong>
   </div>
 </div>
 {% endif %}
 
-<div class="row justify-content-center">
-  <div class="col-lg-9">
+<div class="row g-3">
+  <div class="{{ 'col-lg-8' if guarantor else 'col-lg-10' }}">
     <div class="card">
       <div class="card-header">
         <i class="bi bi-shield-fill me-2" style="color:var(--primary-dark)"></i>Данные поручителя
@@ -43,6 +56,7 @@
           {{ form.contract_id() }}
           {{ form.client_id() }}
 
+          <div class="section-label">Личные данные</div>
           <div class="row g-3 mb-3">
             <div class="col-md-4">
               <label class="form-label">{{ form.last_name.label.text }} <span class="text-danger">*</span></label>
@@ -58,9 +72,26 @@
               <label class="form-label">{{ form.middle_name.label.text }}</label>
               {{ form.middle_name(class="form-control", placeholder="Иванович") }}
             </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ form.birth_date.label.text }}</label>
+              {{ form.birth_date(class="form-control") }}
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">{{ form.gender.label.text }}</label>
+              {{ form.gender(class="form-select") }}
+            </div>
             <div class="col-md-4">
               <label class="form-label">{{ form.phone.label.text }}</label>
               {{ form.phone(class="form-control", placeholder="+7-900-000-00-00") }}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ form.phone2.label.text }}</label>
+              {{ form.phone2(class="form-control", placeholder="+7-900-000-00-00") }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.email.label.text }}</label>
+              {{ form.email(class="form-control"+(" is-invalid" if form.email.errors else ""), placeholder="email@example.com") }}
+              {% for e in form.email.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
             </div>
             <div class="col-md-4">
               <label class="form-label">{{ form.relationship.label.text }}</label>
@@ -73,27 +104,27 @@
           </div>
 
           <hr class="my-3">
-          <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-light);font-weight:600;margin-bottom:12px">Паспортные данные</div>
-
+          <div class="section-label">Паспортные данные и документы</div>
           <div class="row g-3 mb-3">
-            <div class="col-md-3">
+            <div class="col-md-2">
               <label class="form-label">{{ form.passport_series.label.text }}</label>
-              {{ form.passport_series(class="form-control", placeholder="2214") }}
+              {{ form.passport_series(class="form-control", placeholder="1234") }}
             </div>
             <div class="col-md-3">
               <label class="form-label">{{ form.passport_number.label.text }}</label>
-              {{ form.passport_number(class="form-control", placeholder="345678") }}
+              {{ form.passport_number(class="form-control", placeholder="567890") }}
             </div>
             <div class="col-md-3">
               <label class="form-label">{{ form.passport_issued_date.label.text }}</label>
               {{ form.passport_issued_date(class="form-control") }}
             </div>
-            <div class="col-md-3">
-              <label class="form-label">{{ form.monthly_income.label.text }}</label>
-              <div class="input-group">
-                {{ form.monthly_income(class="form-control", placeholder="50000") }}
-                <span class="input-group-text">₽</span>
-              </div>
+            <div class="col-md-2">
+              <label class="form-label">{{ form.inn.label.text }}</label>
+              {{ form.inn(class="form-control") }}
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">{{ form.snils.label.text }}</label>
+              {{ form.snils(class="form-control") }}
             </div>
             <div class="col-12">
               <label class="form-label">{{ form.passport_issued_by.label.text }}</label>
@@ -104,15 +135,47 @@
               {{ form.address_registration(class="form-control", rows=2, placeholder="г. Москва, ул. Ленина, д. 1, кв. 1") }}
             </div>
             <div class="col-12">
+              <label class="form-label">{{ form.address_actual.label.text }}</label>
+              {{ form.address_actual(class="form-control", rows=2, placeholder="Фактический адрес, если отличается") }}
+            </div>
+          </div>
+
+          <hr class="my-3">
+          <div class="section-label">Занятость и доход</div>
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label">{{ form.employment_type.label.text }}</label>
+              {{ form.employment_type(class="form-select") }}
+            </div>
+            <div class="col-md-5">
               <label class="form-label">{{ form.employer_name.label.text }}</label>
-              {{ form.employer_name(class="form-control", placeholder="Место работы") }}
+              {{ form.employer_name(class="form-control", placeholder="ООО «Компания»") }}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ form.employer_phone.label.text }}</label>
+              {{ form.employer_phone(class="form-control", placeholder="+7 495 000 00 00") }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">{{ form.position.label.text }}</label>
+              {{ form.position(class="form-control", placeholder="Менеджер") }}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ form.work_experience_months.label.text }}</label>
+              {{ form.work_experience_months(class="form-control", placeholder="24") }}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">{{ form.monthly_income.label.text }}</label>
+              <div class="input-group">
+                {{ form.monthly_income(class="form-control", placeholder="50000") }}
+                <span class="input-group-text">₽</span>
+              </div>
             </div>
           </div>
 
           <div class="col-12" id="property_field" style="display:none">
             <div class="card" style="border:1px solid var(--gold);background:#fffbeb">
               <div class="card-body">
-                <label class="form-label fw-600" style="color:var(--gold-dark)">
+                <label class="form-label fw-bold" style="color:var(--gold)">
                   <i class="bi bi-building me-1"></i>{{ form.property_description.label.text }}
                 </label>
                 {{ form.property_description(class="form-control", rows=3, placeholder="Описание залогового имущества: адрес, площадь, оценочная стоимость, кадастровый номер...") }}
@@ -129,17 +192,81 @@
             {{ form.submit(class="btn btn-primary btn-lg px-5") }}
             {% if contract %}
             <a href="{{ url_for('contract_detail', contract_id=contract.id) }}" class="btn btn-outline-secondary btn-lg">Отмена</a>
+            {% elif client_obj %}
+            <a href="{{ url_for('client_detail', client_id=client_obj.id) }}" class="btn btn-outline-secondary btn-lg">Отмена</a>
             {% endif %}
           </div>
         </form>
       </div>
     </div>
   </div>
+
+  {% if guarantor %}
+  <!-- Document upload panel (edit mode only) -->
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-paperclip me-2"></i>Документы</span>
+        <span class="badge badge-closed">{{ guarantor_docs|length }}</span>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('document_upload') }}" enctype="multipart/form-data" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="entity_type" value="guarantor">
+          <input type="hidden" name="entity_id" value="{{ guarantor.id }}">
+          <div class="mb-2">
+            <select name="doc_type" class="form-select form-select-sm">
+              <option value="passport_front">Паспорт (лицевая)</option>
+              <option value="passport_back">Паспорт (оборот)</option>
+              <option value="inn">ИНН</option>
+              <option value="snils">СНИЛС</option>
+              <option value="income">Справка о доходах</option>
+              <option value="other">Другое</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <input type="file" name="file" class="form-control form-control-sm" accept="image/*,.pdf,.doc,.docx" required>
+          </div>
+          <input type="text" name="notes" class="form-control form-control-sm mb-2" placeholder="Примечание">
+          <button type="submit" class="btn btn-sm btn-primary w-100">
+            <i class="bi bi-upload me-1"></i>Загрузить
+          </button>
+        </form>
+        {% if guarantor_docs %}
+        <div class="list-group list-group-flush">
+          {% for doc in guarantor_docs %}
+          <div class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2 overflow-hidden">
+              <i class="bi {{ doc.icon }}" style="font-size:1.2rem;color:var(--primary-dark);flex-shrink:0;"></i>
+              <div class="overflow-hidden">
+                <div style="font-size:.8rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ doc.original_name }}</div>
+                <div style="font-size:.7rem;color:var(--text-muted);">{{ doc.type_label }} · {{ doc.file_size_kb }} КБ</div>
+              </div>
+            </div>
+            <div class="d-flex gap-1 ms-1" style="flex-shrink:0;">
+              <a href="{{ url_for('document_download', doc_id=doc.id) }}" target="_blank" class="btn btn-outline-primary" style="padding:3px 7px;font-size:.75rem;border-radius:6px;"><i class="bi bi-eye"></i></a>
+              <form method="POST" action="{{ url_for('document_delete', doc_id=doc.id) }}" onsubmit="return confirm('Удалить файл?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger" style="padding:3px 7px;font-size:.75rem;border-radius:6px;"><i class="bi bi-trash"></i></button>
+              </form>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-2" style="color:var(--text-muted);font-size:.82rem;">
+          <i class="bi bi-file-earmark d-block mb-1" style="font-size:1.5rem;color:#e2e8f0;"></i>
+          Нет загруженных файлов
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
 
 {% block scripts %}
-<style>.fw-600{font-weight:600}</style>
 <script>
 function togglePropertyField(val) {
   document.getElementById('property_field').style.display = val === 'property' ? 'block' : 'none';

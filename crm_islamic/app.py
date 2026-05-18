@@ -2,8 +2,10 @@ import os
 import sys
 import csv
 import io
+import uuid
 from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
+from werkzeug.utils import secure_filename
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -12,7 +14,7 @@ from flask import (
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from sqlalchemy import func, desc, asc, extract
 
-from .models import db, Client, Contract, PaymentSchedule, Payment, Guarantor, Backup
+from .models import db, Client, Contract, PaymentSchedule, Payment, Guarantor, Backup, Document
 from .forms import (
     ClientForm, ContractForm, PaymentForm, GuarantorForm,
     EMPLOYMENT_CHOICES, MARITAL_CHOICES, EDUCATION_CHOICES,
@@ -20,6 +22,12 @@ from .forms import (
     PAYMENT_METHOD_CHOICES
 )
 from . import backup as backup_module
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'heic'}
+
+
+def _allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 def create_app(config=None):
@@ -46,6 +54,11 @@ def create_app(config=None):
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['WTF_CSRF_ENABLED'] = True
 
+    upload_dir = os.path.join(db_dir, 'uploads')
+    os.makedirs(upload_dir, exist_ok=True)
+    app.config['UPLOAD_FOLDER'] = upload_dir
+    app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
+
     if config:
         app.config.update(config)
 
@@ -53,6 +66,59 @@ def create_app(config=None):
     csrf = CSRFProtect(app)
 
     # ── helpers ────────────────────────────────────────────────────────────────
+
+    def _get_upload_dir():
+        return app.config['UPLOAD_FOLDER']
+
+    def _save_inline_guarantors(client_id, form_data, clear_existing=False):
+        if clear_existing:
+            db.session.execute(
+                db.delete(Guarantor).where(
+                    Guarantor.client_id == client_id,
+                    Guarantor.contract_id.is_(None)
+                )
+            )
+        count = form_data.get('guarantor_count', 0, type=int)
+        for i in range(count):
+            first_name = form_data.get(f'g_{i}_first_name', '').strip()
+            last_name = form_data.get(f'g_{i}_last_name', '').strip()
+            if not first_name or not last_name:
+                continue
+            g = Guarantor(
+                client_id=client_id,
+                contract_id=None,
+                first_name=first_name,
+                last_name=last_name,
+                middle_name=form_data.get(f'g_{i}_middle_name', '').strip() or None,
+                phone=form_data.get(f'g_{i}_phone', '').strip() or None,
+                phone2=form_data.get(f'g_{i}_phone2', '').strip() or None,
+                email=form_data.get(f'g_{i}_email', '').strip() or None,
+                relationship=form_data.get(f'g_{i}_relationship', '') or None,
+                guarantor_type=form_data.get(f'g_{i}_guarantor_type', 'personal'),
+                passport_series=form_data.get(f'g_{i}_passport_series', '').strip() or None,
+                passport_number=form_data.get(f'g_{i}_passport_number', '').strip() or None,
+                passport_issued_by=form_data.get(f'g_{i}_passport_issued_by', '').strip() or None,
+                inn=form_data.get(f'g_{i}_inn', '').strip() or None,
+                snils=form_data.get(f'g_{i}_snils', '').strip() or None,
+                address_registration=form_data.get(f'g_{i}_address_registration', '').strip() or None,
+                address_actual=form_data.get(f'g_{i}_address_actual', '').strip() or None,
+                employer_name=form_data.get(f'g_{i}_employer_name', '').strip() or None,
+                employer_phone=form_data.get(f'g_{i}_employer_phone', '').strip() or None,
+                position=form_data.get(f'g_{i}_position', '').strip() or None,
+                employment_type=form_data.get(f'g_{i}_employment_type', '') or None,
+                monthly_income=float(form_data.get(f'g_{i}_monthly_income') or 0),
+                property_description=form_data.get(f'g_{i}_property_description', '').strip() or None,
+                notes=form_data.get(f'g_{i}_notes', '').strip() or None,
+            )
+            for attr, field in (('passport_issued_date', f'g_{i}_passport_issued_date'),
+                                 ('birth_date', f'g_{i}_birth_date')):
+                val = form_data.get(field, '').strip()
+                if val:
+                    try:
+                        setattr(g, attr, date.fromisoformat(val))
+                    except Exception:
+                        pass
+            db.session.add(g)
 
     def generate_contract_number():
         year = datetime.utcnow().year
@@ -266,10 +332,13 @@ def create_app(config=None):
             client = Client()
             _populate_client(client, form)
             db.session.add(client)
+            db.session.flush()
+            _save_inline_guarantors(client.id, request.form)
             db.session.commit()
             flash(f'Клиент {client.full_name} добавлен', 'success')
             return redirect(url_for('client_detail', client_id=client.id))
-        return render_template('clients/form.html', form=form, title='Новый клиент', client=None)
+        return render_template('clients/form.html', form=form, title='Новый клиент', client=None,
+                               client_guarantors=[])
 
     @app.route('/clients/<int:client_id>')
     def client_detail(client_id):
@@ -280,8 +349,14 @@ def create_app(config=None):
         guarantor_records = db.session.execute(
             db.select(Guarantor).where(Guarantor.client_id == client_id)
         ).scalars().all()
+        documents = db.session.execute(
+            db.select(Document).where(
+                Document.entity_type == 'client', Document.entity_id == client_id
+            ).order_by(desc(Document.uploaded_at))
+        ).scalars().all()
         return render_template('clients/detail.html', client=client,
-                               contracts=contracts, guarantor_records=guarantor_records)
+                               contracts=contracts, guarantor_records=guarantor_records,
+                               documents=documents)
 
     @app.route('/clients/<int:client_id>/edit', methods=['GET', 'POST'])
     def client_edit(client_id):
@@ -290,10 +365,17 @@ def create_app(config=None):
         if form.validate_on_submit():
             _populate_client(client, form)
             client.updated_at = datetime.utcnow()
+            _save_inline_guarantors(client.id, request.form, clear_existing=True)
             db.session.commit()
             flash('Данные клиента обновлены', 'success')
             return redirect(url_for('client_detail', client_id=client.id))
-        return render_template('clients/form.html', form=form, title='Редактировать клиента', client=client)
+        existing_guarantors = db.session.execute(
+            db.select(Guarantor).where(
+                Guarantor.client_id == client_id, Guarantor.contract_id.is_(None)
+            )
+        ).scalars().all()
+        return render_template('clients/form.html', form=form, title='Редактировать клиента',
+                               client=client, client_guarantors=existing_guarantors)
 
     @app.route('/clients/<int:client_id>/delete', methods=['POST'])
     def client_delete(client_id):
@@ -318,61 +400,93 @@ def create_app(config=None):
     @app.route('/guarantors/new', methods=['GET', 'POST'])
     def guarantor_new():
         contract_id = request.args.get('contract_id', type=int) or request.form.get('contract_id', type=int)
-        contract = db.session.get(Contract, contract_id) or abort(404)
-        form = GuarantorForm(contract_id=contract_id)
+        client_id = request.args.get('client_id', type=int) or request.form.get('client_id', type=int)
+        contract = db.session.get(Contract, contract_id) if contract_id else None
+        client_obj = db.session.get(Client, client_id) if (client_id and not contract) else None
+        if not contract and not client_obj:
+            abort(400)
+        form = GuarantorForm()
         if request.method == 'GET':
-            form.contract_id.data = contract_id
+            form.contract_id.data = str(contract_id) if contract_id else ''
+            form.client_id.data = str(client_id) if client_id else (str(contract.client_id) if contract else '')
         if form.validate_on_submit():
             g = Guarantor(
                 contract_id=contract_id,
-                client_id=form.client_id.data or None,
+                client_id=int(form.client_id.data) if form.client_id.data else (contract.client_id if contract else None),
                 relationship=form.relationship.data,
                 last_name=form.last_name.data,
                 first_name=form.first_name.data,
-                middle_name=form.middle_name.data,
-                phone=form.phone.data,
-                passport_series=form.passport_series.data,
-                passport_number=form.passport_number.data,
-                passport_issued_by=form.passport_issued_by.data,
+                middle_name=form.middle_name.data or None,
+                birth_date=form.birth_date.data,
+                gender=form.gender.data or None,
+                phone=form.phone.data or None,
+                phone2=form.phone2.data or None,
+                email=form.email.data or None,
+                passport_series=form.passport_series.data or None,
+                passport_number=form.passport_number.data or None,
+                passport_issued_by=form.passport_issued_by.data or None,
                 passport_issued_date=form.passport_issued_date.data,
-                address_registration=form.address_registration.data,
-                employer_name=form.employer_name.data,
+                inn=form.inn.data or None,
+                snils=form.snils.data or None,
+                address_registration=form.address_registration.data or None,
+                address_actual=form.address_actual.data or None,
+                employer_name=form.employer_name.data or None,
+                employer_phone=form.employer_phone.data or None,
+                position=form.position.data or None,
+                employment_type=form.employment_type.data or None,
+                work_experience_months=form.work_experience_months.data,
                 monthly_income=form.monthly_income.data or 0,
                 guarantor_type=form.guarantor_type.data,
-                property_description=form.property_description.data,
-                notes=form.notes.data,
+                property_description=form.property_description.data or None,
+                notes=form.notes.data or None,
             )
             db.session.add(g)
             db.session.commit()
             flash('Поручитель добавлен', 'success')
-            return redirect(url_for('contract_detail', contract_id=contract_id))
-        return render_template('guarantors/form.html', form=form, contract=contract, title='Новый поручитель')
+            if contract:
+                return redirect(url_for('contract_detail', contract_id=contract_id))
+            return redirect(url_for('client_detail', client_id=client_id))
+        return render_template('guarantors/form.html', form=form, contract=contract,
+                               client_obj=client_obj, title='Новый поручитель')
 
     @app.route('/guarantors/<int:g_id>/edit', methods=['GET', 'POST'])
     def guarantor_edit(g_id):
         g = db.session.get(Guarantor, g_id) or abort(404)
-        contract = db.session.get(Contract, g.contract_id)
+        contract = db.session.get(Contract, g.contract_id) if g.contract_id else None
+        client_obj = db.session.get(Client, g.client_id) if (g.client_id and not contract) else None
         form = GuarantorForm(obj=g)
         if form.validate_on_submit():
             for field in form:
-                if field.name not in ('submit', 'csrf_token'):
+                if field.name not in ('submit', 'csrf_token', 'contract_id', 'client_id'):
                     try:
-                        setattr(g, field.name, field.data)
+                        setattr(g, field.name, field.data if field.data != '' else None)
                     except Exception:
                         pass
             db.session.commit()
             flash('Данные поручителя обновлены', 'success')
-            return redirect(url_for('contract_detail', contract_id=g.contract_id))
-        return render_template('guarantors/form.html', form=form, contract=contract, title='Редактировать поручителя')
+            if g.contract_id:
+                return redirect(url_for('contract_detail', contract_id=g.contract_id))
+            return redirect(url_for('client_detail', client_id=g.client_id))
+        guarantor_docs = db.session.execute(
+            db.select(Document).where(
+                Document.entity_type == 'guarantor', Document.entity_id == g_id
+            ).order_by(desc(Document.uploaded_at))
+        ).scalars().all()
+        return render_template('guarantors/form.html', form=form, contract=contract,
+                               client_obj=client_obj, guarantor=g,
+                               guarantor_docs=guarantor_docs, title='Редактировать поручителя')
 
     @app.route('/guarantors/<int:g_id>/delete', methods=['POST'])
     def guarantor_delete(g_id):
         g = db.session.get(Guarantor, g_id) or abort(404)
         cid = g.contract_id
+        client_id = g.client_id
         db.session.delete(g)
         db.session.commit()
         flash('Поручитель удалён', 'warning')
-        return redirect(url_for('contract_detail', contract_id=cid))
+        if cid:
+            return redirect(url_for('contract_detail', contract_id=cid))
+        return redirect(url_for('client_detail', client_id=client_id))
 
     # ══════════════════════════════════════════════════════════════════════════
     # CONTRACTS
@@ -479,10 +593,15 @@ def create_app(config=None):
         guarantors = db.session.execute(
             db.select(Guarantor).where(Guarantor.contract_id == contract_id)
         ).scalars().all()
+        documents = db.session.execute(
+            db.select(Document).where(
+                Document.entity_type == 'contract', Document.entity_id == contract_id
+            ).order_by(desc(Document.uploaded_at))
+        ).scalars().all()
         return render_template('contracts/detail.html',
                                contract=contract, schedule=schedule,
                                payments=payments, guarantors=guarantors,
-                               today=date.today())
+                               documents=documents, today=date.today())
 
     @app.route('/contracts/<int:contract_id>/edit', methods=['GET', 'POST'])
     def contract_edit(contract_id):
@@ -814,6 +933,74 @@ def create_app(config=None):
             flash(f'Ошибка восстановления: {e}', 'danger')
         return redirect(url_for('backups_list'))
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # DOCUMENTS
+    # ══════════════════════════════════════════════════════════════════════════
+
+    @app.route('/documents/upload', methods=['POST'])
+    def document_upload():
+        entity_type = request.form.get('entity_type', '')
+        entity_id = request.form.get('entity_id', type=int)
+        doc_type = request.form.get('doc_type', 'other')
+        notes = request.form.get('notes', '').strip()
+
+        if entity_type not in ('client', 'contract', 'guarantor') or not entity_id:
+            flash('Неверные параметры загрузки', 'danger')
+            return redirect(request.referrer or url_for('dashboard'))
+
+        if 'file' not in request.files:
+            flash('Файл не выбран', 'danger')
+            return redirect(request.referrer or url_for('dashboard'))
+
+        f = request.files['file']
+        if not f or f.filename == '':
+            flash('Файл не выбран', 'danger')
+            return redirect(request.referrer or url_for('dashboard'))
+
+        if not _allowed_file(f.filename):
+            flash('Недопустимый формат файла. Разрешены: изображения, PDF, DOC, XLS', 'danger')
+            return redirect(request.referrer or url_for('dashboard'))
+
+        ext = f.filename.rsplit('.', 1)[1].lower()
+        stored_name = f'{uuid.uuid4().hex}.{ext}'
+        filepath = os.path.join(_get_upload_dir(), stored_name)
+        f.save(filepath)
+
+        size_kb = round(os.path.getsize(filepath) / 1024, 1)
+        doc = Document(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            doc_type=doc_type,
+            filename=stored_name,
+            original_name=secure_filename(f.filename),
+            file_size_kb=size_kb,
+            mime_type=f.content_type or '',
+            notes=notes or None,
+        )
+        db.session.add(doc)
+        db.session.commit()
+        flash('Документ загружен', 'success')
+        return redirect(request.referrer or url_for('dashboard'))
+
+    @app.route('/documents/<int:doc_id>/file')
+    def document_download(doc_id):
+        doc = db.session.get(Document, doc_id) or abort(404)
+        filepath = os.path.join(_get_upload_dir(), doc.filename)
+        if not os.path.exists(filepath):
+            abort(404)
+        return send_file(filepath, download_name=doc.original_name or doc.filename, as_attachment=False)
+
+    @app.route('/documents/<int:doc_id>/delete', methods=['POST'])
+    def document_delete(doc_id):
+        doc = db.session.get(Document, doc_id) or abort(404)
+        filepath = os.path.join(_get_upload_dir(), doc.filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        db.session.delete(doc)
+        db.session.commit()
+        flash('Документ удалён', 'warning')
+        return redirect(request.referrer or url_for('dashboard'))
+
     @app.route('/backups/<int:backup_id>/delete', methods=['POST'])
     def backup_delete(backup_id):
         b = db.session.get(Backup, backup_id) or abort(404)
@@ -986,6 +1173,28 @@ def create_app(config=None):
     # Init DB
     with app.app_context():
         db.create_all()
+        # Best-effort migration for existing databases
+        try:
+            from sqlalchemy import text, inspect as sa_inspect
+            insp = sa_inspect(db.engine)
+            g_cols = {c['name'] for c in insp.get_columns('guarantors')} if 'guarantors' in insp.get_table_names() else set()
+            new_g_cols = [
+                ('birth_date', 'DATE'), ('gender', 'VARCHAR(10)'), ('phone2', 'VARCHAR(30)'),
+                ('email', 'VARCHAR(150)'), ('inn', 'VARCHAR(20)'), ('snils', 'VARCHAR(20)'),
+                ('address_actual', 'TEXT'), ('employer_phone', 'VARCHAR(30)'),
+                ('position', 'VARCHAR(150)'), ('employment_type', 'VARCHAR(30)'),
+                ('work_experience_months', 'INTEGER'), ('created_at', 'DATETIME'),
+            ]
+            with db.engine.connect() as conn:
+                for col_name, col_type in new_g_cols:
+                    if col_name not in g_cols:
+                        try:
+                            conn.execute(text(f'ALTER TABLE guarantors ADD COLUMN {col_name} {col_type}'))
+                            conn.commit()
+                        except Exception:
+                            pass
+        except Exception as e:
+            print(f'Migration warning: {e}')
         try:
             from dateutil.relativedelta import relativedelta as _r
             seed_demo_data()

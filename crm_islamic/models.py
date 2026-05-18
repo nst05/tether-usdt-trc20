@@ -106,26 +106,46 @@ class Guarantor(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=True)
-    contract_id = db.Column(db.Integer, db.ForeignKey('contracts.id'), nullable=False)
+    contract_id = db.Column(db.Integer, db.ForeignKey('contracts.id'), nullable=True)
 
     relationship = db.Column(db.String(30))  # parent/spouse/sibling/friend/colleague/other
     guarantor_type = db.Column(db.String(20), default='personal')  # personal/property
     property_description = db.Column(db.Text)
 
-    # Personal fields
+    # Personal
     last_name = db.Column(db.String(100))
     first_name = db.Column(db.String(100))
     middle_name = db.Column(db.String(100))
+    birth_date = db.Column(db.Date)
+    gender = db.Column(db.String(10))
     phone = db.Column(db.String(30))
+    phone2 = db.Column(db.String(30))
+    email = db.Column(db.String(150))
+
+    # Passport
     passport_series = db.Column(db.String(10))
     passport_number = db.Column(db.String(20))
     passport_issued_by = db.Column(db.String(300))
     passport_issued_date = db.Column(db.Date)
+
+    # IDs
+    inn = db.Column(db.String(20))
+    snils = db.Column(db.String(20))
+
+    # Addresses
     address_registration = db.Column(db.Text)
+    address_actual = db.Column(db.Text)
+
+    # Employment
     employer_name = db.Column(db.String(200))
+    employer_phone = db.Column(db.String(30))
+    position = db.Column(db.String(150))
+    employment_type = db.Column(db.String(30))
+    work_experience_months = db.Column(db.Integer)
     monthly_income = db.Column(db.Float, default=0.0)
 
     notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     @property
     def full_name(self):
@@ -134,6 +154,50 @@ class Guarantor(db.Model):
 
     def __repr__(self):
         return f'<Guarantor {self.full_name}>'
+
+
+class Document(db.Model):
+    __tablename__ = 'documents'
+
+    id = db.Column(db.Integer, primary_key=True)
+    entity_type = db.Column(db.String(20), nullable=False)  # client/contract/guarantor
+    entity_id = db.Column(db.Integer, nullable=False)
+    doc_type = db.Column(db.String(30), default='other')
+    # passport_front/passport_back/inn/snils/income/contract/photo/other
+    filename = db.Column(db.String(200), nullable=False)  # stored UUID-based name
+    original_name = db.Column(db.String(200))
+    file_size_kb = db.Column(db.Float, default=0.0)
+    mime_type = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    DOC_TYPE_LABELS = {
+        'passport_front': 'Паспорт (лицевая)',
+        'passport_back': 'Паспорт (оборот)',
+        'inn': 'ИНН',
+        'snils': 'СНИЛС',
+        'income': 'Справка о доходах',
+        'contract': 'Договор',
+        'photo': 'Фото',
+        'other': 'Другое',
+    }
+
+    @property
+    def type_label(self):
+        return self.DOC_TYPE_LABELS.get(self.doc_type, self.doc_type)
+
+    @property
+    def icon(self):
+        if self.mime_type and 'image' in self.mime_type:
+            return 'bi-file-image'
+        elif self.mime_type and 'pdf' in self.mime_type:
+            return 'bi-file-pdf'
+        elif self.mime_type and ('word' in self.mime_type or 'document' in self.mime_type):
+            return 'bi-file-word'
+        return 'bi-file-earmark'
+
+    def __repr__(self):
+        return f'<Document {self.entity_type}#{self.entity_id} {self.doc_type}>'
 
 
 class Contract(db.Model):
@@ -210,6 +274,10 @@ class Contract(db.Model):
         if self.financed_amount <= 0:
             return 0
         return min(100, int((self.paid_amount / self.financed_amount) * 100))
+
+    @property
+    def paid_installments(self):
+        return self.schedule.filter(PaymentSchedule.status == 'paid').count()
 
     @property
     def overdue_schedules(self):

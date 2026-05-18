@@ -169,22 +169,39 @@ class ClientForm(FlaskForm):
 
 
 class GuarantorForm(FlaskForm):
-    contract_id = HiddenField('contract_id', validators=[DataRequired()])
+    contract_id = HiddenField('contract_id', validators=[Optional()])
     client_id = HiddenField('client_id', validators=[Optional()])
 
     # Personal
     last_name = StringField('Фамилия', validators=[DataRequired(message='Обязательное поле'), Length(max=100)])
     first_name = StringField('Имя', validators=[DataRequired(message='Обязательное поле'), Length(max=100)])
     middle_name = StringField('Отчество', validators=[Optional(), Length(max=100)])
+    birth_date = DateField('Дата рождения', validators=[Optional()])
+    gender = SelectField('Пол', choices=[('', '---'), ('male', 'Мужской'), ('female', 'Женский')], validators=[Optional()])
     phone = StringField('Телефон', validators=[Optional(), Length(max=30)])
+    phone2 = StringField('Телефон 2', validators=[Optional(), Length(max=30)])
+    email = StringField('Email', validators=[Optional(), Email(message='Некорректный email'), Length(max=150)])
 
     # Passport
     passport_series = StringField('Серия паспорта', validators=[Optional(), Length(max=10)])
     passport_number = StringField('Номер паспорта', validators=[Optional(), Length(max=20)])
     passport_issued_by = StringField('Кем выдан', validators=[Optional(), Length(max=300)])
     passport_issued_date = DateField('Дата выдачи', validators=[Optional()])
+
+    # IDs
+    inn = StringField('ИНН', validators=[Optional(), Length(max=20)])
+    snils = StringField('СНИЛС', validators=[Optional(), Length(max=20)])
+
+    # Addresses
     address_registration = TextAreaField('Адрес прописки', validators=[Optional()])
+    address_actual = TextAreaField('Фактический адрес', validators=[Optional()])
+
+    # Employment
     employer_name = StringField('Работодатель', validators=[Optional(), Length(max=200)])
+    employer_phone = StringField('Тел. работодателя', validators=[Optional(), Length(max=30)])
+    position = StringField('Должность', validators=[Optional(), Length(max=150)])
+    employment_type = SelectField('Тип занятости', choices=EMPLOYMENT_CHOICES, validators=[Optional()])
+    work_experience_months = IntegerField('Стаж (мес.)', validators=[Optional(), NumberRange(min=0)])
     monthly_income = FloatField('Ежемесячный доход', validators=[Optional(), NumberRange(min=0)], default=0.0)
 
     # Guarantor specific
