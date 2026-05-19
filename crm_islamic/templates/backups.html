@@ -23,8 +23,9 @@
           <div>
             <div class="fw-600 mb-1">Ваши данные в безопасности</div>
             <div style="font-size:.85rem;color:var(--text-muted)">
-              Резервные копии включают все данные: клиентов, договоры, графики платежей и историю платежей.
-              Файлы сохраняются в формате JSON и доступны для скачивания и восстановления.
+              Резервные копии включают <strong>все данные</strong>: клиентов, договоры, платежи
+              и <strong>загруженные документы (сканы)</strong>.
+              Файлы сохраняются в формате <strong>ZIP</strong> — скачайте и храните в надёжном месте.
             </div>
           </div>
         </div>
@@ -58,7 +59,11 @@
               <div class="fw-500">{{ b.created_at.strftime('%d.%m.%Y') }}</div>
               <div style="font-size:.75rem;color:var(--text-muted)">{{ b.created_at.strftime('%H:%M') }}</div>
             </td>
-            <td><code style="font-size:.82rem;color:var(--primary-dark)">{{ b.filename }}</code></td>
+            <td>
+              <i class="bi {{ 'bi-file-zip' if b.filename.endswith('.zip') else 'bi-file-earmark-code' }} me-1"
+                 style="color:var(--primary-dark)"></i>
+              <code style="font-size:.82rem;color:var(--primary-dark)">{{ b.filename }}</code>
+            </td>
             <td>
               <span class="badge" style="background:#f1f5f9;color:#475569;font-weight:500">
                 {{ b.file_size_kb }} КБ
@@ -122,7 +127,8 @@
         <div class="modal-body">
           <div class="alert" style="background:#f0fdf9;border:1px solid #a7f3d0;color:#065f46;font-size:.85rem">
             <i class="bi bi-info-circle me-2"></i>
-            Будет создан JSON-файл со всеми данными системы. Файл можно скачать и использовать для восстановления.
+            Будет создан <strong>ZIP-архив</strong> с данными базы и всеми загруженными документами (сканами).
+            Архив можно скачать и использовать для полного восстановления.
           </div>
           <label class="form-label">Примечание <span style="color:var(--text-muted);font-weight:normal">(необязательно)</span></label>
           <textarea name="note" class="form-control" rows="2" placeholder="Описание копии, причина создания..."></textarea>

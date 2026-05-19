@@ -1,30 +1,29 @@
 import json
 import os
+import zipfile
 from datetime import datetime, date
 
 
 def _get_backup_dir():
-    """Папка резервных копий: рядом с БД (или рядом с .py в dev-режиме)."""
     base = os.environ.get('CRM_DB_DIR', os.path.dirname(os.path.abspath(__file__)))
     d = os.path.join(base, 'backups')
     os.makedirs(d, exist_ok=True)
     return d
 
 
-def _serialize(obj):
-    if isinstance(obj, (datetime,)):
-        return obj.isoformat()
-    if isinstance(obj, date):
-        return obj.isoformat()
-    return str(obj)
+def _get_upload_dir():
+    base = os.environ.get('CRM_DB_DIR', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, 'uploads')
 
 
 def create_backup(db, note=""):
-    from .models import Client, Guarantor, Contract, PaymentSchedule, Payment, Backup
+    from .models import Client, Guarantor, Contract, PaymentSchedule, Payment, Backup, Document
 
     backup_dir = _get_backup_dir()
+    upload_dir = _get_upload_dir()
+
     timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-    filename = f'backup_{timestamp}.json'
+    filename = f'backup_{timestamp}.zip'
     filepath = os.path.join(backup_dir, filename)
 
     def row_to_dict(row):
@@ -36,26 +35,43 @@ def create_backup(db, note=""):
             d[c.name] = val
         return d
 
+    documents = list(db.session.execute(db.select(Document)).scalars())
+
     data = {
         'created_at': datetime.utcnow().isoformat(),
-        'version': '1.0',
-        'clients': [row_to_dict(r) for r in db.session.execute(db.select(Client)).scalars()],
-        'guarantors': [row_to_dict(r) for r in db.session.execute(db.select(Guarantor)).scalars()],
-        'contracts': [row_to_dict(r) for r in db.session.execute(db.select(Contract)).scalars()],
-        'payment_schedules': [row_to_dict(r) for r in db.session.execute(db.select(PaymentSchedule)).scalars()],
-        'payments': [row_to_dict(r) for r in db.session.execute(db.select(Payment)).scalars()],
+        'version': '2.0',
+        'clients':          [row_to_dict(r) for r in db.session.execute(db.select(Client)).scalars()],
+        'guarantors':       [row_to_dict(r) for r in db.session.execute(db.select(Guarantor)).scalars()],
+        'contracts':        [row_to_dict(r) for r in db.session.execute(db.select(Contract)).scalars()],
+        'payment_schedules':[row_to_dict(r) for r in db.session.execute(db.select(PaymentSchedule)).scalars()],
+        'payments':         [row_to_dict(r) for r in db.session.execute(db.select(Payment)).scalars()],
+        'documents':        [row_to_dict(r) for r in documents],
     }
 
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, default=_serialize)
+    files_included = 0
+    files_missing  = 0
+
+    with zipfile.ZipFile(filepath, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        zf.writestr('data.json', json.dumps(data, ensure_ascii=False, indent=2))
+
+        for doc in documents:
+            src = os.path.join(upload_dir, doc.filename)
+            if os.path.exists(src):
+                zf.write(src, f'uploads/{doc.filename}')
+                files_included += 1
+            else:
+                files_missing += 1
 
     size_kb = os.path.getsize(filepath) / 1024.0
+    note_full = note
+    if files_missing:
+        note_full = (note + f' [{files_missing} файл(ов) не найдено]').strip()
 
     backup_rec = Backup(
         filename=filename,
         file_size_kb=round(size_kb, 2),
         backup_type='manual',
-        notes=note,
+        notes=note_full,
     )
     db.session.add(backup_rec)
     db.session.commit()
@@ -63,16 +79,32 @@ def create_backup(db, note=""):
 
 
 def restore_backup(filename, db):
-    from .models import Client, Guarantor, Contract, PaymentSchedule, Payment, Backup
+    from .models import Client, Guarantor, Contract, PaymentSchedule, Payment, Backup, Document
 
     backup_dir = _get_backup_dir()
+    upload_dir = _get_upload_dir()
+    os.makedirs(upload_dir, exist_ok=True)
+
     filepath = os.path.join(backup_dir, filename)
     if not os.path.exists(filepath):
-        raise FileNotFoundError(f'Backup file not found: {filename}')
+        raise FileNotFoundError(f'Файл резервной копии не найден: {filename}')
 
-    with open(filepath, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    # Поддержка старого формата .json и нового .zip
+    if filename.endswith('.zip'):
+        with zipfile.ZipFile(filepath, 'r') as zf:
+            data = json.loads(zf.read('data.json').decode('utf-8'))
+            # Восстанавливаем файлы документов
+            for name in zf.namelist():
+                if name.startswith('uploads/') and not name.endswith('/'):
+                    dest = os.path.join(upload_dir, os.path.basename(name))
+                    with open(dest, 'wb') as f:
+                        f.write(zf.read(name))
+    else:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
 
+    # Очищаем текущие данные
+    db.session.execute(db.delete(Document))
     db.session.execute(db.delete(Payment))
     db.session.execute(db.delete(PaymentSchedule))
     db.session.execute(db.delete(Guarantor))
@@ -97,7 +129,7 @@ def restore_backup(filename, db):
             return None
 
     for row in data.get('clients', []):
-        obj = Client(
+        db.session.add(Client(
             id=row['id'],
             created_at=parse_dt(row.get('created_at')),
             updated_at=parse_dt(row.get('updated_at')),
@@ -143,13 +175,11 @@ def restore_backup(filename, db):
             blacklist_reason=row.get('blacklist_reason'),
             notes=row.get('notes'),
             photo_path=row.get('photo_path'),
-        )
-        db.session.add(obj)
-
+        ))
     db.session.flush()
 
     for row in data.get('contracts', []):
-        obj = Contract(
+        db.session.add(Contract(
             id=row['id'],
             contract_number=row.get('contract_number'),
             client_id=row['client_id'],
@@ -183,16 +213,14 @@ def restore_backup(filename, db):
             notes=row.get('notes'),
             created_at=parse_dt(row.get('created_at')),
             updated_at=parse_dt(row.get('updated_at')),
-        )
-        db.session.add(obj)
-
+        ))
     db.session.flush()
 
     for row in data.get('guarantors', []):
-        obj = Guarantor(
+        db.session.add(Guarantor(
             id=row['id'],
             client_id=row.get('client_id'),
-            contract_id=row['contract_id'],
+            contract_id=row.get('contract_id'),
             relationship=row.get('relationship'),
             guarantor_type=row.get('guarantor_type', 'personal'),
             property_description=row.get('property_description'),
@@ -208,13 +236,11 @@ def restore_backup(filename, db):
             employer_name=row.get('employer_name'),
             monthly_income=row.get('monthly_income', 0),
             notes=row.get('notes'),
-        )
-        db.session.add(obj)
-
+        ))
     db.session.flush()
 
     for row in data.get('payment_schedules', []):
-        obj = PaymentSchedule(
+        db.session.add(PaymentSchedule(
             id=row['id'],
             contract_id=row['contract_id'],
             installment_num=row.get('installment_num'),
@@ -223,13 +249,11 @@ def restore_backup(filename, db):
             status=row.get('status', 'pending'),
             paid_amount=row.get('paid_amount', 0),
             paid_date=parse_date(row.get('paid_date')),
-        )
-        db.session.add(obj)
-
+        ))
     db.session.flush()
 
     for row in data.get('payments', []):
-        obj = Payment(
+        db.session.add(Payment(
             id=row['id'],
             contract_id=row['contract_id'],
             schedule_id=row.get('schedule_id'),
@@ -240,8 +264,23 @@ def restore_backup(filename, db):
             received_by=row.get('received_by'),
             note=row.get('note'),
             created_at=parse_dt(row.get('created_at')),
-        )
-        db.session.add(obj)
+        ))
+    db.session.flush()
+
+    for row in data.get('documents', []):
+        db.session.add(Document(
+            id=row['id'],
+            entity_type=row.get('entity_type', 'client'),
+            entity_id=row.get('entity_id', 0),
+            doc_type=row.get('doc_type', 'other'),
+            filename=row.get('filename', ''),
+            original_name=row.get('original_name'),
+            file_size_kb=row.get('file_size_kb', 0.0),
+            mime_type=row.get('mime_type'),
+            notes=row.get('notes'),
+            uploaded_at=parse_dt(row.get('uploaded_at')),
+        ))
+    db.session.flush()
 
     db.session.commit()
     return True
@@ -251,7 +290,7 @@ def get_backup_list():
     backup_dir = _get_backup_dir()
     files = []
     for fn in sorted(os.listdir(backup_dir), reverse=True):
-        if fn.endswith('.json') and fn.startswith('backup_'):
+        if fn.startswith('backup_') and fn.endswith(('.zip', '.json')):
             fp = os.path.join(backup_dir, fn)
             files.append({
                 'filename': fn,
