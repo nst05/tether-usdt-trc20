@@ -254,13 +254,25 @@
 
   <!-- Right: Schedule + Payments -->
   <div class="col-md-8">
+
+    <!-- Payment Chart -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-bar-chart-fill me-2" style="color:#6366f1;"></i>Диаграмма платежей</span>
+        <span class="badge badge-closed">{{ contract.paid_installments }} / {{ contract.months }} оплачено</span>
+      </div>
+      <div class="card-body pb-2">
+        <canvas id="payChart" height="110"></canvas>
+      </div>
+    </div>
+
     <!-- Payment Schedule -->
     <div class="card mb-3">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-calendar3 me-2" style="color:#6366f1;"></i>График платежей</span>
         <span class="badge badge-closed">{{ schedule|length }} платежей</span>
       </div>
-      <div class="table-responsive" style="max-height:420px; overflow-y:auto;">
+      <div class="table-responsive" style="max-height:360px; overflow-y:auto;">
         <table class="table mb-0">
           <thead style="position:sticky; top:0; z-index:1;">
             <tr>
@@ -396,4 +408,59 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function() {
+  const schedule = {{ schedule_json | tojson }};
+  const fmt = v => new Intl.NumberFormat('ru-RU', {maximumFractionDigits:0}).format(v);
+
+  const labels = schedule.map(s => {
+    const d = new Date(s.due_date);
+    return d.toLocaleDateString('ru-RU', {month:'short', year:'2-digit'});
+  });
+  const amounts  = schedule.map(s => s.amount);
+  const statuses = schedule.map(s => s.status);
+
+  const bgColors = statuses.map(st => {
+    if (st === 'paid')    return 'rgba(16,185,129,0.75)';
+    if (st === 'overdue') return 'rgba(220,38,38,0.75)';
+    if (st === 'partial') return 'rgba(245,158,11,0.75)';
+    return 'rgba(99,102,241,0.45)';
+  });
+
+  new Chart(document.getElementById('payChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Платёж ₽',
+        data: amounts,
+        backgroundColor: bgColors,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: {display: false},
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const stLabel = {paid:'Оплачен',overdue:'Просрочен',partial:'Частично',pending:'Ожидает'}[statuses[ctx.dataIndex]] || '';
+              return [`${fmt(ctx.parsed.y)} ₽`, stLabel];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {grid:{display:false}, ticks:{font:{size:10}}},
+        y: {ticks:{callback: v => fmt(v)+' ₽'}, grid:{color:'rgba(0,0,0,.05)'}}
+      }
+    }
+  });
+})();
+</script>
 {% endblock %}

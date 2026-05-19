@@ -746,6 +746,11 @@
       <i class="bi bi-bar-chart-line-fill nav-icon" style="color:#f97316;"></i>
       <span class="nav-label">Отчёты</span>
     </a>
+    <a href="{{ url_for('calculator') }}"
+       class="sidebar-link {% if request.endpoint == 'calculator' %}active{% endif %}">
+      <i class="bi bi-calculator-fill nav-icon" style="color:#10b981;"></i>
+      <span class="nav-label">Калькулятор</span>
+    </a>
     <a href="{{ url_for('backups_list') }}"
        class="sidebar-link {% if 'backup' in (request.endpoint or '') %}active{% endif %}">
       <i class="bi bi-shield-check nav-icon" style="color:#34d399;"></i>

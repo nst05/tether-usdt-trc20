@@ -2,11 +2,13 @@ import json
 import os
 from datetime import datetime, date
 
-BACKUP_DIR = os.path.join(os.path.dirname(__file__), 'backups')
 
-
-def _ensure_dir():
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+def _get_backup_dir():
+    """Папка резервных копий: рядом с БД (или рядом с .py в dev-режиме)."""
+    base = os.environ.get('CRM_DB_DIR', os.path.dirname(os.path.abspath(__file__)))
+    d = os.path.join(base, 'backups')
+    os.makedirs(d, exist_ok=True)
+    return d
 
 
 def _serialize(obj):
@@ -20,10 +22,10 @@ def _serialize(obj):
 def create_backup(db, note=""):
     from .models import Client, Guarantor, Contract, PaymentSchedule, Payment, Backup
 
-    _ensure_dir()
+    backup_dir = _get_backup_dir()
     timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
     filename = f'backup_{timestamp}.json'
-    filepath = os.path.join(BACKUP_DIR, filename)
+    filepath = os.path.join(backup_dir, filename)
 
     def row_to_dict(row):
         d = {}
@@ -63,14 +65,14 @@ def create_backup(db, note=""):
 def restore_backup(filename, db):
     from .models import Client, Guarantor, Contract, PaymentSchedule, Payment, Backup
 
-    filepath = os.path.join(BACKUP_DIR, filename)
+    backup_dir = _get_backup_dir()
+    filepath = os.path.join(backup_dir, filename)
     if not os.path.exists(filepath):
         raise FileNotFoundError(f'Backup file not found: {filename}')
 
     with open(filepath, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
-    # Clear existing data
     db.session.execute(db.delete(Payment))
     db.session.execute(db.delete(PaymentSchedule))
     db.session.execute(db.delete(Guarantor))
@@ -246,11 +248,11 @@ def restore_backup(filename, db):
 
 
 def get_backup_list():
-    _ensure_dir()
+    backup_dir = _get_backup_dir()
     files = []
-    for fn in sorted(os.listdir(BACKUP_DIR), reverse=True):
+    for fn in sorted(os.listdir(backup_dir), reverse=True):
         if fn.endswith('.json') and fn.startswith('backup_'):
-            fp = os.path.join(BACKUP_DIR, fn)
+            fp = os.path.join(backup_dir, fn)
             files.append({
                 'filename': fn,
                 'size_kb': round(os.path.getsize(fp) / 1024, 2),

@@ -54,6 +54,7 @@ def create_app(config=None):
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['WTF_CSRF_ENABLED'] = True
 
+    app.config['DB_DIR'] = db_dir
     upload_dir = os.path.join(db_dir, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
     app.config['UPLOAD_FOLDER'] = upload_dir
@@ -570,8 +571,19 @@ def create_app(config=None):
                 Document.entity_type == 'contract', Document.entity_id == contract_id
             ).order_by(desc(Document.uploaded_at))
         ).scalars().all()
+        schedule_json = [
+            {
+                'installment_num': s.installment_num,
+                'due_date': s.due_date.isoformat() if s.due_date else None,
+                'amount': float(s.amount),
+                'paid_amount': float(s.paid_amount or 0),
+                'status': s.status,
+            }
+            for s in schedule
+        ]
         return render_template('contracts/detail.html',
                                contract=contract, schedule=schedule,
+                               schedule_json=schedule_json,
                                payments=payments, guarantors=guarantors,
                                documents=documents, today=date.today())
 
@@ -908,7 +920,8 @@ def create_app(config=None):
     @app.route('/backups/<int:backup_id>/download')
     def backup_download(backup_id):
         b = db.session.get(Backup, backup_id) or abort(404)
-        filepath = os.path.join(os.path.dirname(__file__), 'backups', b.filename)
+        backup_dir = os.path.join(app.config['DB_DIR'], 'backups')
+        filepath = os.path.join(backup_dir, b.filename)
         if not os.path.exists(filepath):
             abort(404)
         return send_file(filepath, as_attachment=True, download_name=b.filename)
@@ -994,13 +1007,22 @@ def create_app(config=None):
     @app.route('/backups/<int:backup_id>/delete', methods=['POST'])
     def backup_delete(backup_id):
         b = db.session.get(Backup, backup_id) or abort(404)
-        filepath = os.path.join(os.path.dirname(__file__), 'backups', b.filename)
+        backup_dir = os.path.join(app.config['DB_DIR'], 'backups')
+        filepath = os.path.join(backup_dir, b.filename)
         if os.path.exists(filepath):
             os.remove(filepath)
         db.session.delete(b)
         db.session.commit()
         flash('Резервная копия удалена', 'warning')
         return redirect(url_for('backups_list'))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # CALCULATOR
+    # ══════════════════════════════════════════════════════════════════════════
+
+    @app.route('/calculator')
+    def calculator():
+        return render_template('calculator.html')
 
     # ══════════════════════════════════════════════════════════════════════════
     # SEED DATA
