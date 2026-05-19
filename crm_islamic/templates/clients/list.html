@@ -93,7 +93,7 @@
           {% for c in clients %}
           {% set av_colors = ['#059669','#4f46e5','#d97706','#dc2626','#7c3aed','#0284c7','#db2777'] %}
           {% set av_color = av_colors[(c.full_name|length) % 7] %}
-          <tr>
+          <tr data-search="{{ [c.full_name, c.phone or '', c.phone2 or '', c.inn or '', c.email or ''] | join(' ') | lower }}">
             <td>
               <div class="d-flex align-items-center gap-3">
                 <div class="avatar-circle" style="background:{{ av_color }};">
@@ -185,13 +185,19 @@
 
 {% block scripts %}
 <script>
-$(document).ready(function() {
-  $('#clientsTable').DataTable({
-    language: { url: 'https://cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json' },
-    pageLength: 25,
-    order: [],
-    columnDefs: [{ orderable: false, targets: [7] }]
+// Живой поиск по таблице — без DataTables, работает офлайн
+(function(){
+  var inp = document.querySelector('input[name="q"]');
+  var tbody = document.querySelector('#clientsTable tbody');
+  if(!inp || !tbody) return;
+
+  inp.addEventListener('input', function(){
+    var term = this.value.toLowerCase().trim();
+    var rows = tbody.querySelectorAll('tr[data-search]');
+    rows.forEach(function(row){
+      row.style.display = (!term || row.dataset.search.includes(term)) ? '' : 'none';
+    });
   });
-});
+})();
 </script>
 {% endblock %}
