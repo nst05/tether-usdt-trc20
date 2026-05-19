@@ -1,0 +1,372 @@
+{% extends 'base.html' %}
+{% block title %}Калькулятор Мурабаха — CRM{% endblock %}
+{% block breadcrumb %}<li class="breadcrumb-item active">Калькулятор</li>{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4><i class="bi bi-calculator-fill me-2" style="color:#10b981;"></i>Калькулятор Мурабаха</h4>
+  <p class="subtitle">Рассчитайте платежи без создания договора · без процентов (риба)</p>
+</div>
+
+<div class="row g-4">
+
+  <!-- ─── Inputs ─── -->
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-sliders me-2" style="color:#6366f1;"></i>Параметры</div>
+      <div class="card-body">
+
+        <div class="mb-3">
+          <label class="form-label">Себестоимость товара (₽)</label>
+          <input type="number" id="costPrice" class="form-control form-control-lg fw-bold"
+                 value="300000" min="0" step="1000" oninput="calc()">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Наценка Мурабаха (%)</label>
+          <div class="input-group">
+            <input type="number" id="markupPct" class="form-control" value="20" min="0" max="200" step="0.5" oninput="calc()">
+            <span class="input-group-text">%</span>
+          </div>
+          <div class="form-text" id="markupRubHint"></div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Первоначальный взнос (₽)</label>
+          <input type="number" id="downPayment" class="form-control" value="0" min="0" step="1000" oninput="calc()">
+          <div class="form-text" id="downPctHint"></div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Срок рассрочки (месяцев)</label>
+          <div class="d-flex gap-2 mb-2">
+            {% for m in [3,6,12,18,24,36] %}
+            <button type="button" class="btn btn-sm btn-outline-secondary month-btn" data-m="{{ m }}"
+                    onclick="setMonths({{ m }})">{{ m }}</button>
+            {% endfor %}
+          </div>
+          <input type="number" id="months" class="form-control" value="12" min="1" max="120" oninput="calc();highlightMonthBtn()">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Дата первого платежа</label>
+          <input type="date" id="firstDate" class="form-control" oninput="calc()">
+        </div>
+
+        <hr>
+        <div class="d-grid gap-2">
+          <button class="btn btn-success" onclick="createContract()">
+            <i class="bi bi-file-plus me-1"></i>Создать договор с этими параметрами
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="printSchedule()">
+            <i class="bi bi-printer me-1"></i>Печать графика
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Result summary -->
+    <div class="card mt-3" id="summaryCard">
+      <div class="card-header"><i class="bi bi-receipt me-2" style="color:#f59e0b;"></i>Итог</div>
+      <div class="card-body p-0">
+        <div class="info-row px-4"><span class="label">Цена товара</span><span class="value" id="rCost">—</span></div>
+        <div class="info-row px-4"><span class="label">Наценка</span><span class="value" id="rMarkup">—</span></div>
+        <div class="info-row px-4"><span class="label">Итоговая цена</span><span class="value fw-bold" id="rTotal">—</span></div>
+        <div class="info-row px-4"><span class="label">Первонач. взнос</span><span class="value" id="rDown">—</span></div>
+        <div class="info-row px-4 mb-0">
+          <span class="label">Ежемес. платёж</span>
+          <span class="value" id="rMonthly"
+                style="font-size:1.2rem;font-weight:800;color:var(--primary-dark);">—</span>
+        </div>
+        <div class="px-4 py-3" style="background:#f8fafc;border-radius:0 0 var(--radius) var(--radius);">
+          <div class="d-flex justify-content-between" style="font-size:.8rem;color:var(--text-muted);">
+            <span>Финансируется</span><span id="rFinanced" style="font-weight:600;"></span>
+          </div>
+          <div class="d-flex justify-content-between" style="font-size:.8rem;color:var(--text-muted);">
+            <span>Всего платежей</span><span id="rCount" style="font-weight:600;"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Chart + Schedule ─── -->
+  <div class="col-lg-8">
+
+    <!-- Chart -->
+    <div class="card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-bar-chart-fill me-2" style="color:#6366f1;"></i>График платежей</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <button type="button" class="btn btn-outline-secondary active" id="btnBar" onclick="switchChart('bar')">Столбцы</button>
+          <button type="button" class="btn btn-outline-secondary" id="btnLine" onclick="switchChart('line')">Линия</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <canvas id="scheduleChart" height="130"></canvas>
+      </div>
+    </div>
+
+    <!-- Schedule table -->
+    <div class="card" id="scheduleCard">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-table me-2" style="color:#f59e0b;"></i>Таблица платежей</span>
+        <span class="badge badge-closed" id="rowCount"></span>
+      </div>
+      <div class="table-responsive" style="max-height:480px;overflow-y:auto;">
+        <table class="table mb-0" id="scheduleTable">
+          <thead style="position:sticky;top:0;z-index:1;background:var(--card-bg);">
+            <tr>
+              <th>#</th>
+              <th>Дата</th>
+              <th>Платёж (₽)</th>
+              <th>Нарастающий итог (₽)</th>
+              <th>Остаток (₽)</th>
+            </tr>
+          </thead>
+          <tbody id="scheduleBody">
+            <tr><td colspan="5" class="text-center py-4" style="color:var(--text-muted);">Заполните параметры выше</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const fmt = v => new Intl.NumberFormat('ru-RU', {maximumFractionDigits:0}).format(v);
+const $ = id => document.getElementById(id);
+
+let chart = null;
+let chartType = 'bar';
+let lastSchedule = [];
+
+// Set default first-payment date = 1st of next month
+(function() {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  d.setDate(1);
+  $('firstDate').value = d.toISOString().slice(0,10);
+  highlightMonthBtn();
+  calc();
+})();
+
+function setMonths(m) {
+  $('months').value = m;
+  highlightMonthBtn();
+  calc();
+}
+
+function highlightMonthBtn() {
+  const v = parseInt($('months').value);
+  document.querySelectorAll('.month-btn').forEach(b => {
+    b.classList.toggle('btn-primary', parseInt(b.dataset.m) === v);
+    b.classList.toggle('btn-outline-secondary', parseInt(b.dataset.m) !== v);
+  });
+}
+
+// ── Main calculation ──────────────────────────────────────────────────────────
+function calc() {
+  const cost    = parseFloat($('costPrice').value)   || 0;
+  const pct     = parseFloat($('markupPct').value)   || 0;
+  const down    = parseFloat($('downPayment').value) || 0;
+  const months  = parseInt($('months').value)        || 1;
+  const dateStr = $('firstDate').value;
+
+  const markupAmt  = cost * pct / 100;
+  const totalPrice = cost + markupAmt;
+  const financed   = Math.max(0, totalPrice - down);
+  const monthly    = months > 0 ? financed / months : 0;
+
+  // Hints
+  $('markupRubHint').textContent = markupAmt > 0
+    ? `+${fmt(markupAmt)} ₽ сверх себестоимости` : '';
+  $('downPctHint').textContent = (down > 0 && totalPrice > 0)
+    ? `${(down/totalPrice*100).toFixed(1)}% от цены` : '';
+
+  // Summary
+  $('rCost').textContent    = fmt(cost)      + ' ₽';
+  $('rMarkup').textContent  = fmt(markupAmt) + ' ₽';
+  $('rTotal').textContent   = fmt(totalPrice)+ ' ₽';
+  $('rDown').textContent    = fmt(down)      + ' ₽';
+  $('rMonthly').textContent = fmt(monthly)   + ' ₽';
+  $('rFinanced').textContent= fmt(financed)  + ' ₽';
+  $('rCount').textContent   = months + ' платежей';
+
+  // Build schedule
+  const schedule = [];
+  let cumulative = 0;
+  let remaining  = financed;
+  let baseDate   = dateStr ? new Date(dateStr) : new Date();
+
+  for (let i = 1; i <= months; i++) {
+    const payment = i < months ? monthly : remaining; // last payment handles rounding
+    cumulative += payment;
+    remaining  -= payment;
+
+    const d = new Date(baseDate);
+    d.setMonth(baseDate.getMonth() + (i - 1));
+
+    schedule.push({
+      num: i,
+      date: d,
+      payment,
+      cumulative,
+      remaining: Math.max(0, remaining),
+    });
+  }
+
+  lastSchedule = schedule;
+  renderTable(schedule);
+  renderChart(schedule);
+  $('rowCount').textContent = months + ' платежей';
+}
+
+// ── Table ────────────────────────────────────────────────────────────────────
+function renderTable(schedule) {
+  const tbody = $('scheduleBody');
+  if (!schedule.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4" style="color:var(--text-muted);">Нет данных</td></tr>';
+    return;
+  }
+  tbody.innerHTML = schedule.map((s, i) => {
+    const dateStr = s.date.toLocaleDateString('ru-RU', {day:'2-digit',month:'2-digit',year:'numeric'});
+    const isLast  = i === schedule.length - 1;
+    return `<tr${isLast ? ' style="font-weight:700;background:#f0fdf4;"' : ''}>
+      <td style="color:var(--text-muted);font-weight:600;">${s.num}</td>
+      <td style="font-size:.85rem;">${dateStr}</td>
+      <td style="font-weight:500;">${fmt(s.payment)}</td>
+      <td style="color:#6366f1;font-weight:500;">${fmt(s.cumulative)}</td>
+      <td style="color:${s.remaining < 1 ? '#059669' : 'var(--text)'};">${fmt(Math.max(0,s.remaining))}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Chart ────────────────────────────────────────────────────────────────────
+function renderChart(schedule) {
+  const labels  = schedule.map(s => s.date.toLocaleDateString('ru-RU',{month:'short',year:'2-digit'}));
+  const values  = schedule.map(s => Math.round(s.payment));
+  const cumData = schedule.map(s => Math.round(s.cumulative));
+
+  const ctx = $('scheduleChart').getContext('2d');
+  if (chart) chart.destroy();
+
+  chart = new Chart(ctx, {
+    type: chartType === 'bar' ? 'bar' : 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Платёж ₽',
+          data: values,
+          backgroundColor: 'rgba(99,102,241,0.65)',
+          borderColor: '#6366f1',
+          borderRadius: 4,
+          borderWidth: chartType === 'line' ? 2 : 0,
+          fill: chartType === 'line',
+          tension: 0.3,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Нарастающий итог ₽',
+          data: cumData,
+          type: 'line',
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16,185,129,0.08)',
+          borderWidth: 2,
+          pointRadius: schedule.length <= 24 ? 3 : 0,
+          fill: true,
+          tension: 0.3,
+          yAxisID: 'y1',
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: {mode:'index', intersect:false},
+      plugins: {
+        legend: {position:'top'},
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${fmt(ctx.parsed.y)} ₽`
+          }
+        }
+      },
+      scales: {
+        y:  {position:'left',  ticks:{callback: v => fmt(v)+' ₽'}, grid:{color:'rgba(0,0,0,.05)'}},
+        y1: {position:'right', ticks:{callback: v => fmt(v)+' ₽'}, grid:{display:false}},
+      }
+    }
+  });
+}
+
+function switchChart(type) {
+  chartType = type;
+  $('btnBar').classList.toggle('active', type==='bar');
+  $('btnLine').classList.toggle('active', type==='line');
+  renderChart(lastSchedule);
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function createContract() {
+  const cost   = $('costPrice').value;
+  const pct    = $('markupPct').value;
+  const down   = $('downPayment').value;
+  const months = $('months').value;
+  const date   = $('firstDate').value;
+  window.location.href = `/contracts/new?calc_cost=${cost}&calc_markup=${pct}&calc_down=${down}&calc_months=${months}&calc_date=${date}`;
+}
+
+function printSchedule() {
+  const win = window.open('', '_blank');
+  const rows = lastSchedule.map(s => {
+    const d = s.date.toLocaleDateString('ru-RU');
+    return `<tr><td>${s.num}</td><td>${d}</td><td>${fmt(s.payment)} ₽</td><td>${fmt(s.cumulative)} ₽</td><td>${fmt(Math.max(0,s.remaining))} ₽</td></tr>`;
+  }).join('');
+
+  const cost    = parseFloat($('costPrice').value)||0;
+  const pct     = parseFloat($('markupPct').value)||0;
+  const down    = parseFloat($('downPayment').value)||0;
+  const months  = parseInt($('months').value)||1;
+  const markup  = cost*pct/100;
+  const total   = cost+markup;
+  const monthly = (total-down)/months;
+
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>График платежей Мурабаха</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:20px;color:#111}
+      h2{margin-bottom:4px}
+      .sub{color:#666;font-size:.9rem;margin-bottom:20px}
+      .summary{display:flex;gap:24px;margin-bottom:20px;flex-wrap:wrap}
+      .s-item{background:#f8f8f8;padding:12px 20px;border-radius:8px}
+      .s-label{font-size:.75rem;color:#666;text-transform:uppercase}
+      .s-val{font-size:1.1rem;font-weight:700}
+      table{width:100%;border-collapse:collapse}
+      th,td{padding:8px 12px;border:1px solid #ddd;text-align:left}
+      th{background:#f0f0f0;font-weight:600}
+      tr:nth-child(even){background:#fafafa}
+      @media print{body{padding:10px}}
+    </style></head><body>
+    <h2>☪ График платежей Мурабаха</h2>
+    <div class="sub">Сформирован: ${new Date().toLocaleDateString('ru-RU')}</div>
+    <div class="summary">
+      <div class="s-item"><div class="s-label">Себестоимость</div><div class="s-val">${fmt(cost)} ₽</div></div>
+      <div class="s-item"><div class="s-label">Наценка ${pct}%</div><div class="s-val">${fmt(markup)} ₽</div></div>
+      <div class="s-item"><div class="s-label">Итоговая цена</div><div class="s-val">${fmt(total)} ₽</div></div>
+      <div class="s-item"><div class="s-label">Взнос</div><div class="s-val">${fmt(down)} ₽</div></div>
+      <div class="s-item"><div class="s-label">Ежемес. платёж</div><div class="s-val" style="color:#1a56db">${fmt(monthly)} ₽</div></div>
+    </div>
+    <table><thead><tr><th>#</th><th>Дата</th><th>Платёж</th><th>Нарастающий итог</th><th>Остаток</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.print();<\/script></body></html>`);
+  win.document.close();
+}
+</script>
+{% endblock %}

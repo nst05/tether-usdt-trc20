@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+{% block title %}Импорт из Excel — Мурабаха CRM{% endblock %}
+{% block breadcrumb %}<li class="breadcrumb-item active">Импорт</li>{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4><i class="bi bi-file-earmark-excel-fill me-2" style="color:#10b981;"></i>Импорт из Excel</h4>
+  <p class="subtitle">Загрузите данные из Excel в три шага: клиенты → договоры → платежи</p>
+</div>
+
+<!-- Порядок действий -->
+<div class="card mb-4" style="border-left:4px solid #6366f1; background:linear-gradient(135deg,#f5f3ff,#fff);">
+  <div class="card-body py-3">
+    <div class="row g-3 align-items-start text-center">
+      <div class="col-md-4">
+        <div style="font-size:2rem;color:#6366f1;">①</div>
+        <div style="font-weight:700;">Клиенты</div>
+        <div style="font-size:.82rem;color:var(--text-muted);">Скачайте шаблон, заполните данные клиентов, загрузите.</div>
+      </div>
+      <div class="col-md-4">
+        <div style="font-size:2rem;color:#f59e0b;">②</div>
+        <div style="font-weight:700;">Договоры</div>
+        <div style="font-size:.82rem;color:var(--text-muted);">Скачайте шаблон договоров. Телефон клиента связывает договор с клиентом из шага 1.</div>
+      </div>
+      <div class="col-md-4">
+        <div style="font-size:2rem;color:#10b981;">③</div>
+        <div style="font-weight:700;">История платежей</div>
+        <div style="font-size:.82rem;color:var(--text-muted);">Платежи за прошедшие месяцы — с любыми датами. Просроченные определятся автоматически.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Предупреждение о просрочках -->
+<div class="alert" style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:.875rem;">
+  <i class="bi bi-info-circle me-2"></i>
+  <strong>Просрочки:</strong> если у клиента были неоплаченные платежи — создайте договор с правильной датой начала,
+  внесите только фактически полученные платежи (с реальными датами). Остальные строки графика автоматически
+  получат статус «Просрочен».
+</div>
+
+<div class="row g-4">
+
+  <!-- ① Клиенты -->
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center gap-2" style="background:#f5f3ff;">
+        <span style="font-size:1.3rem;color:#6366f1;">①</span>
+        <span style="font-weight:700;">Импорт клиентов</span>
+      </div>
+      <div class="card-body d-flex flex-column">
+        <p style="font-size:.85rem;color:var(--text-muted);">
+          Обязательные поля: <strong>Фамилия, Имя, Телефон</strong>.<br>
+          Дубликаты по телефону пропускаются.
+        </p>
+        <a href="{{ url_for('import_template_clients') }}" class="btn btn-outline-secondary btn-sm mb-3">
+          <i class="bi bi-download me-1"></i>Скачать шаблон клиентов (.xlsx)
+        </a>
+        <form method="post" action="{{ url_for('import_clients') }}" enctype="multipart/form-data" class="mt-auto">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="form-label form-label-sm">Файл (.xlsx или .csv)</label>
+          <input type="file" name="file" class="form-control form-control-sm mb-2"
+                 accept=".xlsx,.xls,.csv" required>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-upload me-1"></i>Загрузить клиентов
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ② Договоры -->
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center gap-2" style="background:#fffbeb;">
+        <span style="font-size:1.3rem;color:#f59e0b;">②</span>
+        <span style="font-weight:700;">Импорт договоров</span>
+      </div>
+      <div class="card-body d-flex flex-column">
+        <p style="font-size:.85rem;color:var(--text-muted);">
+          Обязательные поля: <strong>Телефон клиента, Себестоимость, Срок</strong>.<br>
+          Договоры с прошедшими датами — допустимы. График создаётся автоматически.
+        </p>
+        <a href="{{ url_for('import_template_contracts') }}" class="btn btn-outline-secondary btn-sm mb-3">
+          <i class="bi bi-download me-1"></i>Скачать шаблон договоров (.xlsx)
+        </a>
+        <form method="post" action="{{ url_for('import_contracts') }}" enctype="multipart/form-data" class="mt-auto">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="form-label form-label-sm">Файл (.xlsx или .csv)</label>
+          <input type="file" name="file" class="form-control form-control-sm mb-2"
+                 accept=".xlsx,.xls,.csv" required>
+          <button type="submit" class="btn btn-warning w-100">
+            <i class="bi bi-upload me-1"></i>Загрузить договоры
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ Платежи -->
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center gap-2" style="background:#f0fdf4;">
+        <span style="font-size:1.3rem;color:#10b981;">③</span>
+        <span style="font-weight:700;">Импорт истории платежей</span>
+      </div>
+      <div class="card-body d-flex flex-column">
+        <p style="font-size:.85rem;color:var(--text-muted);">
+          Обязательные поля: <strong>Номер договора, Дата платежа, Сумма</strong>.<br>
+          Любые прошедшие даты. Строки графика закрываются по порядку.
+        </p>
+        <a href="{{ url_for('import_template_payments') }}" class="btn btn-outline-secondary btn-sm mb-3">
+          <i class="bi bi-download me-1"></i>Скачать шаблон платежей (.xlsx)
+        </a>
+        <form method="post" action="{{ url_for('import_payments') }}" enctype="multipart/form-data" class="mt-auto">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="form-label form-label-sm">Файл (.xlsx или .csv)</label>
+          <input type="file" name="file" class="form-control form-control-sm mb-2"
+                 accept=".xlsx,.xls,.csv" required>
+          <button type="submit" class="btn btn-success w-100">
+            <i class="bi bi-upload me-1"></i>Загрузить платежи
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Подсказка по форматам -->
+<div class="card mt-4">
+  <div class="card-header"><i class="bi bi-question-circle me-2"></i>Советы по заполнению</div>
+  <div class="card-body">
+    <div class="row g-3" style="font-size:.85rem;">
+      <div class="col-md-4">
+        <strong>Даты:</strong> формат <code>ДД.ММ.ГГГГ</code><br>
+        Пример: <code>15.03.2024</code>
+      </div>
+      <div class="col-md-4">
+        <strong>Пол:</strong> <code>М</code> или <code>Ж</code><br>
+        <strong>Занятость:</strong> <code>employed</code> / <code>self_employed</code> / <code>business_owner</code> / <code>unemployed</code>
+      </div>
+      <div class="col-md-4">
+        <strong>Способ оплаты:</strong> <code>cash</code> / <code>bank_transfer</code> / <code>card</code> / <code>online</code><br>
+        Русское тоже принимается: <code>наличные</code>, <code>карта</code>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
