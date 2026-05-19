@@ -701,6 +701,57 @@
 </head>
 <body>
 
+<!-- SPLASH SCREEN -->
+<div id="splashScreen" style="
+  position:fixed; inset:0; z-index:9999;
+  background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:20px;">
+  <div style="text-align:center;">
+    <div style="font-size:3rem; margin-bottom:8px;">☪</div>
+    <div style="color:#34d399; font-size:1.3rem; font-weight:700; letter-spacing:.5px;">CRM Мурабаха</div>
+    <div style="color:#94a3b8; font-size:.82rem; margin-top:4px;">Исламская рассрочка</div>
+  </div>
+  <div style="width:220px; height:4px; background:rgba(255,255,255,.1); border-radius:4px; overflow:hidden;">
+    <div id="splashBar" style="width:0%; height:100%; background:linear-gradient(90deg,#10b981,#34d399); border-radius:4px; transition:width .3s ease;"></div>
+  </div>
+  <div style="color:#64748b; font-size:.78rem;" id="splashMsg">Загрузка...</div>
+</div>
+<script>
+(function(){
+  var bar = document.getElementById('splashBar');
+  var msg = document.getElementById('splashMsg');
+  var pct = 0;
+  var steps = [
+    [20, 'Инициализация...'],
+    [55, 'Загрузка данных...'],
+    [85, 'Подготовка интерфейса...'],
+    [100, 'Готово!'],
+  ];
+  var si = 0;
+  var iv = setInterval(function(){
+    if(si < steps.length){
+      pct = steps[si][0];
+      msg.textContent = steps[si][1];
+      bar.style.width = pct + '%';
+      si++;
+    } else {
+      clearInterval(iv);
+    }
+  }, 180);
+  window.addEventListener('DOMContentLoaded', function(){
+    bar.style.width = '100%';
+    msg.textContent = 'Готово!';
+    setTimeout(function(){
+      var sp = document.getElementById('splashScreen');
+      sp.style.transition = 'opacity .4s ease';
+      sp.style.opacity = '0';
+      setTimeout(function(){ sp.remove(); }, 400);
+    }, 300);
+  });
+})();
+</script>
+
 <!-- SIDEBAR -->
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-header">
