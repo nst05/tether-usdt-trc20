@@ -4,9 +4,6 @@ import csv
 import io
 import uuid
 import copy
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment
-from docx import Document as DocxDocument
 from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from werkzeug.utils import secure_filename
@@ -1092,6 +1089,7 @@ def create_app(config=None):
                 return [], []
             return [h.strip() for h in rows[0]], rows[1:]
         else:
+            import openpyxl
             wb = openpyxl.load_workbook(file_storage, data_only=True)
             ws = wb.active
             all_rows = list(ws.iter_rows(values_only=True))
@@ -1102,6 +1100,8 @@ def create_app(config=None):
 
     def _make_template(title, columns, example_row, filename):
         """Создаёт xlsx-шаблон и возвращает Response."""
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = title
@@ -1688,6 +1688,7 @@ def create_app(config=None):
         if not os.path.exists(tpl):
             return None, 'Шаблон договора не загружен'
         try:
+            from docx import Document as DocxDocument
             doc  = DocxDocument(tpl)
             repl = _build_replacements(contract)
 
