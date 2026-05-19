@@ -14,11 +14,12 @@ build/
 *.sqlite
 *.sqlite3
 
-# CRM runtime data
+# CRM runtime data (user-generated, not tracked)
 crm_islamic/backups/
 crm_islamic/uploads/
 crm_islamic/contracts/
 crm_islamic/contract_template.docx
+# default_contract_template.docx IS tracked (bundled template)
 
 # Env / IDE
 .env

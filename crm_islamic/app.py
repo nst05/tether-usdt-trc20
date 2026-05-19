@@ -1615,7 +1615,12 @@ def create_app(config=None):
         return d
 
     def _template_path():
-        return os.path.join(app.config['DB_DIR'], 'contract_template.docx')
+        user_tpl = os.path.join(app.config['DB_DIR'], 'contract_template.docx')
+        if os.path.exists(user_tpl):
+            return user_tpl
+        # Bundled default template (shipped with the app)
+        base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base, 'default_contract_template.docx')
 
     MONTHS_RU = ['января','февраля','марта','апреля','мая','июня',
                  'июля','августа','сентября','октября','ноября','декабря']

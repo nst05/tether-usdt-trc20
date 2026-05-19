@@ -21,6 +21,8 @@ a = Analysis(
     datas=[
         # Bundle all HTML templates
         (os.path.join(PKG, 'templates'), 'templates'),
+        # Bundle default contract template
+        (os.path.join(PKG, 'default_contract_template.docx'), '.'),
         # Bundle static assets if they exist
         # (os.path.join(PKG, 'static'), 'static'),
     ],
