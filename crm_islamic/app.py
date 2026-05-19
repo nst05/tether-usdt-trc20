@@ -1740,14 +1740,22 @@ def create_app(config=None):
         filename = f"{safe_num}.docx"
         filepath = os.path.join(_contracts_dir(), filename)
         if not os.path.exists(filepath):
-            # Попробуем сгенерировать автоматически
             filename, err = _generate_doc(contract)
             if err:
-                flash(f'Нет файла договора: {err}', 'danger')
+                flash(f'Ошибка генерации договора: {err}', 'danger')
                 return redirect(url_for('contract_detail', contract_id=contract_id))
             filepath = os.path.join(_contracts_dir(), filename)
-        return send_file(filepath, as_attachment=False,
-                         download_name=f"Договор {contract.contract_number}.docx")
+        # В замороженном exe открываем файл через ОС (надёжнее чем send_file в webview)
+        if getattr(sys, 'frozen', False):
+            try:
+                os.startfile(filepath)
+                flash(f'Договор открыт: {filename}', 'success')
+            except Exception as e:
+                flash(f'Не удалось открыть файл: {e}', 'danger')
+            return redirect(url_for('contract_detail', contract_id=contract_id))
+        return send_file(filepath, as_attachment=True,
+                         download_name=f"Dogovor_{safe_num}.docx",
+                         mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
 
     # ══════════════════════════════════════════════════════════════════════════
     # SEED DATA
