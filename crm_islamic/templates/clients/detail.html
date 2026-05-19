@@ -154,6 +154,17 @@
     </a>
   </li>
   <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-schedule">
+      <i class="bi bi-calendar3 me-1"></i>График платежей
+      {% set overdue_cnt = all_schedule | selectattr('status', 'equalto', 'overdue') | list | length %}
+      {% if overdue_cnt > 0 %}
+        <span class="badge bg-danger ms-1">{{ overdue_cnt }}</span>
+      {% else %}
+        <span class="badge badge-closed ms-1">{{ all_schedule | length }}</span>
+      {% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-guarantor">
       <i class="bi bi-shield me-1"></i>Поручительства
       <span class="badge badge-closed ms-1">{{ guarantor_records|length }}</span>
@@ -425,6 +436,91 @@
     </div>
   </div>
 
+  <!-- Schedule Tab -->
+  <div class="tab-pane fade" id="tab-schedule">
+    {% if all_schedule %}
+    <!-- Сводная диаграмма -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-bar-chart-fill me-2" style="color:#6366f1;"></i>Диаграмма по всем договорам</div>
+      <div class="card-body pb-2">
+        <canvas id="clientPayChart" height="100"></canvas>
+      </div>
+    </div>
+
+    <!-- Фильтр по статусу -->
+    <div class="d-flex gap-2 mb-3 flex-wrap">
+      <button class="btn btn-sm btn-primary sched-filter active" data-filter="all">Все ({{ all_schedule|length }})</button>
+      <button class="btn btn-sm btn-outline-danger sched-filter" data-filter="overdue">
+        Просрочены ({{ all_schedule | selectattr('status','equalto','overdue') | list | length }})
+      </button>
+      <button class="btn btn-sm btn-outline-warning sched-filter" data-filter="pending">
+        Ожидают ({{ all_schedule | selectattr('status','equalto','pending') | list | length }})
+      </button>
+      <button class="btn btn-sm btn-outline-success sched-filter" data-filter="paid">
+        Оплачены ({{ all_schedule | selectattr('status','equalto','paid') | list | length }})
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="table-responsive" style="max-height:480px;overflow-y:auto;">
+        <table class="table mb-0" id="schedTable">
+          <thead style="position:sticky;top:0;z-index:1;background:var(--card-bg);">
+            <tr>
+              <th>Дата</th>
+              <th>Договор</th>
+              <th>Товар</th>
+              <th>#</th>
+              <th>Сумма</th>
+              <th>Оплачено</th>
+              <th>Остаток</th>
+              <th>Статус</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in all_schedule %}
+            <tr data-status="{{ s.status }}"
+                class="{{ 'table-danger' if s.status == 'overdue' else '' }}"
+                style="{{ 'background:#f0fdf4 !important;' if s.status == 'paid' else '' }}">
+              <td style="font-size:.85rem;white-space:nowrap;">{{ s.due_date }}</td>
+              <td>
+                <a href="{{ url_for('contract_detail', contract_id=s.contract_id) }}"
+                   class="fw-bold text-decoration-none" style="color:var(--primary-dark);">
+                  {{ s.contract_number }}
+                </a>
+              </td>
+              <td style="font-size:.82rem;color:var(--text-muted);">{{ s.item_name }}</td>
+              <td style="color:var(--text-muted);font-weight:600;">{{ s.installment_num }}</td>
+              <td style="font-weight:500;">{{ "{:,.0f}".format(s.amount) }} ₽</td>
+              <td style="color:#059669;font-weight:500;">{{ "{:,.0f}".format(s.paid_amount) }} ₽</td>
+              <td style="font-weight:500;">{{ "{:,.0f}".format(s.remaining) }} ₽</td>
+              <td>
+                {% if s.status == 'paid' %}<span class="badge badge-active">Оплачен</span>
+                {% elif s.status == 'overdue' %}<span class="badge badge-overdue">Просрочен</span>
+                {% elif s.status == 'partial' %}<span class="badge badge-partial">Частично</span>
+                {% else %}<span class="badge badge-closed">Ожидает</span>{% endif %}
+              </td>
+              <td>
+                {% if s.status != 'paid' %}
+                <a href="{{ url_for('payment_new', contract_id=s.contract_id, schedule_id=s.id) }}"
+                   class="btn btn-outline-success" style="padding:3px 7px;font-size:.75rem;border-radius:6px;"
+                   title="Принять платёж"><i class="bi bi-cash"></i></a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5" style="color:var(--text-muted);">
+      <i class="bi bi-calendar3 d-block mb-2" style="font-size:2.5rem;color:#e2e8f0;"></i>
+      Нет активных договоров с графиком платежей
+    </div>
+    {% endif %}
+  </div>
+
   <!-- Guarantor Tab -->
   <div class="tab-pane fade" id="tab-guarantor">
     {% set client_guarantors = guarantor_records | selectattr('contract_id', 'none') | list %}
@@ -533,4 +629,67 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if all_schedule %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+  const schedule = {{ all_schedule | tojson }};
+  const fmt = v => new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0}).format(v);
+
+  // Диаграмма — первые 48 платежей
+  const slice   = schedule.slice(0, 48);
+  const labels  = slice.map(s => s.due_date);
+  const amounts = slice.map(s => s.amount);
+  const colors  = slice.map(s => ({
+    paid:    'rgba(16,185,129,.75)',
+    overdue: 'rgba(220,38,38,.75)',
+    partial: 'rgba(245,158,11,.75)',
+    pending: 'rgba(99,102,241,.45)',
+  }[s.status] || 'rgba(99,102,241,.45)'));
+
+  // Рисуем только когда вкладка активна (иначе Chart.js рисует в нулевой размер)
+  let chartBuilt = false;
+  document.querySelector('a[href="#tab-schedule"]').addEventListener('shown.bs.tab', function(){
+    if(chartBuilt) return;
+    chartBuilt = true;
+    const ctx = document.getElementById('clientPayChart');
+    if(!ctx) return;
+    new Chart(ctx.getContext('2d'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label:'Платёж ₽', data: amounts, backgroundColor: colors, borderRadius:3 }] },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {display:false},
+          tooltip: { callbacks: { label: c => fmt(c.parsed.y)+' ₽' } }
+        },
+        scales: {
+          x: { grid:{display:false}, ticks:{font:{size:9}, maxRotation:45} },
+          y: { ticks:{callback: v => fmt(v)+' ₽'}, grid:{color:'rgba(0,0,0,.05)'} }
+        }
+      }
+    });
+  });
+
+  // Фильтрация таблицы
+  document.querySelectorAll('.sched-filter').forEach(btn => {
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.sched-filter').forEach(b => {
+        b.classList.remove('active','btn-primary','btn-danger','btn-warning','btn-success');
+        b.classList.add('btn-outline-' + ({overdue:'danger',pending:'warning',paid:'success'}[b.dataset.filter] || 'secondary'));
+      });
+      const f = this.dataset.filter;
+      this.classList.remove('btn-outline-danger','btn-outline-warning','btn-outline-success','btn-outline-secondary');
+      this.classList.add('active', {overdue:'btn-danger',pending:'btn-warning',paid:'btn-success'}[f] || 'btn-primary');
+      document.querySelectorAll('#schedTable tbody tr').forEach(row => {
+        row.style.display = (f === 'all' || row.dataset.status === f) ? '' : 'none';
+      });
+    });
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

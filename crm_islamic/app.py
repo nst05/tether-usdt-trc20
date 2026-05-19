@@ -327,9 +327,37 @@ def create_app(config=None):
                 Document.entity_type == 'client', Document.entity_id == client_id
             ).order_by(desc(Document.uploaded_at))
         ).scalars().all()
+
+        # Полный график платежей по всем договорам клиента
+        contract_ids = [c.id for c in contracts]
+        all_schedule = []
+        if contract_ids:
+            schedule_rows = db.session.execute(
+                db.select(PaymentSchedule)
+                .where(PaymentSchedule.contract_id.in_(contract_ids))
+                .order_by(asc(PaymentSchedule.due_date))
+            ).scalars().all()
+            # Индекс договоров для быстрого доступа
+            contracts_map = {c.id: c for c in contracts}
+            for s in schedule_rows:
+                c = contracts_map.get(s.contract_id)
+                all_schedule.append({
+                    'id': s.id,
+                    'contract_id': s.contract_id,
+                    'contract_number': c.contract_number if c else '—',
+                    'item_name': c.item_name if c else '—',
+                    'installment_num': s.installment_num,
+                    'due_date': s.due_date.strftime('%d.%m.%Y') if s.due_date else '—',
+                    'due_date_iso': s.due_date.isoformat() if s.due_date else '',
+                    'amount': float(s.amount),
+                    'paid_amount': float(s.paid_amount or 0),
+                    'remaining': float(max(0, s.amount - (s.paid_amount or 0))),
+                    'status': s.status,
+                })
+
         return render_template('clients/detail.html', client=client,
                                contracts=contracts, guarantor_records=guarantor_records,
-                               documents=documents)
+                               documents=documents, all_schedule=all_schedule)
 
     @app.route('/clients/<int:client_id>/edit', methods=['GET', 'POST'])
     def client_edit(client_id):
