@@ -282,3 +282,46 @@ class Backup(db.Model):
 
     def __repr__(self):
         return f'<Backup {self.filename}>'
+
+
+class Document(db.Model):
+    __tablename__ = 'documents'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    entity_type = db.Column(db.String(20), nullable=False)   # client / contract / guarantor
+    entity_id   = db.Column(db.Integer, nullable=False)
+    doc_type    = db.Column(db.String(50), default='other')  # passport_front / passport_back / contract / income / other
+    filename    = db.Column(db.String(255), nullable=False)   # stored filename (uuid-based)
+    original_name = db.Column(db.String(255))
+    file_size_kb  = db.Column(db.Float, default=0.0)
+    mime_type   = db.Column(db.String(100))
+    notes       = db.Column(db.Text)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    TYPE_LABELS = {
+        'passport_front': 'Паспорт (лицевая)',
+        'passport_back':  'Паспорт (оборот)',
+        'contract':       'Договор',
+        'income':         'Справка о доходах',
+        'other':          'Другое',
+    }
+
+    ICONS = {
+        'passport_front': 'bi-person-vcard',
+        'passport_back':  'bi-person-vcard-fill',
+        'contract':       'bi-file-earmark-text',
+        'income':         'bi-file-earmark-bar-graph',
+        'other':          'bi-file-earmark',
+    }
+
+    @property
+    def type_label(self):
+        return self.TYPE_LABELS.get(self.doc_type, 'Другое')
+
+    @property
+    def icon(self):
+        return self.ICONS.get(self.doc_type, 'bi-file-earmark')
+
+    def __repr__(self):
+        return f'<Document {self.filename}>'
+
