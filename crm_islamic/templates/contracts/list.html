@@ -3,11 +3,10 @@
 {% block breadcrumb %}<li class="breadcrumb-item active">Договоры</li>{% endblock %}
 
 {% block content %}
-<!-- Page Header -->
 <div class="page-header d-flex justify-content-between align-items-center">
   <div>
     <h4><i class="bi bi-file-earmark-text-fill me-2" style="color:#f59e0b;"></i>Договоры Мурабаха</h4>
-    <p class="subtitle">Управление договорами финансирования</p>
+    <p class="subtitle">Управление договорами · <span id="visibleCount">{{ contracts|length }}</span> из {{ contracts|length }}</p>
   </div>
   <a href="{{ url_for('contract_new') }}" class="btn btn-primary">
     <i class="bi bi-plus-lg me-1"></i>Новый договор
@@ -63,52 +62,52 @@
   </div>
 </div>
 
-<!-- Filters -->
-<div class="filter-bar mb-3">
-  <form method="get" class="row g-2 align-items-end">
-    <div class="col-md-4">
-      <label class="form-label">Поиск</label>
-      <div class="input-group">
-        <span class="input-group-text"><i class="bi bi-search" style="color:var(--text-muted);"></i></span>
-        <input type="text" name="q" class="form-control" placeholder="Номер договора, товар..." value="{{ q }}">
+<!-- Фильтры — живая фильтрация без перезагрузки -->
+<div class="card mb-3">
+  <div class="card-body py-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label mb-1" style="font-size:.78rem">Поиск</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-search" style="color:var(--text-muted);"></i></span>
+          <input type="text" id="liveSearch" class="form-control" placeholder="Номер, товар, клиент..." autofocus>
+          <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('liveSearch').value='';filterTable()"><i class="bi bi-x-lg"></i></button>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label mb-1" style="font-size:.78rem">Статус</label>
+        <select id="filterStatus" class="form-select" onchange="filterTable()">
+          <option value="">Все статусы</option>
+          <option value="draft">Черновик</option>
+          <option value="active">Активный</option>
+          <option value="overdue">Просрочен</option>
+          <option value="closed">Закрыт</option>
+          <option value="cancelled">Отменён</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label mb-1" style="font-size:.78rem">Категория</label>
+        <select id="filterCat" class="form-select" onchange="filterTable()">
+          <option value="">Все категории</option>
+          {% for val, label in item_category_choices %}
+            {% if val %}<option value="{{ val }}">{{ label }}</option>{% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-outline-secondary w-100" onclick="resetFilters()">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Сбросить
+        </button>
       </div>
     </div>
-    <div class="col-md-3">
-      <label class="form-label">Статус</label>
-      <select name="status" class="form-select">
-        <option value="">Все статусы</option>
-        <option value="draft" {% if status_f == 'draft' %}selected{% endif %}>Черновик</option>
-        <option value="active" {% if status_f == 'active' %}selected{% endif %}>Активный</option>
-        <option value="overdue" {% if status_f == 'overdue' %}selected{% endif %}>Просрочен</option>
-        <option value="closed" {% if status_f == 'closed' %}selected{% endif %}>Закрыт</option>
-        <option value="cancelled" {% if status_f == 'cancelled' %}selected{% endif %}>Отменён</option>
-      </select>
-    </div>
-    <div class="col-md-3">
-      <label class="form-label">Категория</label>
-      <select name="category" class="form-select">
-        <option value="">Все категории</option>
-        {% for val, label in item_category_choices %}
-          {% if val %}<option value="{{ val }}" {% if cat_f == val %}selected{% endif %}>{{ label }}</option>{% endif %}
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-2 d-flex gap-2">
-      <button type="submit" class="btn btn-primary flex-fill">
-        <i class="bi bi-search me-1"></i>Найти
-      </button>
-      <a href="{{ url_for('contracts_list') }}" class="btn btn-outline-secondary" data-bs-toggle="tooltip" title="Сбросить">
-        <i class="bi bi-x-lg"></i>
-      </a>
-    </div>
-  </form>
+  </div>
 </div>
 
-<!-- Contracts table -->
+<!-- Таблица договоров -->
 <div class="card">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table id="contractsTable" class="table mb-0">
+      <table class="table mb-0" id="contractsTable">
         <thead>
           <tr>
             <th>Договор</th>
@@ -121,9 +120,14 @@
             <th>Действия</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="contractsBody">
           {% for c in contracts %}
-          <tr class="{{ 'table-overdue' if c.status == 'overdue' else '' }}">
+          <tr
+            data-search="{{ (c.contract_number + ' ' + (c.item_name or '') + ' ' + c.client.full_name)|lower }}"
+            data-status="{{ c.status }}"
+            data-cat="{{ c.item_category or '' }}"
+            class="{{ 'table-overdue' if c.status == 'overdue' else '' }}"
+          >
             <td>
               <a href="{{ url_for('contract_detail', contract_id=c.id) }}"
                  class="fw-bold text-decoration-none" style="color:var(--primary-dark);">
@@ -164,13 +168,11 @@
             <td>
               <div class="d-flex gap-1">
                 <a href="{{ url_for('contract_detail', contract_id=c.id) }}"
-                   class="btn btn-sm btn-outline-primary"
-                   data-bs-toggle="tooltip" title="Просмотр">
+                   class="btn btn-sm btn-outline-primary" title="Просмотр">
                   <i class="bi bi-eye"></i>
                 </a>
                 <a href="{{ url_for('payment_new', contract_id=c.id) }}"
-                   class="btn btn-sm btn-outline-success"
-                   data-bs-toggle="tooltip" title="Принять платёж">
+                   class="btn btn-sm btn-outline-success" title="Принять платёж">
                   <i class="bi bi-cash"></i>
                 </a>
               </div>
@@ -189,17 +191,46 @@
     </div>
   </div>
 </div>
+
+<!-- Пустой результат поиска -->
+<div id="noResults" class="text-center py-5" style="display:none;color:var(--text-muted);">
+  <i class="bi bi-search d-block mb-2" style="font-size:2.5rem;color:#e2e8f0;"></i>
+  Ничего не найдено — попробуйте изменить фильтры
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-$(document).ready(function() {
-  $('#contractsTable').DataTable({
-    language: { url: 'https://cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json' },
-    pageLength: 25,
-    order: [],
-    columnDefs: [{ orderable: false, targets: [4, 7] }]
+function filterTable() {
+  const q = document.getElementById('liveSearch').value.toLowerCase().trim();
+  const status = document.getElementById('filterStatus').value;
+  const cat = document.getElementById('filterCat').value;
+
+  const rows = document.querySelectorAll('#contractsBody tr[data-search]');
+  let visible = 0;
+
+  rows.forEach(row => {
+    const matchQ = !q || row.dataset.search.includes(q);
+    const matchStatus = !status || row.dataset.status === status;
+    const matchCat = !cat || row.dataset.cat === cat;
+
+    const show = matchQ && matchStatus && matchCat;
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
   });
-});
+
+  document.getElementById('visibleCount').textContent = visible;
+  document.getElementById('noResults').style.display = (visible === 0 && rows.length > 0) ? 'block' : 'none';
+}
+
+function resetFilters() {
+  document.getElementById('liveSearch').value = '';
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('filterCat').value = '';
+  filterTable();
+  document.getElementById('liveSearch').focus();
+}
+
+document.getElementById('liveSearch').addEventListener('input', filterTable);
 </script>
 {% endblock %}

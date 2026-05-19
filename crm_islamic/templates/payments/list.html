@@ -5,8 +5,8 @@
 {% block content %}
 <div class="page-header d-flex justify-content-between align-items-start">
   <div>
-    <h4>История платежей</h4>
-    <p class="subtitle">Все зарегистрированные поступления по договорам</p>
+    <h4><i class="bi bi-cash-stack me-2" style="color:#059669;"></i>История платежей</h4>
+    <p class="subtitle">Все поступления · <span id="visibleCount">{{ payments|length }}</span> из {{ payments|length }}</p>
   </div>
   <a href="{{ url_for('payment_new') }}" class="btn btn-primary">
     <i class="bi bi-plus me-1"></i>Принять платёж
@@ -41,34 +41,50 @@
   </div>
 </div>
 
-<!-- Filters -->
-<div class="card mb-4">
+<!-- Фильтры — живая фильтрация без перезагрузки -->
+<div class="card mb-3">
   <div class="card-body py-3">
-    <form method="get" class="row g-2 align-items-end">
-      <div class="col-md-4">
-        <label class="form-label mb-1" style="font-size:.78rem">Поиск по договору</label>
-        <input type="text" name="q" class="form-control form-control-sm" placeholder="Номер договора..." value="{{ q }}">
-      </div>
+    <div class="row g-2 align-items-end">
       <div class="col-md-3">
+        <label class="form-label mb-1" style="font-size:.78rem">Поиск</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-search" style="color:var(--text-muted);"></i></span>
+          <input type="text" id="liveSearch" class="form-control" placeholder="Договор, клиент, квитанция..." autofocus>
+          <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('liveSearch').value='';filterTable()"><i class="bi bi-x-lg"></i></button>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label mb-1" style="font-size:.78rem">Способ оплаты</label>
+        <select id="filterMethod" class="form-select" onchange="filterTable()">
+          <option value="">Все способы</option>
+          <option value="cash">Наличные</option>
+          <option value="bank_transfer">Банк. перевод</option>
+          <option value="card">Карта</option>
+          <option value="online">Онлайн</option>
+        </select>
+      </div>
+      <div class="col-md-2">
         <label class="form-label mb-1" style="font-size:.78rem">Дата с</label>
-        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from or '' }}">
+        <input type="date" id="filterDateFrom" class="form-control" oninput="filterTable()">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label mb-1" style="font-size:.78rem">Дата по</label>
+        <input type="date" id="filterDateTo" class="form-control" oninput="filterTable()">
       </div>
       <div class="col-md-3">
-        <label class="form-label mb-1" style="font-size:.78rem">Дата по</label>
-        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to or '' }}">
+        <button class="btn btn-outline-secondary w-100" onclick="resetFilters()">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Сбросить
+        </button>
       </div>
-      <div class="col-md-2 d-flex gap-1">
-        <button type="submit" class="btn btn-sm btn-primary flex-fill"><i class="bi bi-search"></i></button>
-        <a href="{{ url_for('payments_list') }}" class="btn btn-sm btn-outline-secondary" title="Сбросить"><i class="bi bi-x-lg"></i></a>
-      </div>
-    </form>
+    </div>
   </div>
 </div>
 
+<!-- Таблица платежей -->
 <div class="card">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table id="paymentsTable" class="table mb-0">
+      <table class="table mb-0" id="paymentsTable">
         <thead>
           <tr>
             <th>Дата</th>
@@ -81,51 +97,56 @@
             <th></th>
           </tr>
         </thead>
-        <tbody>
-          {% set total = namespace(sum=0) %}
+        <tbody id="paymentsBody">
           {% for p in payments %}
-          {% set total.sum = total.sum + p.amount %}
-          <tr>
+          <tr
+            data-search="{{ (p.contract.contract_number + ' ' + p.contract.client.full_name + ' ' + (p.receipt_number or ''))|lower }}"
+            data-date="{{ p.payment_date.strftime('%Y-%m-%d') }}"
+            data-method="{{ p.payment_method or '' }}"
+            data-amount="{{ p.amount }}"
+          >
             <td>{{ p.payment_date.strftime('%d.%m.%Y') }}</td>
             <td>
-              <a href="{{ url_for('contract_detail', contract_id=p.contract_id) }}" class="fw-600 text-decoration-none" style="color:var(--primary-dark)">
+              <a href="{{ url_for('contract_detail', contract_id=p.contract_id) }}" class="fw-bold text-decoration-none" style="color:var(--primary-dark)">
                 {{ p.contract.contract_number }}
               </a>
             </td>
             <td>{{ p.contract.client.full_name }}</td>
             <td>
-              <span class="fw-600" style="color:var(--primary-dark);font-size:1rem">
+              <span style="font-weight:600; color:var(--primary-dark); font-size:1rem;">
                 {{ "{:,.0f}".format(p.amount) }} ₽
               </span>
             </td>
             <td>
-              <span class="badge" style="background:#f1f5f9;color:#475569;font-weight:500">
-                {{ {'cash':'💵 Наличные','bank_transfer':'🏦 Банк. перевод','card':'💳 Карта','online':'🌐 Онлайн'}.get(p.payment_method,'—') }}
+              <span class="badge" style="background:#f1f5f9;color:#475569;font-weight:500;">
+                {{ {'cash':'💵 Наличные','bank_transfer':'🏦 Банк. перевод','card':'💳 Карта','online':'🌐 Онлайн'}.get(p.payment_method, '—') }}
               </span>
             </td>
             <td><code style="font-size:.82rem">{{ p.receipt_number or '—' }}</code></td>
-            <td style="font-size:.85rem;color:var(--text-muted)">{{ p.received_by or '—' }}</td>
+            <td style="font-size:.85rem; color:var(--text-muted);">{{ p.received_by or '—' }}</td>
             <td>
               <form method="post" action="{{ url_for('payment_delete', payment_id=p.id) }}" onsubmit="return confirm('Удалить платёж?')" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" title="Удалить">
+                <button class="btn btn-sm btn-outline-danger" title="Удалить">
                   <i class="bi bi-trash"></i>
                 </button>
               </form>
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="8" class="text-center py-5" style="color:var(--text-light)">
-            <i class="bi bi-cash-stack" style="font-size:2.5rem;display:block;margin-bottom:8px;opacity:.3"></i>
-            Платежи не найдены
-          </td></tr>
+          <tr>
+            <td colspan="8" class="text-center py-5" style="color:var(--text-muted);">
+              <i class="bi bi-cash-stack d-block mb-2" style="font-size:2.5rem; opacity:.3;"></i>
+              Платежи не найдены
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
         {% if payments %}
         <tfoot>
-          <tr style="background:#f8fafc;font-weight:700">
-            <td colspan="3">Итого</td>
-            <td style="color:var(--primary-dark)">{{ "{:,.0f}".format(total.sum) }} ₽</td>
+          <tr style="background:#f8fafc; font-weight:700;">
+            <td colspan="3">Итого (<span id="footerCount">{{ payments|length }}</span>)</td>
+            <td style="color:var(--primary-dark);" id="footerSum">{{ "{:,.0f}".format(payments|sum(attribute='amount')) }} ₽</td>
             <td colspan="4"></td>
           </tr>
         </tfoot>
@@ -134,17 +155,60 @@
     </div>
   </div>
 </div>
+
+<!-- Пустой результат поиска -->
+<div id="noResults" class="text-center py-5" style="display:none;color:var(--text-muted);">
+  <i class="bi bi-search d-block mb-2" style="font-size:2.5rem;color:#e2e8f0;"></i>
+  Ничего не найдено — попробуйте изменить фильтры
+</div>
 {% endblock %}
 
 {% block scripts %}
-<style>.fw-600{font-weight:600}</style>
+<style>.fw-bold{font-weight:700}</style>
 <script>
-$(document).ready(function() {
-  $('#paymentsTable').DataTable({
-    language:{url:'https://cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json'},
-    pageLength:25,order:[[0,'desc']],
-    columnDefs:[{orderable:false,targets:[7]}]
+function filterTable() {
+  const q = document.getElementById('liveSearch').value.toLowerCase().trim();
+  const method = document.getElementById('filterMethod').value;
+  const dateFrom = document.getElementById('filterDateFrom').value;
+  const dateTo = document.getElementById('filterDateTo').value;
+
+  const rows = document.querySelectorAll('#paymentsBody tr[data-search]');
+  let visible = 0;
+  let sumVisible = 0;
+
+  rows.forEach(row => {
+    const matchQ = !q || row.dataset.search.includes(q);
+    const matchMethod = !method || row.dataset.method === method;
+    const rowDate = row.dataset.date;
+    const matchDateFrom = !dateFrom || rowDate >= dateFrom;
+    const matchDateTo = !dateTo || rowDate <= dateTo;
+
+    const show = matchQ && matchMethod && matchDateFrom && matchDateTo;
+    row.style.display = show ? '' : 'none';
+    if (show) {
+      visible++;
+      sumVisible += parseFloat(row.dataset.amount) || 0;
+    }
   });
-});
+
+  document.getElementById('visibleCount').textContent = visible;
+  document.getElementById('noResults').style.display = (visible === 0 && rows.length > 0) ? 'block' : 'none';
+
+  const footerCount = document.getElementById('footerCount');
+  const footerSum = document.getElementById('footerSum');
+  if (footerCount) footerCount.textContent = visible;
+  if (footerSum) footerSum.textContent = sumVisible.toLocaleString('ru-RU', {maximumFractionDigits: 0}) + ' ₽';
+}
+
+function resetFilters() {
+  document.getElementById('liveSearch').value = '';
+  document.getElementById('filterMethod').value = '';
+  document.getElementById('filterDateFrom').value = '';
+  document.getElementById('filterDateTo').value = '';
+  filterTable();
+  document.getElementById('liveSearch').focus();
+}
+
+document.getElementById('liveSearch').addEventListener('input', filterTable);
 </script>
 {% endblock %}
