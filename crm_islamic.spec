@@ -15,7 +15,7 @@ ROOT = os.path.abspath('.')
 PKG  = os.path.join(ROOT, 'crm_islamic')
 
 a = Analysis(
-    [os.path.join(PKG, 'run.py')],
+    [os.path.join(ROOT, 'gui_run.py')],
     pathex=[ROOT, PKG],
     binaries=[],
     datas=[
@@ -27,40 +27,36 @@ a = Analysis(
         # (os.path.join(PKG, 'static'), 'static'),
     ],
     hiddenimports=[
-        # Flask internals
-        'flask',
-        'flask.templating',
-        'flask_sqlalchemy',
-        'flask_wtf',
-        'flask_wtf.csrf',
-        'wtforms',
-        'wtforms.validators',
-        'wtforms.fields',
-        # SQLAlchemy dialects
-        'sqlalchemy',
-        'sqlalchemy.dialects.sqlite',
-        'sqlalchemy.orm',
-        'sqlalchemy.ext.declarative',
-        # Email validation
-        'email_validator',
-        'idna',
-        # dateutil
-        'dateutil',
-        'dateutil.relativedelta',
-        # Jinja2
-        'jinja2',
-        'jinja2.ext',
-        'markupsafe',
-        # Werkzeug
-        'werkzeug',
-        'werkzeug.routing',
-        'werkzeug.serving',
+        # Flask
+        'flask', 'flask.templating',
+        'flask_sqlalchemy', 'flask_wtf', 'flask_wtf.csrf',
+        'wtforms', 'wtforms.validators', 'wtforms.fields',
+        'wtforms.fields.choices', 'wtforms.fields.datetime',
+        'wtforms.fields.numeric', 'wtforms.fields.simple',
+        # SQLAlchemy
+        'sqlalchemy', 'sqlalchemy.dialects.sqlite',
+        'sqlalchemy.orm', 'sqlalchemy.ext.declarative', 'sqlalchemy.pool',
+        # Email / dateutil / jinja / werkzeug
+        'email_validator', 'idna',
+        'dateutil', 'dateutil.relativedelta',
+        'jinja2', 'jinja2.ext', 'markupsafe',
+        'werkzeug', 'werkzeug.routing', 'werkzeug.serving',
+        'werkzeug.utils', 'werkzeug.security',
+        'itsdangerous', 'click',
+        # pywebview
+        'webview', 'webview.platforms.winforms', 'webview.platforms.cef',
+        'clr',
+        # openpyxl (Excel import)
+        'openpyxl', 'openpyxl.styles', 'openpyxl.utils',
+        'openpyxl.reader.excel', 'openpyxl.writer.excel',
+        # python-docx (contract generation)
+        'docx', 'docx.oxml', 'docx.oxml.ns', 'docx.opc',
+        'docx.opc.constants', 'docx.shared',
+        # lxml (required by python-docx)
+        'lxml', 'lxml.etree',
         # Standard
-        'csv',
-        'io',
-        'json',
-        'os',
-        'sys',
+        'csv', 'io', 'json', 'os', 'sys', 'copy', 'zipfile',
+        'uuid', 'mimetypes', 'socket', 'threading',
     ],
     hookspath=[],
     hooksconfig={},

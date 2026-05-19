@@ -19,6 +19,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join(PKG, 'templates'), 'templates'),
+        (os.path.join(PKG, 'default_contract_template.docx'), '.'),
     ],
     hiddenimports=[
         'flask', 'flask.templating',
@@ -36,7 +37,15 @@ a = Analysis(
         'itsdangerous', 'click',
         'webview', 'webview.platforms.winforms', 'webview.platforms.cef',
         'clr',
-        'csv', 'io', 'json', 'os', 'sys',
+        # openpyxl (Excel import)
+        'openpyxl', 'openpyxl.styles', 'openpyxl.utils',
+        'openpyxl.reader.excel', 'openpyxl.writer.excel',
+        # python-docx (contract generation)
+        'docx', 'docx.oxml', 'docx.oxml.ns', 'docx.opc',
+        'docx.opc.constants', 'docx.shared',
+        # lxml (required by python-docx)
+        'lxml', 'lxml.etree',
+        'csv', 'io', 'json', 'os', 'sys', 'copy', 'zipfile',
         'uuid', 'mimetypes', 'socket', 'threading',
     ],
     hookspath=[],
