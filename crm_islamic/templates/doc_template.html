@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block title %}Шаблон договора — Мурабаха CRM{% endblock %}
+{% block breadcrumb %}<li class="breadcrumb-item active">Шаблон договора</li>{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4><i class="bi bi-file-earmark-word-fill me-2" style="color:#2563eb;"></i>Шаблон договора</h4>
+  <p class="subtitle">Загрузите шаблон .docx — CRM будет подставлять в него данные клиента и договора</p>
+</div>
+
+<div class="row g-4">
+
+  <!-- Upload card -->
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-upload" style="color:#2563eb;"></i>
+        <span style="font-weight:700;">{% if exists %}Заменить шаблон{% else %}Загрузить шаблон{% endif %}</span>
+        {% if exists %}<span class="badge badge-active ms-auto">Загружен</span>{% else %}<span class="badge badge-pending ms-auto">Не загружен</span>{% endif %}
+      </div>
+      <div class="card-body">
+        {% if exists %}
+        <div class="d-flex align-items-center gap-3 mb-3 p-3" style="background:#f0fdf4; border-radius:10px; border:1px solid #bbf7d0;">
+          <i class="bi bi-file-earmark-word-fill" style="font-size:2rem; color:#2563eb;"></i>
+          <div>
+            <div style="font-weight:600; font-size:.9rem;">{{ tpl_name }}</div>
+            <div style="font-size:.78rem; color:var(--text-muted);">Шаблон активен · нажмите «Загрузить» для замены</div>
+          </div>
+        </div>
+        {% else %}
+        <div class="text-center py-3 mb-3" style="color:var(--text-muted);">
+          <i class="bi bi-file-earmark-word d-block mb-2" style="font-size:2.5rem; color:#e2e8f0;"></i>
+          Шаблон не загружен. Загрузите .docx-файл.
+        </div>
+        {% endif %}
+        <form method="post" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-semibold">Файл шаблона (.docx)</label>
+            <input type="file" name="template" class="form-control form-control-sm" accept=".docx" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-upload me-1"></i>{% if exists %}Заменить шаблон{% else %}Загрузить шаблон{% endif %}
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Placeholders reference -->
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-braces me-2" style="color:#6366f1;"></i>Доступные метки-заменители</div>
+      <div class="card-body" style="font-size:.84rem;">
+        <p style="color:var(--text-muted);">Вставьте эти метки в ваш шаблон .docx — при генерации они будут заменены реальными данными.</p>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div style="font-weight:700; color:#6366f1; margin-bottom:6px; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em;">Договор</div>
+            <table class="table table-sm mb-0" style="font-size:.82rem;">
+              <tbody>
+                <tr><td><code>&#123;&#123;НОМЕР_ДОГОВОРА&#125;&#125;</code></td><td style="color:var(--text-muted);">№ договора</td></tr>
+                <tr><td><code>&#123;&#123;ДАТА_ДОГОВОРА&#125;&#125;</code></td><td style="color:var(--text-muted);">15 мая 2025 г.</td></tr>
+                <tr><td><code>&#123;&#123;ЧИСЛО&#125;&#125;</code></td><td style="color:var(--text-muted);">День (15)</td></tr>
+                <tr><td><code>&#123;&#123;МЕСЯЦ&#125;&#125;</code></td><td style="color:var(--text-muted);">Месяц (Мая)</td></tr>
+                <tr><td><code>&#123;&#123;ГОД&#125;&#125;</code></td><td style="color:var(--text-muted);">Год (2025)</td></tr>
+                <tr><td><code>&#123;&#123;ДАТА_ПЕРВОГО_ПЛАТЕЖА&#125;&#125;</code></td><td style="color:var(--text-muted);">1-й платёж</td></tr>
+                <tr><td><code>&#123;&#123;ДАТА_ПОСЛЕДНЕГО_ПЛАТЕЖА&#125;&#125;</code></td><td style="color:var(--text-muted);">Последний платёж</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="col-md-6">
+            <div style="font-weight:700; color:#059669; margin-bottom:6px; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em;">Покупатель</div>
+            <table class="table table-sm mb-0" style="font-size:.82rem;">
+              <tbody>
+                <tr><td><code>&#123;&#123;ФИО_ПОКУПАТЕЛЯ&#125;&#125;</code></td><td style="color:var(--text-muted);">Полное имя</td></tr>
+                <tr><td><code>&#123;&#123;ДАТА_РОЖДЕНИЯ&#125;&#125;</code></td><td style="color:var(--text-muted);">01.01.1990</td></tr>
+                <tr><td><code>&#123;&#123;ПАСПОРТ_СЕРИЯ&#125;&#125;</code></td><td style="color:var(--text-muted);">Серия паспорта</td></tr>
+                <tr><td><code>&#123;&#123;ПАСПОРТ_НОМЕР&#125;&#125;</code></td><td style="color:var(--text-muted);">Номер паспорта</td></tr>
+                <tr><td><code>&#123;&#123;ПАСПОРТ_ВЫДАН&#125;&#125;</code></td><td style="color:var(--text-muted);">Кем выдан</td></tr>
+                <tr><td><code>&#123;&#123;ПАСПОРТ_ДАТА&#125;&#125;</code></td><td style="color:var(--text-muted);">Дата выдачи</td></tr>
+                <tr><td><code>&#123;&#123;АДРЕС&#125;&#125;</code></td><td style="color:var(--text-muted);">Адрес регистрации</td></tr>
+                <tr><td><code>&#123;&#123;ТЕЛЕФОН&#125;&#125;</code></td><td style="color:var(--text-muted);">Телефон</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="col-md-6">
+            <div style="font-weight:700; color:#d97706; margin-bottom:6px; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em;">Товар</div>
+            <table class="table table-sm mb-0" style="font-size:.82rem;">
+              <tbody>
+                <tr><td><code>&#123;&#123;ТОВАР&#125;&#125;</code></td><td style="color:var(--text-muted);">Наименование</td></tr>
+                <tr><td><code>&#123;&#123;КАТЕГОРИЯ&#125;&#125;</code></td><td style="color:var(--text-muted);">Категория</td></tr>
+                <tr><td><code>&#123;&#123;СЕРИЙНЫЙ_НОМЕР&#125;&#125;</code></td><td style="color:var(--text-muted);">Серийный №</td></tr>
+                <tr><td><code>&#123;&#123;ПОСТАВЩИК&#125;&#125;</code></td><td style="color:var(--text-muted);">Поставщик</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="col-md-6">
+            <div style="font-weight:700; color:#dc2626; margin-bottom:6px; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em;">Финансы</div>
+            <table class="table table-sm mb-0" style="font-size:.82rem;">
+              <tbody>
+                <tr><td><code>&#123;&#123;СЕБЕСТОИМОСТЬ&#125;&#125;</code></td><td style="color:var(--text-muted);">Себестоимость</td></tr>
+                <tr><td><code>&#123;&#123;НАЦЕНКА_ПРОЦЕНТ&#125;&#125;</code></td><td style="color:var(--text-muted);">% наценки</td></tr>
+                <tr><td><code>&#123;&#123;ИТОГОВАЯ_СУММА&#125;&#125;</code></td><td style="color:var(--text-muted);">Итог</td></tr>
+                <tr><td><code>&#123;&#123;ПЕРВЫЙ_ВЗНОС&#125;&#125;</code></td><td style="color:var(--text-muted);">Первый взнос</td></tr>
+                <tr><td><code>&#123;&#123;ФИНАНСИРУЕТСЯ&#125;&#125;</code></td><td style="color:var(--text-muted);">Сумма рассрочки</td></tr>
+                <tr><td><code>&#123;&#123;СРОК_МЕСЯЦЕВ&#125;&#125;</code></td><td style="color:var(--text-muted);">Кол-во месяцев</td></tr>
+                <tr><td><code>&#123;&#123;ЕЖЕМЕСЯЧНЫЙ_ПЛАТЕЖ&#125;&#125;</code></td><td style="color:var(--text-muted);">Ежемес. платёж</td></tr>
+                <tr><td><code>&#123;&#123;СПОСОБ_ОПЛАТЫ&#125;&#125;</code></td><td style="color:var(--text-muted);">Способ оплаты</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="alert mt-3 mb-0 py-2" style="background:#fffbeb;border:1px solid #fed7aa;color:#92400e;font-size:.8rem;">
+          <i class="bi bi-lightbulb me-1"></i>
+          Метки работают внутри таблиц. Если метка разбивается Word на несколько частей — переписайте её вручную в шаблоне (удалите и напечатайте заново).
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -335,11 +335,18 @@
                 {% elif c.status == 'cancelled' %}<span class="badge badge-cancelled">Отменён</span>{% endif %}
               </td>
               <td>
-                <a href="{{ url_for('contract_detail', contract_id=c.id) }}"
-                   class="btn btn-sm btn-outline-primary"
-                   data-bs-toggle="tooltip" title="Открыть">
-                  <i class="bi bi-eye"></i>
-                </a>
+                <div class="d-flex gap-1">
+                  <a href="{{ url_for('contract_detail', contract_id=c.id) }}"
+                     class="btn btn-sm btn-outline-primary"
+                     data-bs-toggle="tooltip" title="Открыть">
+                    <i class="bi bi-eye"></i>
+                  </a>
+                  <a href="{{ url_for('contract_download_doc', contract_id=c.id) }}"
+                     class="btn btn-sm btn-outline-secondary"
+                     data-bs-toggle="tooltip" title="Скачать договор .docx">
+                    <i class="bi bi-file-earmark-word"></i>
+                  </a>
+                </div>
               </td>
             </tr>
             {% else %}

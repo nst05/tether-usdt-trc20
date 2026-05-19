@@ -746,6 +746,21 @@
       <i class="bi bi-bar-chart-line-fill nav-icon" style="color:#f97316;"></i>
       <span class="nav-label">Отчёты</span>
     </a>
+    <a href="{{ url_for('import_page') }}"
+       class="sidebar-link {% if 'import' in (request.endpoint or '') %}active{% endif %}">
+      <i class="bi bi-file-earmark-excel-fill nav-icon" style="color:#10b981;"></i>
+      <span class="nav-label">Импорт из Excel</span>
+    </a>
+    <a href="{{ url_for('calculator') }}"
+       class="sidebar-link {% if request.endpoint == 'calculator' %}active{% endif %}">
+      <i class="bi bi-calculator-fill nav-icon" style="color:#10b981;"></i>
+      <span class="nav-label">Калькулятор</span>
+    </a>
+    <a href="{{ url_for('doc_template_settings') }}"
+       class="sidebar-link {% if request.endpoint == 'doc_template_settings' %}active{% endif %}">
+      <i class="bi bi-file-earmark-word-fill nav-icon" style="color:#2563eb;"></i>
+      <span class="nav-label">Шаблон договора</span>
+    </a>
     <a href="{{ url_for('backups_list') }}"
        class="sidebar-link {% if 'backup' in (request.endpoint or '') %}active{% endif %}">
       <i class="bi bi-shield-check nav-icon" style="color:#34d399;"></i>

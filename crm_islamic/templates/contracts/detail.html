@@ -44,6 +44,17 @@
            data-bs-toggle="tooltip" title="Редактировать">
           <i class="bi bi-pencil"></i>
         </a>
+        <a href="{{ url_for('contract_download_doc', contract_id=contract.id) }}"
+           class="btn btn-outline-primary btn-sm"
+           data-bs-toggle="tooltip" title="Скачать договор .docx">
+          <i class="bi bi-file-earmark-word me-1"></i>Договор
+        </a>
+        <form method="post" action="{{ url_for('contract_generate_doc', contract_id=contract.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip" title="Перегенерировать договор">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </form>
         <a href="{{ url_for('guarantor_new', contract_id=contract.id) }}"
            class="btn btn-outline-secondary btn-sm"
            data-bs-toggle="tooltip" title="Добавить поручителя">
