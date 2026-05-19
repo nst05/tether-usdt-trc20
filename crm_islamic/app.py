@@ -276,20 +276,54 @@ def create_app(config=None):
 
     @app.route('/clients')
     def clients_list():
-        clients = db.session.execute(
-            db.select(Client).order_by(desc(Client.created_at))
-        ).scalars().all()
+        q         = request.args.get('q', '').strip()
+        status_f  = request.args.get('status', '')
+        emp_f     = request.args.get('employment_type', '')
+        score_min = request.args.get('score_min', '')
+        score_max = request.args.get('score_max', '')
+
+        query = db.select(Client).order_by(desc(Client.created_at))
+
+        if q:
+            like = f'%{q}%'
+            query = query.where(
+                db.or_(
+                    Client.last_name.ilike(like),
+                    Client.first_name.ilike(like),
+                    Client.middle_name.ilike(like),
+                    Client.phone.ilike(like),
+                    Client.phone2.ilike(like),
+                    Client.inn.ilike(like),
+                )
+            )
+        if status_f:
+            query = query.where(Client.status == status_f)
+        if emp_f:
+            query = query.where(Client.employment_type == emp_f)
+        if score_min:
+            query = query.where(Client.credit_score >= int(score_min))
+        if score_max:
+            query = query.where(Client.credit_score <= int(score_max))
+
+        clients = db.session.execute(query).scalars().all()
+
+        status_choices = [
+            ('active', 'Активный'), ('inactive', 'Неактивный'), ('blacklisted', 'Чёрный список'),
+        ]
+        employment_choices = [
+            ('', 'Все'), ('employed', 'Наёмный'), ('self_employed', 'Самозанятый'),
+            ('business_owner', 'Владелец бизнеса'), ('unemployed', 'Безработный'),
+        ]
 
         # Export CSV
         if request.args.get('export') == 'csv':
             def generate():
                 output = io.StringIO()
                 w = csv.writer(output)
-                w.writerow(['ID', 'Фамилия', 'Имя', 'Отчество', 'Телефон', 'Статус', 'Кредитный балл', 'Договоры'])
+                w.writerow(['ID', 'Фамилия', 'Имя', 'Отчество', 'Телефон', 'Статус', 'Кредитный балл'])
                 for c in clients:
                     w.writerow([c.id, c.last_name, c.first_name, c.middle_name or '',
-                                 c.phone or '', c.status, c.credit_score,
-                                 c.contracts.count()])
+                                 c.phone or '', c.status, c.credit_score])
                     output.seek(0)
                     yield output.read()
                     output.seek(0)
@@ -297,7 +331,11 @@ def create_app(config=None):
             return Response(generate(), mimetype='text/csv',
                             headers={'Content-Disposition': 'attachment;filename=clients.csv'})
 
-        return render_template('clients/list.html', clients=clients)
+        return render_template('clients/list.html', clients=clients,
+                               q=q, status_f=status_f, emp_f=emp_f,
+                               score_min=score_min, score_max=score_max,
+                               status_choices=status_choices,
+                               employment_choices=employment_choices)
 
     @app.route('/clients/new', methods=['GET', 'POST'])
     def client_new():
