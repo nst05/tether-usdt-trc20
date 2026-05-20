@@ -1,163 +1,132 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0
 // © SmartMoney_Pro
 //@version=5
-indicator(
-     title            = "Smart Money Concepts Pro",
-     shorttitle       = "SMC Pro",
-     overlay          = true,
-     max_boxes_count  = 500,
-     max_lines_count  = 500,
-     max_labels_count = 500
- )
+indicator(title="Smart Money Concepts Pro", shorttitle="SMC Pro", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
 
-// ═══════════════════════════════════════════════════════════════════
-//  INPUTS
-// ═══════════════════════════════════════════════════════════════════
+// ═══════ INPUTS ═══════════════════════════════════════════════════
 
-g1 = "📐 Market Structure"
-showBOS   = input.bool(true,  "BOS / CHoCH lines",          group = g1)
-showSwing = input.bool(true,  "Swing High / Low markers",   group = g1)
-swingLen  = input.int(10,     "Swing Lookback", minval=3, maxval=50, group = g1)
-bullCol   = input.color(#26A69A, "Bullish colour",           group = g1)
-bearCol   = input.color(#EF5350, "Bearish colour",           group = g1)
+g1 = "📐 Structure"
+showBOS = input.bool(true,  "BOS / CHoCH",        group=g1)
+showSW  = input.bool(true,  "Swing H/L markers",  group=g1)
+swLen   = input.int(7,      "Swing Lookback",      minval=3, maxval=50, group=g1)
+bullCol = input.color(#26A69A, "Bull colour",      group=g1)
+bearCol = input.color(#EF5350, "Bear colour",      group=g1)
 
 g2 = "📦 Order Blocks"
-showOB      = input.bool(true,  "Order Blocks",              group = g2)
-obLen       = input.int(10,     "OB Lookback", minval=3, maxval=50, group = g2)
-mitigateOB  = input.bool(true,  "Hide mitigated OBs",        group = g2)
-bullOBFill  = input.color(color.new(#26A69A, 80), "Bull OB fill",   group = g2)
-bearOBFill  = input.color(color.new(#EF5350, 80), "Bear OB fill",   group = g2)
-bullOBBrd   = input.color(#26A69A, "Bull OB border",          group = g2)
-bearOBBrd   = input.color(#EF5350, "Bear OB border",          group = g2)
+showOB  = input.bool(true,  "Order Blocks",        group=g2)
+obLen   = input.int(7,      "OB Lookback",         minval=3, maxval=50, group=g2)
+mitOB   = input.bool(true,  "Hide mitigated OBs",  group=g2)
+bullOBF = input.color(color.new(#26A69A, 80), "Bull OB fill",   group=g2)
+bearOBF = input.color(color.new(#EF5350, 80), "Bear OB fill",   group=g2)
+bullOBB = input.color(#26A69A, "Bull OB border",   group=g2)
+bearOBB = input.color(#EF5350, "Bear OB border",   group=g2)
 
 g3 = "⚡ Fair Value Gaps"
-showFVG     = input.bool(true,  "FVG Zones",                 group = g3)
-fvgMinPct   = input.float(0.0,  "Min size (% of ATR)", minval=0.0, step=0.1, group = g3)
-bullFVGFill = input.color(color.new(#26A69A, 85), "Bull FVG fill",  group = g3)
-bearFVGFill = input.color(color.new(#EF5350, 85), "Bear FVG fill",  group = g3)
-hideMitFVG  = input.bool(true,  "Hide filled FVGs",           group = g3)
+showFVG = input.bool(true,  "FVG Zones",           group=g3)
+bullFVGF= input.color(color.new(#26A69A, 85), "Bull FVG fill",  group=g3)
+bearFVGF= input.color(color.new(#EF5350, 85), "Bear FVG fill",  group=g3)
+hideFVG = input.bool(true,  "Hide filled FVGs",    group=g3)
 
-g4 = "💧 Liquidity (EQH / EQL)"
-showLiq   = input.bool(true,  "Equal Highs / Lows",          group = g4)
-liqLen    = input.int(14,     "Lookback", minval=5, maxval=100, group = g4)
-liqEqPct  = input.float(0.1,  "Equal threshold (%)", minval=0.01, step=0.01, group = g4)
+g4 = "💧 Liquidity"
+showLiq = input.bool(true,  "EQH / EQL lines",     group=g4)
+liqLen  = input.int(10,     "Lookback",            minval=5, maxval=100, group=g4)
+liqPct  = input.float(0.1,  "Equal threshold %",   minval=0.01, step=0.01, group=g4)
 
 g5 = "🎯 Premium / Discount"
-showPD    = input.bool(true,  "P/D Zones",                   group = g5)
-pdLen     = input.int(50,     "Range Lookback", minval=10,    group = g5)
-premFill  = input.color(color.new(#EF5350, 92), "Premium",    group = g5)
-equiFill  = input.color(color.new(#FFEB3B, 92), "Equilibrium",group = g5)
-discFill  = input.color(color.new(#26A69A, 92), "Discount",   group = g5)
+showPD  = input.bool(true,  "P/D Zones",           group=g5)
+pdLen   = input.int(50,     "Range Lookback",      minval=10, group=g5)
+premF   = input.color(color.new(#EF5350, 88), "Premium fill",  group=g5)
+equiF   = input.color(color.new(#FFEB3B, 88), "Equi fill",     group=g5)
+discF   = input.color(color.new(#26A69A, 88), "Discount fill", group=g5)
 
-g6 = "📊 Volume Delta"
-showVol   = input.bool(true, "Volume-delta bar colouring",   group = g6)
-volMaLen  = input.int(20,    "Vol MA length", minval=5,       group = g6)
+g6 = "📊 Volume"
+showVD  = input.bool(true,  "Volume-delta colours", group=g6)
+volMAL  = input.int(20,     "Vol MA length",        minval=5, group=g6)
 
-// ═══════════════════════════════════════════════════════════════════
-//  PIVOT TRACKING
-// ═══════════════════════════════════════════════════════════════════
+// ═══════ HELPERS ══════════════════════════════════════════════════
 
 atr14 = ta.atr(14)
 
-ph = ta.pivothigh(high, swingLen, swingLen)
-pl = ta.pivotlow (low,  swingLen, swingLen)
+// ═══════ PIVOTS ═══════════════════════════════════════════════════
 
-var float swHigh        = na
-var int   swHighBar     = na
-var float prevSwHigh    = na
-var int   prevSwHighBar = na
-var float swLow         = na
-var int   swLowBar      = na
-var float prevSwLow     = na
-var int   prevSwLowBar  = na
+ph = ta.pivothigh(high, swLen, swLen)
+pl = ta.pivotlow (low,  swLen, swLen)
+
+var float swH = na,  var int swHBar = na
+var float swL = na,  var int swLBar = na
+var float pswH = na, var int pswHBar = na
+var float pswL = na, var int pswLBar = na
 
 if not na(ph)
-    prevSwHigh    := swHigh
-    prevSwHighBar := swHighBar
-    swHigh        := ph
-    swHighBar     := bar_index - swingLen
+    pswH    := swH
+    pswHBar := swHBar
+    swH     := ph
+    swHBar  := bar_index - swLen
 
 if not na(pl)
-    prevSwLow    := swLow
-    prevSwLowBar := swLowBar
-    swLow        := pl
-    swLowBar     := bar_index - swingLen
+    pswL    := swL
+    pswLBar := swLBar
+    swL     := pl
+    swLBar  := bar_index - swLen
 
-// ═══════════════════════════════════════════════════════════════════
-//  1. SWING HIGH / LOW MARKERS
-// ═══════════════════════════════════════════════════════════════════
+// ═══════ 1. SWING MARKERS ═════════════════════════════════════════
 
-if showSwing
+if showSW
     if not na(ph)
-        label.new(bar_index - swingLen, ph, "▼",
-             style=label.style_none, textcolor=bearCol, size=size.tiny)
+        label.new(bar_index - swLen, ph, "H", style=label.style_label_down, color=bearCol, textcolor=color.white, size=size.tiny)
     if not na(pl)
-        label.new(bar_index - swingLen, pl, "▲",
-             style=label.style_none, textcolor=bullCol, size=size.tiny)
+        label.new(bar_index - swLen, pl, "L", style=label.style_label_up, color=bullCol, textcolor=color.white, size=size.tiny)
 
-// ═══════════════════════════════════════════════════════════════════
-//  2. MARKET STRUCTURE  ─  BOS & CHoCH
-// ═══════════════════════════════════════════════════════════════════
+// ═══════ 2. BOS / CHoCH ═══════════════════════════════════════════
 
-var bool  isBull     = true
-// Separate watched levels – reset after a break so signals fire once per break
-var float watchHigh  = na
-var int   watchHighBar = na
-var float watchLow   = na
-var int   watchLowBar  = na
+var bool  isBull = true
+var float wH = na, var int wHBar = na
+var float wL = na, var int wLBar = na
 
-// In a downtrend every new pivot high becomes the level to break
 if not isBull and not na(ph)
-    watchHigh    := ph
-    watchHighBar := bar_index - swingLen
-
-// In an uptrend every new pivot low becomes the level to break
+    wH    := ph
+    wHBar := bar_index - swLen
 if isBull and not na(pl)
-    watchLow    := pl
-    watchLowBar := bar_index - swingLen
+    wL    := pl
+    wLBar := bar_index - swLen
 
-// CHoCH uses the deeper swing (prevSw) — it is a more significant break
-bosBull  = not isBull and not na(watchHigh) and
-           ta.crossover(close, watchHigh)
-bosBear  = isBull and not na(watchLow) and
-           ta.crossunder(close, watchLow)
-chochBull = not isBull and not na(prevSwHigh) and
-            ta.crossover(close, prevSwHigh)
-chochBear = isBull and not na(prevSwLow) and
-            ta.crossunder(close, prevSwLow)
+bosBull = not isBull and not na(wH)   and ta.crossover (close, wH)
+bosBear = isBull     and not na(wL)   and ta.crossunder(close, wL)
+chBull  = not isBull and not na(pswH) and ta.crossover (close, pswH)
+chBear  = isBull     and not na(pswL) and ta.crossunder(close, pswL)
 
-if bosBull or chochBull
-    isBull     := true
-    watchHigh  := na     // consume the level so it doesn't re-fire
-if bosBear or chochBear
-    isBull    := false
-    watchLow  := na
+// Save draw values BEFORE resetting wH/wL
+bosBlvl  = bosBull ? wH   : na
+bosBbar  = bosBull ? wHBar : na
+bosSlvl  = bosBear ? wL   : na
+bosSbar  = bosBear ? wLBar : na
+chBlvl   = chBull  ? pswH  : na
+chBbar   = chBull  ? pswHBar : na
+chSlvl   = chBear  ? pswL  : na
+chSbar   = chBear  ? pswLBar : na
+
+if bosBull or chBull
+    isBull := true
+    wH     := na
+if bosBear or chBear
+    isBull := false
+    wL     := na
 
 if showBOS
-    if bosBull and not na(watchHighBar)
-        line.new(watchHighBar, watchHigh, bar_index, watchHigh,
-             color=bullCol, width=1, style=line.style_dashed)
-        label.new(bar_index, watchHigh, "BOS",
-             style=label.style_none, textcolor=bullCol, size=size.small)
-    if bosBear and not na(watchLowBar)
-        line.new(watchLowBar, watchLow, bar_index, watchLow,
-             color=bearCol, width=1, style=line.style_dashed)
-        label.new(bar_index, watchLow, "BOS",
-             style=label.style_none, textcolor=bearCol, size=size.small)
-    if chochBull and not na(prevSwHighBar)
-        line.new(prevSwHighBar, prevSwHigh, bar_index, prevSwHigh,
-             color=bullCol, width=2)
-        label.new(bar_index, prevSwHigh, "CHoCH ✦",
-             style=label.style_none, textcolor=bullCol, size=size.small)
-    if chochBear and not na(prevSwLowBar)
-        line.new(prevSwLowBar, prevSwLow, bar_index, prevSwLow,
-             color=bearCol, width=2)
-        label.new(bar_index, prevSwLow, "CHoCH ✦",
-             style=label.style_none, textcolor=bearCol, size=size.small)
+    if bosBull and not na(bosBbar)
+        line.new(bosBbar, bosBlvl, bar_index, bosBlvl, color=bullCol, width=1, style=line.style_dashed)
+        label.new(bar_index, bosBlvl, "BOS", style=label.style_none, textcolor=bullCol, size=size.small)
+    if bosBear and not na(bosSbar)
+        line.new(bosSbar, bosSlvl, bar_index, bosSlvl, color=bearCol, width=1, style=line.style_dashed)
+        label.new(bar_index, bosSlvl, "BOS", style=label.style_none, textcolor=bearCol, size=size.small)
+    if chBull and not na(chBbar)
+        line.new(chBbar, chBlvl, bar_index, chBlvl, color=bullCol, width=2)
+        label.new(bar_index, chBlvl, "CHoCH", style=label.style_none, textcolor=bullCol, size=size.small)
+    if chBear and not na(chSbar)
+        line.new(chSbar, chSlvl, bar_index, chSlvl, color=bearCol, width=2)
+        label.new(bar_index, chSlvl, "CHoCH", style=label.style_none, textcolor=bearCol, size=size.small)
 
-// ═══════════════════════════════════════════════════════════════════
-//  3. ORDER BLOCKS
-// ═══════════════════════════════════════════════════════════════════
+// ═══════ 3. ORDER BLOCKS ══════════════════════════════════════════
 
 obPH = ta.pivothigh(high, obLen, obLen)
 obPL = ta.pivotlow (low,  obLen, obLen)
@@ -167,292 +136,228 @@ var box[] bearOBs = array.new_box()
 
 if showOB
     if not na(obPH)
-        t = high[obLen]
-        b = math.min(open[obLen], close[obLen])
-        array.push(bearOBs, box.new(
-             bar_index - obLen, t, bar_index + 50, b,
-             bgcolor=bearOBFill, border_color=bearOBBrd, border_width=1))
-
+        array.push(bearOBs, box.new(bar_index - obLen, high[obLen], bar_index + 50, math.min(open[obLen], close[obLen]), bgcolor=bearOBF, border_color=bearOBB, border_width=1))
     if not na(obPL)
-        b = low[obLen]
-        t = math.max(open[obLen], close[obLen])
-        array.push(bullOBs, box.new(
-             bar_index - obLen, t, bar_index + 50, b,
-             bgcolor=bullOBFill, border_color=bullOBBrd, border_width=1))
+        array.push(bullOBs, box.new(bar_index - obLen, math.max(open[obLen], close[obLen]), bar_index + 50, low[obLen], bgcolor=bullOBF, border_color=bullOBB, border_width=1))
 
-// Extend active OBs and remove mitigated ones
 if showOB
-    int bSize = array.size(bearOBs)
-    if bSize > 0
-        for i = bSize - 1 to 0
+    n1 = array.size(bearOBs)
+    if n1 > 0
+        for i = n1 - 1 to 0
             bx = array.get(bearOBs, i)
-            if mitigateOB and close > box.get_top(bx)
+            if mitOB and close > box.get_top(bx)
                 box.set_right(bx, bar_index)
                 array.remove(bearOBs, i)
             else
                 box.set_right(bx, bar_index + 50)
-
-    int buSize = array.size(bullOBs)
-    if buSize > 0
-        for i = buSize - 1 to 0
+    n2 = array.size(bullOBs)
+    if n2 > 0
+        for i = n2 - 1 to 0
             bx = array.get(bullOBs, i)
-            if mitigateOB and close < box.get_bottom(bx)
+            if mitOB and close < box.get_bottom(bx)
                 box.set_right(bx, bar_index)
                 array.remove(bullOBs, i)
             else
                 box.set_right(bx, bar_index + 50)
 
-// ═══════════════════════════════════════════════════════════════════
-//  4. FAIR VALUE GAPS  (FVG / Imbalance)
-// ═══════════════════════════════════════════════════════════════════
+// ═══════ 4. FAIR VALUE GAPS ═══════════════════════════════════════
 
-var box[] bullFVGs = array.new_box()
-var box[] bearFVGs = array.new_box()
+var box[] bFVG  = array.new_box()
+var box[] brFVG = array.new_box()
 
 if showFVG
-    minSz = atr14 * fvgMinPct / 100.0
-
-    // Bullish FVG: current bar's low > high of 2 bars ago
     if low > high[2]
-        gap = low - high[2]
-        if gap >= minSz
-            array.push(bullFVGs, box.new(
-                 bar_index - 2, low, bar_index + 80, high[2],
-                 bgcolor=bullFVGFill,
-                 border_color=color.new(#26A69A, 50), border_width=1))
-
-    // Bearish FVG: current bar's high < low of 2 bars ago
+        array.push(bFVG, box.new(bar_index - 2, low, bar_index + 80, high[2], bgcolor=bullFVGF, border_color=color.new(#26A69A, 50), border_width=1))
     if high < low[2]
-        gap = low[2] - high
-        if gap >= minSz
-            array.push(bearFVGs, box.new(
-                 bar_index - 2, low[2], bar_index + 80, high,
-                 bgcolor=bearFVGFill,
-                 border_color=color.new(#EF5350, 50), border_width=1))
+        array.push(brFVG, box.new(bar_index - 2, low[2], bar_index + 80, high, bgcolor=bearFVGF, border_color=color.new(#EF5350, 50), border_width=1))
 
-// Extend / remove filled FVGs
 if showFVG
-    int bfSize = array.size(bullFVGs)
-    if bfSize > 0
-        for i = bfSize - 1 to 0
-            bx = array.get(bullFVGs, i)
-            if hideMitFVG and low <= box.get_bottom(bx)
+    n3 = array.size(bFVG)
+    if n3 > 0
+        for i = n3 - 1 to 0
+            bx = array.get(bFVG, i)
+            if hideFVG and low <= box.get_bottom(bx)
                 box.set_right(bx, bar_index)
-                array.remove(bullFVGs, i)
+                array.remove(bFVG, i)
+            else
+                box.set_right(bx, bar_index + 80)
+    n4 = array.size(brFVG)
+    if n4 > 0
+        for i = n4 - 1 to 0
+            bx = array.get(brFVG, i)
+            if hideFVG and high >= box.get_top(bx)
+                box.set_right(bx, bar_index)
+                array.remove(brFVG, i)
             else
                 box.set_right(bx, bar_index + 80)
 
-    int bfSize2 = array.size(bearFVGs)
-    if bfSize2 > 0
-        for i = bfSize2 - 1 to 0
-            bx = array.get(bearFVGs, i)
-            if hideMitFVG and high >= box.get_top(bx)
-                box.set_right(bx, bar_index)
-                array.remove(bearFVGs, i)
-            else
-                box.set_right(bx, bar_index + 80)
-
-// ═══════════════════════════════════════════════════════════════════
-//  5. EQUAL HIGHS / LOWS  (Liquidity Pools)
-// ═══════════════════════════════════════════════════════════════════
+// ═══════ 5. EQH / EQL ═════════════════════════════════════════════
 
 if showLiq
-    phCond = not na(ta.pivothigh(high, liqLen, liqLen))
-    plCond = not na(ta.pivotlow (low,  liqLen, liqLen))
+    phC  = not na(ta.pivothigh(high, liqLen, liqLen))
+    plC  = not na(ta.pivotlow (low,  liqLen, liqLen))
+    cph  = ta.valuewhen(phC, high[liqLen],       0)
+    pph  = ta.valuewhen(phC, high[liqLen],       1)
+    cphB = ta.valuewhen(phC, bar_index - liqLen, 0)
+    pphB = ta.valuewhen(phC, bar_index - liqLen, 1)
+    cpl  = ta.valuewhen(plC, low[liqLen],        0)
+    ppl  = ta.valuewhen(plC, low[liqLen],        1)
+    cplB = ta.valuewhen(plC, bar_index - liqLen, 0)
+    pplB = ta.valuewhen(plC, bar_index - liqLen, 1)
+    if phC and not na(pph) and not na(cph)
+        if math.abs(cph - pph) / pph * 100 <= liqPct
+            line.new(pphB, cph, bar_index, cph, color=bearCol, width=1, style=line.style_dotted)
+            label.new(bar_index, cph, "EQH", style=label.style_none, textcolor=bearCol, size=size.tiny)
+    if plC and not na(ppl) and not na(cpl)
+        if math.abs(cpl - ppl) / ppl * 100 <= liqPct
+            line.new(pplB, cpl, bar_index, cpl, color=bullCol, width=1, style=line.style_dotted)
+            label.new(bar_index, cpl, "EQL", style=label.style_none, textcolor=bullCol, size=size.tiny)
 
-    curr_ph     = ta.valuewhen(phCond, high[liqLen],       0)
-    prev_ph     = ta.valuewhen(phCond, high[liqLen],       1)
-    curr_ph_bar = ta.valuewhen(phCond, bar_index - liqLen, 0)
-    prev_ph_bar = ta.valuewhen(phCond, bar_index - liqLen, 1)
-
-    curr_pl     = ta.valuewhen(plCond, low[liqLen],        0)
-    prev_pl     = ta.valuewhen(plCond, low[liqLen],        1)
-    curr_pl_bar = ta.valuewhen(plCond, bar_index - liqLen, 0)
-    prev_pl_bar = ta.valuewhen(plCond, bar_index - liqLen, 1)
-
-    if phCond and not na(prev_ph) and not na(curr_ph)
-        if math.abs(curr_ph - prev_ph) / prev_ph * 100 <= liqEqPct
-            line.new(prev_ph_bar, curr_ph, bar_index, curr_ph,
-                 color=bearCol, width=1, style=line.style_dotted)
-            label.new(bar_index, curr_ph, "EQH 💧",
-                 style=label.style_none, textcolor=bearCol, size=size.tiny)
-
-    if plCond and not na(prev_pl) and not na(curr_pl)
-        if math.abs(curr_pl - prev_pl) / prev_pl * 100 <= liqEqPct
-            line.new(prev_pl_bar, curr_pl, bar_index, curr_pl,
-                 color=bullCol, width=1, style=line.style_dotted)
-            label.new(bar_index, curr_pl, "EQL 💧",
-                 style=label.style_none, textcolor=bullCol, size=size.tiny)
-
-// ═══════════════════════════════════════════════════════════════════
-//  6. PREMIUM / DISCOUNT ZONES
-//  Single persistent box trio — updated every bar, NOT recreated
-// ═══════════════════════════════════════════════════════════════════
+// ═══════ 6. PREMIUM / DISCOUNT ════════════════════════════════════
 
 highH   = ta.highest(high, pdLen)
 lowL    = ta.lowest (low,  pdLen)
 rng     = highH - lowL
+premLvl = lowL + rng * 0.618
+discLvl = lowL + rng * 0.382
 eqLvl   = lowL + rng * 0.500
-premLvl = lowL + rng * 0.618   // Fib 61.8% — premium starts here
-discLvl = lowL + rng * 0.382   // Fib 38.2% — discount ends here
 
+// Shaded boxes spanning the full lookback range + 30 bars right
 var box premBox = na
 var box equiBox = na
 var box discBox = na
 
 if showPD
+    rLeft = bar_index - pdLen
     if na(premBox)
-        // Create once
-        premBox := box.new(bar_index, highH,   bar_index + 1, premLvl,
-             bgcolor=premFill, border_color=color.new(#EF5350,60), border_width=1)
-        equiBox := box.new(bar_index, premLvl, bar_index + 1, discLvl,
-             bgcolor=equiFill, border_color=color.new(#FFEB3B,60), border_width=1)
-        discBox := box.new(bar_index, discLvl, bar_index + 1, lowL,
-             bgcolor=discFill, border_color=color.new(#26A69A,60), border_width=1)
+        premBox := box.new(rLeft, highH,   bar_index + 30, premLvl, bgcolor=premF, border_color=color.new(#EF5350, 60), border_width=1)
+        equiBox := box.new(rLeft, premLvl, bar_index + 30, discLvl, bgcolor=equiF, border_color=color.new(#FFEB3B, 60), border_width=1)
+        discBox := box.new(rLeft, discLvl, bar_index + 30, lowL,    bgcolor=discF, border_color=color.new(#26A69A, 60), border_width=1)
     else
-        // Update each bar — no new box, no limit hit
-        box.set_left  (premBox, bar_index)
+        box.set_left  (premBox, rLeft)
         box.set_top   (premBox, highH)
-        box.set_right (premBox, bar_index + 1)
+        box.set_right (premBox, bar_index + 30)
         box.set_bottom(premBox, premLvl)
-
-        box.set_left  (equiBox, bar_index)
+        box.set_left  (equiBox, rLeft)
         box.set_top   (equiBox, premLvl)
-        box.set_right (equiBox, bar_index + 1)
+        box.set_right (equiBox, bar_index + 30)
         box.set_bottom(equiBox, discLvl)
-
-        box.set_left  (discBox, bar_index)
+        box.set_left  (discBox, rLeft)
         box.set_top   (discBox, discLvl)
-        box.set_right (discBox, bar_index + 1)
+        box.set_right (discBox, bar_index + 30)
         box.set_bottom(discBox, lowL)
 
-plot(showPD ? eqLvl : na, "Equilibrium 50%", color=color.new(#FFEB3B, 40), linewidth=1, style=plot.style_circles)
+// Always-visible level lines (plot works even when boxes are off)
+plot(showPD ? premLvl : na, "Premium 61.8%",  color=color.new(#EF5350, 20), linewidth=1)
+plot(showPD ? eqLvl   : na, "Equilib. 50%",   color=color.new(#FFEB3B, 20), linewidth=1)
+plot(showPD ? discLvl : na, "Discount 38.2%", color=color.new(#26A69A, 20), linewidth=1)
 
-// ═══════════════════════════════════════════════════════════════════
-//  7. VOLUME DELTA BAR COLOURING
-// ═══════════════════════════════════════════════════════════════════
+// ═══════ 7. VOLUME DELTA BAR COLOUR ══════════════════════════════
 
 delta   = volume * (close - open) / math.max(high - low, syminfo.mintick)
-volMA   = ta.sma(volume, volMaLen)
+volMA   = ta.sma(volume, volMAL)
 highVol = volume > volMA * 1.5
 
-var color barCol = na
-if showVol
+var color bCol = color.gray
+if showVD
     if delta > 0 and highVol
-        barCol := color.new(#00E676, 0)
+        bCol := color.new(#00E676, 0)
     else if delta > 0
-        barCol := color.new(#26A69A, 40)
+        bCol := color.new(#26A69A, 30)
     else if delta < 0 and highVol
-        barCol := color.new(#FF1744, 0)
+        bCol := color.new(#FF1744, 0)
     else if delta < 0
-        barCol := color.new(#EF5350, 40)
+        bCol := color.new(#EF5350, 30)
     else
-        barCol := color.new(#888888, 60)
+        bCol := color.new(#888888, 50)
 else
-    barCol := na
+    bCol := na
 
-barcolor(barCol)
+barcolor(bCol)
 
-// ═══════════════════════════════════════════════════════════════════
-//  8. DASHBOARD TABLE
-// ═══════════════════════════════════════════════════════════════════
+// ═══════ 8. DASHBOARD ═════════════════════════════════════════════
 
-var table dash = table.new(position.top_right, 2, 8, bgcolor=color.new(#1E1E2E, 10), border_color=color.new(#555555, 0), border_width=1, frame_color=color.new(#888888, 0), frame_width=1)
+var table dash = table.new(position.top_right, 2, 8, bgcolor=color.new(#0D0D1A, 5), border_color=color.new(#444444, 0), border_width=1, frame_color=color.new(#666666, 0), frame_width=1)
 
-fibPct  = rng > 0 ? (close - lowL) / rng * 100 : 50.0
-volRat  = volume / math.max(volMA, 1)
+fibPct = rng > 0 ? (close - lowL) / rng * 100 : 50.0
+volRat = volume / math.max(volMA, 1)
 
-trendTxt = isBull ? "▲ BULLISH" : "▼ BEARISH"
-trendClr = isBull ? bullCol : bearCol
-
-var string zoneTxt = ""
-var color  zoneClr = na
-if     fibPct >= 61.8
-    zoneTxt := "PREMIUM"
-    zoneClr := color.new(#EF5350, 0)
+var string zTxt = "EQUILIBRIUM"
+var color  zClr = color.new(#FFEB3B, 0)
+if fibPct >= 61.8
+    zTxt := "PREMIUM"
+    zClr := color.new(#EF5350, 0)
 else if fibPct >= 38.2
-    zoneTxt := "EQUILIBRIUM"
-    zoneClr := color.new(#FFEB3B, 0)
+    zTxt := "EQUILIBRIUM"
+    zClr := color.new(#FFEB3B, 0)
 else
-    zoneTxt := "DISCOUNT"
-    zoneClr := color.new(#26A69A, 0)
+    zTxt := "DISCOUNT"
+    zClr := color.new(#26A69A, 0)
 
-var string volTxt = ""
-var color  volClr = na
-if     volRat >= 1.5
-    volTxt := "HIGH " + str.tostring(math.round(volRat, 1)) + "x"
-    volClr := color.new(#FFEB3B, 0)
+var string vTxt = ""
+var color  vClr = color.white
+if volRat >= 1.5
+    vTxt := "HIGH " + str.tostring(math.round(volRat, 1)) + "x"
+    vClr := color.new(#FFEB3B, 0)
 else if volRat >= 1.0
-    volTxt := "AVG  " + str.tostring(math.round(volRat, 1)) + "x"
-    volClr := color.white
+    vTxt := "AVG  " + str.tostring(math.round(volRat, 1)) + "x"
+    vClr := color.white
 else
-    volTxt := "LOW  " + str.tostring(math.round(volRat, 1)) + "x"
-    volClr := color.new(#888888, 0)
+    vTxt := "LOW  " + str.tostring(math.round(volRat, 1)) + "x"
+    vClr := color.new(#888888, 0)
 
-var string bosTxt = "-"
-var color  bosClr = color.new(#888888, 0)
-if     bosBull or chochBull
-    bosTxt := "Bullish break"
-    bosClr := bullCol
-else if bosBear or chochBear
-    bosTxt := "Bearish break"
-    bosClr := bearCol
+var string sTxt = "-"
+var color  sClr = color.new(#888888, 0)
+if bosBull or chBull
+    sTxt := "Bull break"
+    sClr := bullCol
+else if bosBear or chBear
+    sTxt := "Bear break"
+    sClr := bearCol
 else
-    bosTxt := "-"
-    bosClr := color.new(#888888, 0)
+    sTxt := "-"
+    sClr := color.new(#888888, 0)
 
-var string deltaTxt = "Neutral"
-var color  deltaClr = color.new(#888888, 0)
-if     delta > 0
-    deltaTxt := "Buy pressure"
-    deltaClr := bullCol
+var string dTxt = "Neutral"
+var color  dClr = color.new(#888888, 0)
+if delta > 0
+    dTxt := "Buy pressure"
+    dClr := bullCol
 else if delta < 0
-    deltaTxt := "Sell pressure"
-    deltaClr := bearCol
+    dTxt := "Sell pressure"
+    dClr := bearCol
 else
-    deltaTxt := "Neutral"
-    deltaClr := color.new(#888888, 0)
+    dTxt := "Neutral"
+    dClr := color.new(#888888, 0)
+
+tTxt = isBull ? "BULLISH" : "BEARISH"
+tClr = isBull ? bullCol   : bearCol
 
 if barstate.islast
-    table.cell(dash, 0, 0, "SMC PRO",
-         text_color=color.white, text_size=size.normal,
-         bgcolor=color.new(#3949AB, 20))
-    table.cell(dash, 1, 0, syminfo.ticker + " " + timeframe.period,
-         text_color=color.new(#AAAAAA, 0), text_size=size.small,
-         bgcolor=color.new(#3949AB, 20))
+    table.cell(dash, 0, 0, "SMC PRO", text_color=color.white, text_size=size.normal, bgcolor=color.new(#3949AB, 10))
+    table.cell(dash, 1, 0, syminfo.ticker + " " + timeframe.period, text_color=color.new(#AAAAAA, 0), text_size=size.small, bgcolor=color.new(#3949AB, 10))
+    table.cell(dash, 0, 1, "Trend",  text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 1, tTxt,     text_color=tClr,        text_size=size.small)
+    table.cell(dash, 0, 2, "Zone",   text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 2, zTxt,     text_color=zClr,        text_size=size.small)
+    table.cell(dash, 0, 3, "Fib %",  text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 3, str.tostring(math.round(fibPct, 1)) + "%", text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 4, "Volume", text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 4, vTxt,     text_color=vClr,        text_size=size.small)
+    table.cell(dash, 0, 5, "ATR 14", text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 5, str.tostring(math.round(atr14, 4)), text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 6, "BOS",    text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 6, sTxt,     text_color=sClr,        text_size=size.small)
+    table.cell(dash, 0, 7, "Delta",  text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 7, dTxt,     text_color=dClr,        text_size=size.small)
 
-    table.cell(dash, 0, 1, "Trend",   text_color=color.gray, text_size=size.small)
-    table.cell(dash, 1, 1, trendTxt,  text_color=trendClr,   text_size=size.small)
+// ═══════ 9. ALERTS ════════════════════════════════════════════════
 
-    table.cell(dash, 0, 2, "Zone",    text_color=color.gray, text_size=size.small)
-    table.cell(dash, 1, 2, zoneTxt,   text_color=zoneClr,    text_size=size.small)
-
-    table.cell(dash, 0, 3, "Fib %",   text_color=color.gray, text_size=size.small)
-    table.cell(dash, 1, 3, str.tostring(math.round(fibPct, 1)) + "%",
-         text_color=color.white, text_size=size.small)
-
-    table.cell(dash, 0, 4, "Volume",  text_color=color.gray, text_size=size.small)
-    table.cell(dash, 1, 4, volTxt,    text_color=volClr,     text_size=size.small)
-
-    table.cell(dash, 0, 5, "ATR(14)", text_color=color.gray, text_size=size.small)
-    table.cell(dash, 1, 5, str.tostring(math.round(atr14, 4)),
-         text_color=color.white, text_size=size.small)
-
-    table.cell(dash, 0, 6, "BOS",     text_color=color.gray, text_size=size.small)
-    table.cell(dash, 1, 6, bosTxt,    text_color=bosClr,     text_size=size.small)
-
-    table.cell(dash, 0, 7, "Delta",   text_color=color.gray, text_size=size.small)
-    table.cell(dash, 1, 7, deltaTxt,  text_color=deltaClr,   text_size=size.small)
-
-// ═══════════════════════════════════════════════════════════════════
-//  9. ALERTS
-// ═══════════════════════════════════════════════════════════════════
-
-alertcondition(bosBull,   "BOS ▲",   "SMC: Bullish Break of Structure")
-alertcondition(bosBear,   "BOS ▼",   "SMC: Bearish Break of Structure")
-alertcondition(chochBull, "CHoCH ▲", "SMC: Bullish Change of Character")
-alertcondition(chochBear, "CHoCH ▼", "SMC: Bearish Change of Character")
-alertcondition(not na(obPL) and showOB, "Bull OB", "SMC: Bullish Order Block formed")
-alertcondition(not na(obPH) and showOB, "Bear OB", "SMC: Bearish Order Block formed")
-alertcondition(low > high[2],  "Bull FVG", "SMC: Bullish Fair Value Gap")
-alertcondition(high < low[2],  "Bear FVG", "SMC: Bearish Fair Value Gap")
+alertcondition(bosBull, "BOS Bull",  "SMC: Bullish Break of Structure")
+alertcondition(bosBear, "BOS Bear",  "SMC: Bearish Break of Structure")
+alertcondition(chBull,  "CHoCH Bull","SMC: Bullish Change of Character")
+alertcondition(chBear,  "CHoCH Bear","SMC: Bearish Change of Character")
+alertcondition(not na(obPL) and showOB, "Bull OB", "SMC: Bull Order Block formed")
+alertcondition(not na(obPH) and showOB, "Bear OB", "SMC: Bear Order Block formed")
+alertcondition(low > high[2], "Bull FVG", "SMC: Bullish Fair Value Gap")
+alertcondition(high < low[2], "Bear FVG", "SMC: Bearish Fair Value Gap")
