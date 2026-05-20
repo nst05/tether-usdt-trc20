@@ -326,8 +326,7 @@ if showPD
         box.set_right (discBox, bar_index + 1)
         box.set_bottom(discBox, lowL)
 
-plot(showPD ? eqLvl : na, "Equilibrium 50%",
-     color=color.new(#FFEB3B, 40), linewidth=1, style=plot.style_circles)
+plot(showPD ? eqLvl : na, "Equilibrium 50%", color=color.new(#FFEB3B, 40), linewidth=1, style=plot.style_circles)
 
 // ═══════════════════════════════════════════════════════════════════
 //  7. VOLUME DELTA BAR COLOURING
@@ -358,12 +357,7 @@ barcolor(barCol)
 //  8. DASHBOARD TABLE
 // ═══════════════════════════════════════════════════════════════════
 
-var table dash = table.new(position.top_right, 2, 8,
-     bgcolor      = color.new(#1E1E2E, 10),
-     border_color = color.new(#555555, 0),
-     border_width = 1,
-     frame_color  = color.new(#888888, 0),
-     frame_width  = 1)
+var table dash = table.new(position.top_right, 2, 8, bgcolor=color.new(#1E1E2E, 10), border_color=color.new(#555555, 0), border_width=1, frame_color=color.new(#888888, 0), frame_width=1)
 
 fibPct  = rng > 0 ? (close - lowL) / rng * 100 : 50.0
 volRat  = volume / math.max(volMA, 1)
@@ -371,27 +365,53 @@ volRat  = volume / math.max(volMA, 1)
 trendTxt = isBull ? "▲ BULLISH" : "▼ BEARISH"
 trendClr = isBull ? bullCol : bearCol
 
-zoneTxt = fibPct >= 61.8 ? "PREMIUM"     :
-          fibPct >= 38.2 ? "EQUILIBRIUM" : "DISCOUNT"
-zoneClr = fibPct >= 61.8 ? color.new(#EF5350, 0) :
-          fibPct >= 38.2 ? color.new(#FFEB3B, 0) :
-          color.new(#26A69A, 0)
+var string zoneTxt = ""
+var color  zoneClr = na
+if     fibPct >= 61.8
+    zoneTxt := "PREMIUM"
+    zoneClr := color.new(#EF5350, 0)
+else if fibPct >= 38.2
+    zoneTxt := "EQUILIBRIUM"
+    zoneClr := color.new(#FFEB3B, 0)
+else
+    zoneTxt := "DISCOUNT"
+    zoneClr := color.new(#26A69A, 0)
 
-volTxt = volRat >= 1.5 ? "HIGH " + str.tostring(math.round(volRat, 1)) + "×" :
-         volRat >= 1.0 ? "AVG  " + str.tostring(math.round(volRat, 1)) + "×" :
-         "LOW  " + str.tostring(math.round(volRat, 1)) + "×"
-volClr = volRat >= 1.5 ? color.new(#FFEB3B, 0) :
-         volRat >= 1.0 ? color.white :
-         color.new(#888888, 0)
+var string volTxt = ""
+var color  volClr = na
+if     volRat >= 1.5
+    volTxt := "HIGH " + str.tostring(math.round(volRat, 1)) + "x"
+    volClr := color.new(#FFEB3B, 0)
+else if volRat >= 1.0
+    volTxt := "AVG  " + str.tostring(math.round(volRat, 1)) + "x"
+    volClr := color.white
+else
+    volTxt := "LOW  " + str.tostring(math.round(volRat, 1)) + "x"
+    volClr := color.new(#888888, 0)
 
-bosTxt = bosBull or chochBull ? "▲ Bullish break" :
-         bosBear or chochBear ? "▼ Bearish break" : "—"
-bosClr = bosBull or chochBull ? bullCol :
-         bosBear or chochBear ? bearCol : color.new(#888888, 0)
+var string bosTxt = "-"
+var color  bosClr = color.new(#888888, 0)
+if     bosBull or chochBull
+    bosTxt := "Bullish break"
+    bosClr := bullCol
+else if bosBear or chochBear
+    bosTxt := "Bearish break"
+    bosClr := bearCol
+else
+    bosTxt := "-"
+    bosClr := color.new(#888888, 0)
 
-deltaTxt = delta > 0 ? "▲ Buy pressure"  :
-           delta < 0 ? "▼ Sell pressure" : "Neutral"
-deltaClr = delta > 0 ? bullCol : delta < 0 ? bearCol : color.new(#888888, 0)
+var string deltaTxt = "Neutral"
+var color  deltaClr = color.new(#888888, 0)
+if     delta > 0
+    deltaTxt := "Buy pressure"
+    deltaClr := bullCol
+else if delta < 0
+    deltaTxt := "Sell pressure"
+    deltaClr := bearCol
+else
+    deltaTxt := "Neutral"
+    deltaClr := color.new(#888888, 0)
 
 if barstate.islast
     table.cell(dash, 0, 0, "SMC PRO",
