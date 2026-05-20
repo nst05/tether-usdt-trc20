@@ -1,0 +1,450 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0
+// © SmartMoney_Pro — Pine Script v5
+//@version=5
+indicator(
+     title       = "Smart Money Concepts Pro",
+     shorttitle  = "SMC Pro",
+     overlay     = true,
+     max_boxes_count   = 500,
+     max_lines_count   = 500,
+     max_labels_count  = 500
+ )
+
+// ═══════════════════════════════════════════════════════════════════
+//  INPUTS
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Structure ──────────────────────────────────────────────────────
+grpStr = "📐 Market Structure"
+showBOS   = input.bool(true,  "Show BOS / CHoCH",           group = grpStr)
+showSwing = input.bool(true,  "Show Swing High / Low dots", group = grpStr)
+swingLen  = input.int(10,     "Swing Lookback",  minval = 3, maxval = 50, group = grpStr)
+structCol_bull = input.color(color.new(#26A69A, 0), "Bullish colour", group = grpStr)
+structCol_bear = input.color(color.new(#EF5350, 0), "Bearish colour", group = grpStr)
+
+// ── Order Blocks ───────────────────────────────────────────────────
+grpOB = "📦 Order Blocks"
+showOB      = input.bool(true,  "Show Order Blocks",   group = grpOB)
+obLen       = input.int(10,     "OB Lookback",  minval = 3, maxval = 50, group = grpOB)
+showMitOB   = input.bool(true,  "Hide mitigated OBs",  group = grpOB)
+bullOB_col  = input.color(color.new(#26A69A, 80), "Bullish OB fill",   group = grpOB)
+bearOB_col  = input.color(color.new(#EF5350, 80), "Bearish OB fill",   group = grpOB)
+bullOB_brd  = input.color(color.new(#26A69A, 0),  "Bullish OB border", group = grpOB)
+bearOB_brd  = input.color(color.new(#EF5350, 0),  "Bearish OB border", group = grpOB)
+
+// ── Fair Value Gaps ────────────────────────────────────────────────
+grpFVG = "⚡ Fair Value Gaps (FVG)"
+showFVG     = input.bool(true,  "Show FVG",           group = grpFVG)
+fvgMinSize  = input.float(0.0,  "Min FVG size (% of ATR)", minval = 0.0, step = 0.1, group = grpFVG)
+bullFVG_col = input.color(color.new(#26A69A, 85), "Bullish FVG fill",   group = grpFVG)
+bearFVG_col = input.color(color.new(#EF5350, 85), "Bearish FVG fill",   group = grpFVG)
+hideFillFVG = input.bool(true,  "Hide filled FVGs",   group = grpFVG)
+
+// ── Liquidity ──────────────────────────────────────────────────────
+grpLiq = "💧 Liquidity (EQH / EQL)"
+showLiq    = input.bool(true,  "Show Equal Highs / Lows", group = grpLiq)
+liqLen     = input.int(14,     "EQH/EQL Lookback", minval = 5, maxval = 100, group = grpLiq)
+liqThresh  = input.float(0.1,  "Equal threshold (%)", minval = 0.01, step = 0.01, group = grpLiq)
+liqBull    = input.color(color.new(#26A69A, 0), "EQL colour", group = grpLiq)
+liqBear    = input.color(color.new(#EF5350, 0), "EQH colour", group = grpLiq)
+
+// ── Premium / Discount ─────────────────────────────────────────────
+grpPD = "🎯 Premium / Discount Zones"
+showPD     = input.bool(true,  "Show Premium / Discount", group = grpPD)
+pdLen      = input.int(50,     "Range Lookback", minval = 10, group = grpPD)
+premCol    = input.color(color.new(#EF5350, 92), "Premium fill",  group = grpPD)
+discCol    = input.color(color.new(#26A69A, 92), "Discount fill", group = grpPD)
+equiCol    = input.color(color.new(#FFEB3B, 92), "Equilibrium fill", group = grpPD)
+
+// ── Volume Delta ───────────────────────────────────────────────────
+grpVol = "📊 Volume Delta Bar Colouring"
+showVolDelta = input.bool(true, "Colour bars by volume delta proxy", group = grpVol)
+volMaLen     = input.int(20,   "Volume MA length", minval = 5, group = grpVol)
+
+// ═══════════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+atr14 = ta.atr(14)
+
+// Pivot detection
+phDetected = ta.pivothigh(high, swingLen, swingLen)
+plDetected = ta.pivotlow (low,  swingLen, swingLen)
+
+var float lastPH = na
+var float lastPL = na
+var int   lastPHBar = na
+var int   lastPLBar = na
+
+if not na(phDetected)
+    lastPH    := phDetected
+    lastPHBar := bar_index - swingLen
+
+if not na(plDetected)
+    lastPL    := plDetected
+    lastPLBar := bar_index - swingLen
+
+// ═══════════════════════════════════════════════════════════════════
+//  1. SWING HIGH / LOW DOTS
+// ═══════════════════════════════════════════════════════════════════
+
+if showSwing
+    if not na(phDetected)
+        label.new(bar_index - swingLen, phDetected,
+             text  = "▼",
+             style = label.style_none,
+             color = structCol_bear,
+             textcolor = structCol_bear,
+             size  = size.tiny)
+    if not na(plDetected)
+        label.new(bar_index - swingLen, plDetected,
+             text  = "▲",
+             style = label.style_none,
+             color = structCol_bull,
+             textcolor = structCol_bull,
+             size  = size.tiny)
+
+// ═══════════════════════════════════════════════════════════════════
+//  2. MARKET STRUCTURE  — BOS & CHoCH
+// ═══════════════════════════════════════════════════════════════════
+// Track last two confirmed swings to detect structure breaks
+
+var float prevHigh = na
+var float prevLow  = na
+var float curHigh  = na
+var float curLow   = na
+var int   prevHighBar = na
+var int   prevLowBar  = na
+var int   curHighBar  = na
+var int   curLowBar   = na
+var bool  upTrend = true   // initial assumption
+
+if not na(phDetected)
+    prevHigh    := curHigh
+    prevHighBar := curHighBar
+    curHigh     := phDetected
+    curHighBar  := bar_index - swingLen
+
+if not na(plDetected)
+    prevLow    := curLow
+    prevLowBar := curLowBar
+    curLow     := plDetected
+    curLowBar  := bar_index - swingLen
+
+// BOS Bullish: price breaks above previous swing high while in downtrend
+bosBull = not na(curHigh) and not na(prevHigh) and
+          high[0] > curHigh and not upTrend
+
+// BOS Bearish: price breaks below previous swing low while in uptrend
+bosBear = not na(curLow) and not na(prevLow) and
+          low[0] < curLow and upTrend
+
+// CHoCH: structural flip
+chochBull = not na(curHigh) and not na(prevHigh) and
+            high[0] > prevHigh and not upTrend
+
+chochBear = not na(curLow) and not na(prevLow) and
+            low[0] < prevLow and upTrend
+
+if bosBull or chochBull
+    upTrend := true
+if bosBear or chochBear
+    upTrend := false
+
+if showBOS
+    if bosBull
+        line.new(curHighBar, curHigh, bar_index, curHigh,
+             color = structCol_bull, width = 1, style = line.style_dashed)
+        label.new(bar_index, curHigh,
+             text = "BOS", style = label.style_none,
+             textcolor = structCol_bull, size = size.small)
+    if bosBear
+        line.new(curLowBar, curLow, bar_index, curLow,
+             color = structCol_bear, width = 1, style = line.style_dashed)
+        label.new(bar_index, curLow,
+             text = "BOS", style = label.style_none,
+             textcolor = structCol_bear, size = size.small)
+    if chochBull
+        line.new(prevHighBar, prevHigh, bar_index, prevHigh,
+             color = structCol_bull, width = 2)
+        label.new(bar_index, prevHigh,
+             text = "CHoCH ✦", style = label.style_none,
+             textcolor = structCol_bull, size = size.small)
+    if chochBear
+        line.new(prevLowBar, prevLow, bar_index, prevLow,
+             color = structCol_bear, width = 2)
+        label.new(bar_index, prevLow,
+             text = "CHoCH ✦", style = label.style_none,
+             textcolor = structCol_bear, size = size.small)
+
+// ═══════════════════════════════════════════════════════════════════
+//  3. ORDER BLOCKS
+// ═══════════════════════════════════════════════════════════════════
+// Bullish OB: last bearish candle before a bullish impulse
+// Bearish OB: last bullish candle before a bearish impulse
+
+obPH = ta.pivothigh(high, obLen, obLen)
+obPL = ta.pivotlow (low,  obLen, obLen)
+
+var box[] bullOBBoxes = array.new_box()
+var box[] bearOBBoxes = array.new_box()
+
+if showOB
+    // Bearish OB — last bull candle before a drop (at swing high)
+    if not na(obPH)
+        obStart = bar_index - obLen
+        // Find last bullish candle before the pivot
+        obTop   = high[obLen]
+        obBot   = open[obLen] < close[obLen] ? open[obLen] : close[obLen]
+        b = box.new(obStart, obTop, bar_index + 50, obBot,
+             bgcolor = bearOB_col, border_color = bearOB_brd,
+             border_width = 1)
+        array.push(bearOBBoxes, b)
+
+    // Bullish OB — last bear candle before a rally (at swing low)
+    if not na(obPL)
+        obStart = bar_index - obLen
+        obBot   = low[obLen]
+        obTop   = open[obLen] > close[obLen] ? open[obLen] : close[obLen]
+        b = box.new(obStart, obTop, bar_index + 50, obBot,
+             bgcolor = bullOB_col, border_color = bullOB_brd,
+             border_width = 1)
+        array.push(bullOBBoxes, b)
+
+// Mitigation: extend / close OBs
+if showOB and showMitOB
+    // Close bearish OBs when price closes above their top
+    for i = array.size(bearOBBoxes) - 1 to 0
+        b = array.get(bearOBBoxes, i)
+        if close > box.get_top(b)
+            box.set_right(b, bar_index)
+            array.remove(bearOBBoxes, i)
+        else
+            box.set_right(b, bar_index + 50)
+
+    // Close bullish OBs when price closes below their bottom
+    for i = array.size(bullOBBoxes) - 1 to 0
+        b = array.get(bullOBBoxes, i)
+        if close < box.get_bottom(b)
+            box.set_right(b, bar_index)
+            array.remove(bullOBBoxes, i)
+        else
+            box.set_right(b, bar_index + 50)
+
+// ═══════════════════════════════════════════════════════════════════
+//  4. FAIR VALUE GAPS (FVG / Imbalance)
+// ═══════════════════════════════════════════════════════════════════
+// Bullish FVG: low[0] > high[2]  (gap between candle-1 high and candle+1 low)
+// Bearish FVG: high[0] < low[2]
+
+var box[] bullFVGBoxes = array.new_box()
+var box[] bearFVGBoxes = array.new_box()
+
+if showFVG
+    // Bullish FVG detected one bar late (need bar i-1 to be known)
+    bullFVG = low[0] > high[2]
+    bearFVG = high[0] < low[2]
+
+    minSize = atr14 * fvgMinSize / 100
+
+    if bullFVG
+        gapSize = low[0] - high[2]
+        if gapSize >= minSize
+            b = box.new(bar_index - 2, low[0], bar_index + 80, high[2],
+                 bgcolor = bullFVG_col, border_color = color.new(#26A69A, 50),
+                 border_width = 1)
+            array.push(bullFVGBoxes, b)
+
+    if bearFVG
+        gapSize = low[2] - high[0]
+        if gapSize >= minSize
+            b = box.new(bar_index - 2, low[2], bar_index + 80, high[0],
+                 bgcolor = bearFVG_col, border_color = color.new(#EF5350, 50),
+                 border_width = 1)
+            array.push(bearFVGBoxes, b)
+
+// Fill detection for FVGs
+if showFVG and hideFillFVG
+    for i = array.size(bullFVGBoxes) - 1 to 0
+        b = array.get(bullFVGBoxes, i)
+        if low <= box.get_bottom(b)
+            box.set_right(b, bar_index)
+            array.remove(bullFVGBoxes, i)
+        else
+            box.set_right(b, bar_index + 80)
+
+    for i = array.size(bearFVGBoxes) - 1 to 0
+        b = array.get(bearFVGBoxes, i)
+        if high >= box.get_top(b)
+            box.set_right(b, bar_index)
+            array.remove(bearFVGBoxes, i)
+        else
+            box.set_right(b, bar_index + 80)
+
+// ═══════════════════════════════════════════════════════════════════
+//  5. EQUAL HIGHS / LOWS  (Liquidity Pools)
+// ═══════════════════════════════════════════════════════════════════
+
+if showLiq
+    // Equal Highs
+    prevPH = ta.valuewhen(not na(ta.pivothigh(high, liqLen, liqLen)), high[liqLen], 1)
+    currPH = ta.valuewhen(not na(ta.pivothigh(high, liqLen, liqLen)), high[liqLen], 0)
+    prevPHBar = ta.valuewhen(not na(ta.pivothigh(high, liqLen, liqLen)), bar_index - liqLen, 1)
+    currPHBar = ta.valuewhen(not na(ta.pivothigh(high, liqLen, liqLen)), bar_index - liqLen, 0)
+
+    if not na(prevPH) and not na(currPH)
+        diffPct = math.abs(currPH - prevPH) / prevPH * 100
+        if diffPct <= liqThresh
+            line.new(prevPHBar, currPH, bar_index, currPH,
+                 color = liqBear, width = 1, style = line.style_dotted)
+            label.new(bar_index, currPH,
+                 text = "EQH 💧", style = label.style_none,
+                 textcolor = liqBear, size = size.tiny)
+
+    // Equal Lows
+    prevPL = ta.valuewhen(not na(ta.pivotlow(low, liqLen, liqLen)), low[liqLen], 1)
+    currPL = ta.valuewhen(not na(ta.pivotlow(low, liqLen, liqLen)), low[liqLen], 0)
+    prevPLBar = ta.valuewhen(not na(ta.pivotlow(low, liqLen, liqLen)), bar_index - liqLen, 1)
+    currPLBar = ta.valuewhen(not na(ta.pivotlow(low, liqLen, liqLen)), bar_index - liqLen, 0)
+
+    if not na(prevPL) and not na(currPL)
+        diffPct = math.abs(currPL - prevPL) / prevPL * 100
+        if diffPct <= liqThresh
+            line.new(prevPLBar, currPL, bar_index, currPL,
+                 color = liqBull, width = 1, style = line.style_dotted)
+            label.new(bar_index, currPL,
+                 text = "EQL 💧", style = label.style_none,
+                 textcolor = liqBull, size = size.tiny)
+
+// ═══════════════════════════════════════════════════════════════════
+//  6. PREMIUM / DISCOUNT ZONES
+// ═══════════════════════════════════════════════════════════════════
+
+highestHigh = ta.highest(high, pdLen)
+lowestLow   = ta.lowest (low,  pdLen)
+rangeSize   = highestHigh - lowestLow
+equiLine    = lowestLow + rangeSize * 0.5
+premLine    = lowestLow + rangeSize * 0.618   // Fib 61.8 — premium starts here
+discLine    = lowestLow + rangeSize * 0.382   // Fib 38.2 — discount ends here
+
+if showPD
+    // Premium zone  (61.8% – 100%)
+    box.new(bar_index, highestHigh, bar_index + 1, premLine,
+         bgcolor = premCol, border_color = color.new(#EF5350, 60),
+         border_width = 1, xloc = xloc.bar_index)
+    // Equilibrium zone (38.2% – 61.8%)
+    box.new(bar_index, premLine, bar_index + 1, discLine,
+         bgcolor = equiCol, border_color = color.new(#FFEB3B, 60),
+         border_width = 1, xloc = xloc.bar_index)
+    // Discount zone  (0% – 38.2%)
+    box.new(bar_index, discLine, bar_index + 1, lowestLow,
+         bgcolor = discCol, border_color = color.new(#26A69A, 60),
+         border_width = 1, xloc = xloc.bar_index)
+
+// Equilibrium plot (clean horizontal line)
+plot(showPD ? equiLine : na, "Equilibrium (50%)",
+     color = color.new(#FFEB3B, 40), linewidth = 1, style = plot.style_circles)
+
+// ═══════════════════════════════════════════════════════════════════
+//  7. VOLUME DELTA BAR COLOURING
+// ═══════════════════════════════════════════════════════════════════
+// Proxy: volume × (close - open) / (high - low)  → delta estimate
+
+deltaProxy = volume * (close - open) / math.max(high - low, syminfo.mintick)
+volMA      = ta.sma(volume, volMaLen)
+highVol    = volume > volMA * 1.5
+
+// Bar colour based on delta + trend context
+bullDelta = deltaProxy > 0
+bearDelta = deltaProxy < 0
+
+barCol = showVolDelta ?
+     (bullDelta and highVol   ? color.new(#00E676, 0)  :
+      bullDelta               ? color.new(#26A69A, 40) :
+      bearDelta and highVol   ? color.new(#FF1744, 0)  :
+      bearDelta               ? color.new(#EF5350, 40) :
+      color.new(color.gray, 60))
+     : na
+
+barcolor(showVolDelta ? barCol : na)
+
+// ═══════════════════════════════════════════════════════════════════
+//  8. DASHBOARD TABLE
+// ═══════════════════════════════════════════════════════════════════
+
+var table dash = table.new(position.top_right, 2, 8,
+     bgcolor = color.new(#1E1E2E, 10),
+     border_color = color.new(color.gray, 60),
+     border_width = 1,
+     frame_color  = color.new(color.gray, 40),
+     frame_width  = 1)
+
+trend_str    = upTrend ? "▲ BULLISH" : "▼ BEARISH"
+trend_col    = upTrend ? structCol_bull : structCol_bear
+fib_pos_pct  = rangeSize > 0 ? (close - lowestLow) / rangeSize * 100 : 50.0
+zone_str     = fib_pos_pct >= 61.8 ? "PREMIUM" :
+               fib_pos_pct >= 38.2 ? "EQUILIBRIUM" : "DISCOUNT"
+zone_col     = fib_pos_pct >= 61.8 ? color.new(#EF5350, 0) :
+               fib_pos_pct >= 38.2 ? color.new(#FFEB3B, 0) :
+               color.new(#26A69A, 0)
+volRatio     = volume / volMA
+volStr       = volRatio >= 1.5 ? "HIGH " + str.tostring(math.round(volRatio, 1)) + "×" :
+               volRatio >= 1.0 ? "AVG  " + str.tostring(math.round(volRatio, 1)) + "×" :
+               "LOW  " + str.tostring(math.round(volRatio, 1)) + "×"
+volCol       = volRatio >= 1.5 ? color.new(#FFEB3B, 0) :
+               volRatio >= 1.0 ? color.white :
+               color.new(color.gray, 20)
+
+if barstate.islast
+    // Header
+    table.cell(dash, 0, 0, "SMC PRO",
+         text_color = color.white, text_size = size.normal,
+         bgcolor = color.new(#3949AB, 20))
+    table.cell(dash, 1, 0, syminfo.ticker + " " + timeframe.period,
+         text_color = color.new(color.silver, 0), text_size = size.small,
+         bgcolor = color.new(#3949AB, 20))
+
+    table.cell(dash, 0, 1, "Trend",    text_color = color.gray, text_size = size.small)
+    table.cell(dash, 1, 1, trend_str,  text_color = trend_col,  text_size = size.small)
+
+    table.cell(dash, 0, 2, "Zone",     text_color = color.gray,  text_size = size.small)
+    table.cell(dash, 1, 2, zone_str,   text_color = zone_col,    text_size = size.small)
+
+    table.cell(dash, 0, 3, "Fib %",   text_color = color.gray,  text_size = size.small)
+    table.cell(dash, 1, 3, str.tostring(math.round(fib_pos_pct, 1)) + "%",
+         text_color = color.white, text_size = size.small)
+
+    table.cell(dash, 0, 4, "Volume",   text_color = color.gray, text_size = size.small)
+    table.cell(dash, 1, 4, volStr,     text_color = volCol,     text_size = size.small)
+
+    table.cell(dash, 0, 5, "ATR(14)",  text_color = color.gray, text_size = size.small)
+    table.cell(dash, 1, 5, str.tostring(math.round(atr14, 4)),
+         text_color = color.white, text_size = size.small)
+
+    table.cell(dash, 0, 6, "BOS/CHoCH", text_color = color.gray, text_size = size.small)
+    bosStr = (bosBull or chochBull) ? "▲ Bullish break" :
+             (bosBear or chochBear) ? "▼ Bearish break" : "None"
+    bosCol = (bosBull or chochBull) ? structCol_bull :
+             (bosBear or chochBear) ? structCol_bear :
+             color.gray
+    table.cell(dash, 1, 6, bosStr, text_color = bosCol, text_size = size.small)
+
+    table.cell(dash, 0, 7, "Delta",    text_color = color.gray, text_size = size.small)
+    dStr = deltaProxy > 0 ? "▲ Buy pressure"  :
+           deltaProxy < 0 ? "▼ Sell pressure" : "Neutral"
+    dCol = deltaProxy > 0 ? structCol_bull :
+           deltaProxy < 0 ? structCol_bear : color.gray
+    table.cell(dash, 1, 7, dStr, text_color = dCol, text_size = size.small)
+
+// ═══════════════════════════════════════════════════════════════════
+//  9. ALERTS
+// ═══════════════════════════════════════════════════════════════════
+
+alertcondition(bosBull,   "BOS Bullish",    "SMC: Bullish Break of Structure")
+alertcondition(bosBear,   "BOS Bearish",    "SMC: Bearish Break of Structure")
+alertcondition(chochBull, "CHoCH Bullish",  "SMC: Bullish Change of Character")
+alertcondition(chochBear, "CHoCH Bearish",  "SMC: Bearish Change of Character")
+alertcondition(not na(obPL) and showOB, "Bullish OB formed", "SMC: Bullish Order Block detected")
+alertcondition(not na(obPH) and showOB, "Bearish OB formed", "SMC: Bearish Order Block detected")
+alertcondition(low[0] > high[2],  "Bullish FVG", "SMC: Bullish Fair Value Gap")
+alertcondition(high[0] < low[2],  "Bearish FVG", "SMC: Bearish Fair Value Gap")
