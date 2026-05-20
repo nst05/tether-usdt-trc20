@@ -1,0 +1,511 @@
+// This source code is subject to the Mozilla Public License 2.0
+// © SMC·MTF Indicator
+
+//@version=5
+indicator("SMC — Smart Money Concepts [MTF]", shorttitle="SMC·MTF",
+          overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  INPUTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Market Structure
+g_ms       = "⚡ Market Structure"
+ms_len     = input.int  (5,     "Swing Length",           minval=1, maxval=20,  group=g_ms)
+show_bos   = input.bool (true,  "Show BOS",                                     group=g_ms)
+show_choch = input.bool (true,  "Show CHoCH",                                   group=g_ms)
+show_swng  = input.bool (false, "Show Swing H/L Labels",                        group=g_ms)
+bos_col    = input.color(color.new(#2196F3, 0),  "BOS Color",                   group=g_ms)
+choch_col  = input.color(color.new(#FF9800, 0),  "CHoCH Color",                 group=g_ms)
+bull_col   = input.color(color.new(#26a69a, 0),  "Bullish Color",               group=g_ms)
+bear_col   = input.color(color.new(#ef5350, 0),  "Bearish Color",               group=g_ms)
+
+// ── Order Blocks
+g_ob       = "📦 Order Blocks"
+show_ob    = input.bool (true,  "Show Order Blocks",                             group=g_ob)
+ob_mit_on  = input.bool (true,  "Show Mitigated OBs (faded)",                   group=g_ob)
+ob_bull_c  = input.color(color.new(#26a69a, 78), "Bullish OB",                  group=g_ob)
+ob_bear_c  = input.color(color.new(#ef5350, 78), "Bearish OB",                  group=g_ob)
+ob_mit_c   = input.color(color.new(#787B86, 90), "Mitigated OB",                group=g_ob)
+
+// ── Fair Value Gaps
+g_fvg      = "🔲 Fair Value Gaps"
+show_fvg   = input.bool (true,  "Show FVG",                                      group=g_fvg)
+fvg_fade   = input.bool (true,  "Fade When Filled",                              group=g_fvg)
+fvg_min    = input.float(0.05,  "Min Gap (%)", minval=0.0, step=0.01,            group=g_fvg)
+fvg_bull_c = input.color(color.new(#26a69a, 88), "Bullish FVG",                 group=g_fvg)
+fvg_bear_c = input.color(color.new(#ef5350, 88), "Bearish FVG",                 group=g_fvg)
+
+// ── Liquidity
+g_liq      = "💧 Liquidity"
+show_liq   = input.bool (true,  "Show Liquidity Levels",                         group=g_liq)
+liq_len    = input.int  (15,    "Look-back",   minval=3,  maxval=100,            group=g_liq)
+liq_tol    = input.float(0.10,  "Equal H/L Tolerance (%)", step=0.01,            group=g_liq)
+show_swp   = input.bool (true,  "Show Liquidity Sweeps",                         group=g_liq)
+bsl_col    = input.color(color.new(#26a69a, 20), "Buy-Side Liq (BSL)",           group=g_liq)
+ssl_col    = input.color(color.new(#ef5350, 20), "Sell-Side Liq (SSL)",          group=g_liq)
+
+// ── Premium / Discount
+g_pd       = "🎯 Premium / Discount"
+show_pd    = input.bool (true,  "Show P/D Zones",                                group=g_pd)
+pd_prem_c  = input.color(color.new(#ef5350, 90), "Premium  (Sell Zone)",         group=g_pd)
+pd_disc_c  = input.color(color.new(#26a69a, 90), "Discount (Buy Zone)",          group=g_pd)
+pd_eq_c    = input.color(color.new(#FFC107, 90), "Equilibrium",                  group=g_pd)
+
+// ── Displacement
+g_disp     = "⚡ Displacement"
+show_disp  = input.bool (true,  "Show Displacement Candles",                     group=g_disp)
+disp_mult  = input.float(1.5,   "ATR Multiplier",  minval=1.0, step=0.1,         group=g_disp)
+disp_vol   = input.float(1.5,   "Volume Multiplier",minval=1.0, step=0.1,        group=g_disp)
+
+// ── Multi-Timeframe
+g_htf      = "🔭 Multi-Timeframe Bias"
+show_htf   = input.bool  (true,       "Show MTF Table",                          group=g_htf)
+htf1       = input.timeframe("60",    "TF 1",                                    group=g_htf)
+htf2       = input.timeframe("240",   "TF 2",                                    group=g_htf)
+htf3       = input.timeframe("D",     "TF 3",                                    group=g_htf)
+htf4       = input.timeframe("W",     "TF 4",                                    group=g_htf)
+htf5       = input.timeframe("M",     "TF 5",                                    group=g_htf)
+tbl_pos_s  = input.string("Bottom Right", "Position",
+             options=["Top Right","Top Left","Bottom Right","Bottom Left"],       group=g_htf)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  MARKET STRUCTURE
+// ══════════════════════════════════════════════════════════════════════════════
+
+max_bars_back(high, 500)
+max_bars_back(low,  500)
+
+var int   ms    = 0   // 1=bullish  -1=bearish
+var float sh    = na  // last swing high
+var float sl    = na  // last swing low
+var int   sh_i  = na  // bar_index of sh
+var int   sl_i  = na  // bar_index of sl
+
+ph = ta.pivothigh(high, ms_len, ms_len)
+pl = ta.pivotlow (low,  ms_len, ms_len)
+
+if not na(ph)
+    sh   := ph
+    sh_i := bar_index - ms_len
+    if show_swng
+        label.new(sh_i, sh, "H",
+                  style=label.style_label_down,
+                  color=color.new(bear_col, 65),
+                  textcolor=color.white, size=size.tiny)
+
+if not na(pl)
+    sl   := pl
+    sl_i := bar_index - ms_len
+    if show_swng
+        label.new(sl_i, sl, "L",
+                  style=label.style_label_up,
+                  color=color.new(bull_col, 65),
+                  textcolor=color.white, size=size.tiny)
+
+// Bootstrap structure on first valid pivot pair
+if ms == 0 and not na(sh) and not na(sl)
+    ms := sh_i > sl_i ? 1 : -1
+
+// Event flags
+bool ev_bos_bull   = ms ==  1 and not na(sh) and close > sh
+bool ev_bos_bear   = ms == -1 and not na(sl) and close < sl
+bool ev_choch_bull = ms == -1 and not na(sh) and close > sh
+bool ev_choch_bear = ms ==  1 and not na(sl) and close < sl
+
+// Update structure
+if ev_bos_bull or ev_choch_bull
+    ms := 1
+if ev_bos_bear or ev_choch_bear
+    ms := -1
+
+// BOS lines & labels
+if show_bos
+    if ev_bos_bull
+        line.new(sh_i, sh, bar_index, sh,
+                 color=bos_col, width=1, style=line.style_dashed)
+        label.new(bar_index, sh, "BOS",
+                  style=label.style_label_left,
+                  color=color.new(bos_col, 65),
+                  textcolor=color.white, size=size.tiny)
+    if ev_bos_bear
+        line.new(sl_i, sl, bar_index, sl,
+                 color=bos_col, width=1, style=line.style_dashed)
+        label.new(bar_index, sl, "BOS",
+                  style=label.style_label_left,
+                  color=color.new(bos_col, 65),
+                  textcolor=color.white, size=size.tiny)
+
+// CHoCH lines & labels
+if show_choch
+    if ev_choch_bull
+        line.new(sh_i, sh, bar_index, sh,
+                 color=choch_col, width=2, style=line.style_solid)
+        label.new(bar_index, sh, "CHoCH ▲",
+                  style=label.style_label_left,
+                  color=color.new(choch_col, 50),
+                  textcolor=color.white, size=size.small)
+    if ev_choch_bear
+        line.new(sl_i, sl, bar_index, sl,
+                 color=choch_col, width=2, style=line.style_solid)
+        label.new(bar_index, sl, "CHoCH ▼",
+                  style=label.style_label_left,
+                  color=color.new(choch_col, 50),
+                  textcolor=color.white, size=size.small)
+
+// Live structure label (right edge of chart)
+if barstate.islast and not na(ms)
+    label.new(bar_index + 2, close,
+              ms == 1 ? "▲ Bullish" : "▼ Bearish",
+              style=label.style_label_left,
+              color=color.new(ms == 1 ? bull_col : bear_col, 55),
+              textcolor=color.white, size=size.small)
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ORDER BLOCKS
+// ══════════════════════════════════════════════════════════════════════════════
+
+var box[]  ob_boxes = array.new_box  (0)
+var bool[] ob_mit   = array.new_bool (0)
+
+f_add_ob(t1, hi, lo, is_bull) =>
+    c_bg = is_bull ? ob_bull_c : ob_bear_c
+    c_bd = is_bull ? color.new(#26a69a, 40) : color.new(#ef5350, 40)
+    b = box.new(t1, hi, bar_index + 40, lo,
+                bgcolor=c_bg, border_color=c_bd, border_width=1,
+                text=is_bull ? "Bull OB" : "Bear OB",
+                text_color=color.new(color.white, 50), text_size=size.tiny,
+                text_halign=text.align_right)
+    // Limit array to 25 boxes
+    if array.size(ob_boxes) >= 25
+        old = array.shift(ob_boxes)
+        box.delete(old)
+        array.shift(ob_mit)
+    array.push(ob_boxes, b)
+    array.push(ob_mit, false)
+
+if show_ob
+    // Bullish OB → last bearish candle before bullish impulse
+    if ev_choch_bull or ev_bos_bull
+        for i = 1 to 15
+            if close[i] < open[i]
+                f_add_ob(bar_index - i, high[i], low[i], true)
+                break
+
+    // Bearish OB → last bullish candle before bearish impulse
+    if ev_choch_bear or ev_bos_bear
+        for i = 1 to 15
+            if close[i] > open[i]
+                f_add_ob(bar_index - i, high[i], low[i], false)
+                break
+
+    // Extend active OBs, detect mitigation
+    if array.size(ob_boxes) > 0
+        for i = 0 to array.size(ob_boxes) - 1
+            if not array.get(ob_mit, i)
+                b      = array.get(ob_boxes, i)
+                b_top  = box.get_top(b)
+                b_bot  = box.get_bottom(b)
+                box.set_right(b, bar_index + 20)
+                if high >= b_bot and low <= b_top
+                    array.set(ob_mit, i, true)
+                    if ob_mit_on
+                        box.set_bgcolor(b, ob_mit_c)
+                        box.set_border_color(b, color.new(#787B86, 60))
+                        box.set_text(b, "Mit")
+                    else
+                        box.delete(b)
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  FAIR VALUE GAPS
+// ══════════════════════════════════════════════════════════════════════════════
+
+var box[]  fvg_boxes  = array.new_box  (0)
+var bool[] fvg_filled = array.new_bool (0)
+
+f_add_fvg(top, bot, is_bull) =>
+    c_bg = is_bull ? fvg_bull_c : fvg_bear_c
+    c_bd = is_bull ? color.new(#26a69a, 30) : color.new(#ef5350, 30)
+    b = box.new(bar_index - 2, top, bar_index + 50, bot,
+                bgcolor=c_bg, border_color=c_bd, border_width=1,
+                text="FVG",
+                text_color=is_bull ? color.new(#26a69a, 30) : color.new(#ef5350, 30),
+                text_size=size.tiny, text_halign=text.align_right)
+    if array.size(fvg_boxes) >= 30
+        old = array.shift(fvg_boxes)
+        box.delete(old)
+        array.shift(fvg_filled)
+    array.push(fvg_boxes,  b)
+    array.push(fvg_filled, false)
+
+if show_fvg and barstate.isconfirmed
+    // Bullish FVG: current low > high from 2 bars ago
+    if low > high[2]
+        gap_pct = (low - high[2]) / close[1] * 100
+        if gap_pct >= fvg_min
+            f_add_fvg(low, high[2], true)
+
+    // Bearish FVG: current high < low from 2 bars ago
+    if high < low[2]
+        gap_pct = (low[2] - high) / close[1] * 100
+        if gap_pct >= fvg_min
+            f_add_fvg(low[2], high, false)
+
+// Extend FVGs, detect fill
+if show_fvg and array.size(fvg_boxes) > 0
+    for i = 0 to array.size(fvg_boxes) - 1
+        if not array.get(fvg_filled, i)
+            b      = array.get(fvg_boxes, i)
+            b_top  = box.get_top(b)
+            b_bot  = box.get_bottom(b)
+            box.set_right(b, bar_index + 1)
+            if low <= b_top and high >= b_bot
+                array.set(fvg_filled, i, true)
+                if fvg_fade
+                    box.set_bgcolor(b,      color.new(#787B86, 93))
+                    box.set_border_color(b, color.new(#787B86, 70))
+                    box.set_text(b, "Filled")
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  LIQUIDITY LEVELS  (Equal Highs / Equal Lows)
+// ══════════════════════════════════════════════════════════════════════════════
+
+if show_liq and barstate.isconfirmed
+    this_h = high[1]
+    this_l = low[1]
+
+    for j = 2 to liq_len
+        // Equal Highs → Buy-Side Liquidity above
+        if math.abs(high[j] - this_h) / this_h * 100 <= liq_tol
+            line.new(bar_index - j, high[j], bar_index, this_h,
+                     color=color.new(bsl_col, 20),
+                     style=line.style_dotted, width=2)
+            label.new(bar_index, this_h, " BSL",
+                      style=label.style_label_left,
+                      color=color.new(bsl_col, 65),
+                      textcolor=color.white, size=size.tiny)
+            break
+
+    for j = 2 to liq_len
+        // Equal Lows → Sell-Side Liquidity below
+        if math.abs(low[j] - this_l) / this_l * 100 <= liq_tol
+            line.new(bar_index - j, low[j], bar_index, this_l,
+                     color=color.new(ssl_col, 20),
+                     style=line.style_dotted, width=2)
+            label.new(bar_index, this_l, " SSL",
+                      style=label.style_label_left,
+                      color=color.new(ssl_col, 65),
+                      textcolor=color.white, size=size.tiny)
+            break
+
+// Liquidity sweeps
+if show_swp and barstate.isconfirmed
+    r_hi = ta.highest(high[1], liq_len)
+    r_lo = ta.lowest (low[1],  liq_len)
+
+    // Bearish sweep: wick above then closed back inside → stop hunt
+    if high > r_hi and close < r_hi
+        label.new(bar_index, high, "⚡ Sweep ▼",
+                  style=label.style_label_down, yloc=yloc.abovebar,
+                  color=color.new(bear_col, 45),
+                  textcolor=color.white, size=size.small)
+
+    // Bullish sweep: wick below then closed back inside
+    if low < r_lo and close > r_lo
+        label.new(bar_index, low, "⚡ Sweep ▲",
+                  style=label.style_label_up, yloc=yloc.belowbar,
+                  color=color.new(bull_col, 45),
+                  textcolor=color.white, size=size.small)
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  PREMIUM / DISCOUNT ZONES
+// ══════════════════════════════════════════════════════════════════════════════
+
+var box   pd_prem   = na
+var box   pd_disc   = na
+var box   pd_eq     = na
+var float pd_sh_ref = na
+var float pd_sl_ref = na
+
+if show_pd and not na(sh) and not na(sl) and sh > sl
+    if sh != pd_sh_ref or sl != pd_sl_ref
+        if not na(pd_prem)
+            box.delete(pd_prem)
+            box.delete(pd_disc)
+            box.delete(pd_eq)
+
+        r    = sh - sl
+        left = math.max(sh_i, sl_i)
+
+        pd_prem := box.new(left, sh,          bar_index + 60, sl + r * 0.7,
+                           bgcolor=pd_prem_c,
+                           border_color=color.new(#ef5350, 60), border_width=1,
+                           text="Premium", text_size=size.tiny,
+                           text_color=color.new(#ef5350, 25),
+                           text_halign=text.align_right)
+
+        pd_disc := box.new(left, sl + r * 0.3, bar_index + 60, sl,
+                           bgcolor=pd_disc_c,
+                           border_color=color.new(#26a69a, 60), border_width=1,
+                           text="Discount", text_size=size.tiny,
+                           text_color=color.new(#26a69a, 25),
+                           text_halign=text.align_right)
+
+        pd_eq   := box.new(left, sl + r * 0.55, bar_index + 60, sl + r * 0.45,
+                           bgcolor=pd_eq_c,
+                           border_color=color.new(#FFC107, 60), border_width=1,
+                           text="EQ 50%", text_size=size.tiny,
+                           text_color=color.new(#FFC107, 25),
+                           text_halign=text.align_right)
+        pd_sh_ref := sh
+        pd_sl_ref := sl
+
+    if not na(pd_prem)
+        box.set_right(pd_prem, bar_index + 60)
+        box.set_right(pd_disc, bar_index + 60)
+        box.set_right(pd_eq,   bar_index + 60)
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  DISPLACEMENT (Institutional Candles)
+// ══════════════════════════════════════════════════════════════════════════════
+
+atr_val  = ta.atr(14)
+avg_vol  = ta.sma(volume, 20)
+body     = math.abs(close - open)
+
+bull_disp = show_disp and close > open and body > atr_val * disp_mult and volume > avg_vol * disp_vol
+bear_disp = show_disp and close < open and body > atr_val * disp_mult and volume > avg_vol * disp_vol
+
+plotshape(bull_disp, title="Bull Displacement",
+          style=shape.triangleup, location=location.belowbar,
+          color=bull_col, size=size.tiny)
+plotshape(bear_disp, title="Bear Displacement",
+          style=shape.triangledown, location=location.abovebar,
+          color=bear_col, size=size.tiny)
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  MULTI-TIMEFRAME BIAS TABLE
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Each TF returns: close, EMA9, EMA21, EMA50, RSI14
+[h1c, h1e9, h1e21, h1e50, h1rsi] = request.security(syminfo.tickerid, htf1,
+    [close, ta.ema(close,9), ta.ema(close,21), ta.ema(close,50), ta.rsi(close,14)])
+
+[h2c, h2e9, h2e21, h2e50, h2rsi] = request.security(syminfo.tickerid, htf2,
+    [close, ta.ema(close,9), ta.ema(close,21), ta.ema(close,50), ta.rsi(close,14)])
+
+[h3c, h3e9, h3e21, h3e50, h3rsi] = request.security(syminfo.tickerid, htf3,
+    [close, ta.ema(close,9), ta.ema(close,21), ta.ema(close,50), ta.rsi(close,14)])
+
+[h4c, h4e9, h4e21, h4e50, h4rsi] = request.security(syminfo.tickerid, htf4,
+    [close, ta.ema(close,9), ta.ema(close,21), ta.ema(close,50), ta.rsi(close,14)])
+
+[h5c, h5e9, h5e21, h5e50, h5rsi] = request.security(syminfo.tickerid, htf5,
+    [close, ta.ema(close,9), ta.ema(close,21), ta.ema(close,50), ta.rsi(close,14)])
+
+// Score: EMA stack (±2) + price vs EMA50 (±1) + RSI (±1) = range −4 … +4
+f_score(c, e9, e21, e50, rsi) =>
+    stk = e9 > e21 and e21 > e50 ? 2 : e9 < e21 and e21 < e50 ? -2 : 0
+    vs  = c   > e50 ? 1 : -1
+    rs  = rsi > 55  ? 1 : rsi < 45 ? -1 : 0
+    stk + vs + rs
+
+sc1 = f_score(h1c, h1e9, h1e21, h1e50, h1rsi)
+sc2 = f_score(h2c, h2e9, h2e21, h2e50, h2rsi)
+sc3 = f_score(h3c, h3e9, h3e21, h3e50, h3rsi)
+sc4 = f_score(h4c, h4e9, h4e21, h4e50, h4rsi)
+sc5 = f_score(h5c, h5e9, h5e21, h5e50, h5rsi)
+
+f_sig(sc) =>
+    sc >= 3  ? "●● BULL ▲▲" :
+     sc >= 1  ? "●  bull ▲ " :
+     sc == 0  ? "○  Neutral" :
+     sc >= -2 ? "●  bear ▼ " : "●● BEAR ▼▼"
+
+f_scol(sc) =>
+    sc >= 3  ? color.new(#26a69a, 0) :
+     sc >= 1  ? color.new(#80cbc4, 0) :
+     sc == 0  ? color.new(#FFC107, 0) :
+     sc >= -2 ? color.new(#ef9a9a, 0) : color.new(#ef5350, 0)
+
+tbl_p = tbl_pos_s == "Top Right"   ? position.top_right   :
+        tbl_pos_s == "Top Left"    ? position.top_left    :
+        tbl_pos_s == "Bottom Left" ? position.bottom_left :
+                                      position.bottom_right
+
+if show_htf and barstate.islast
+    t = table.new(tbl_p, 4, 9,
+                  bgcolor=color.new(#0d1117, 8),
+                  border_color=color.new(#30363d, 0), border_width=1,
+                  frame_color=color.new(#30363d, 0),  frame_width=1)
+
+    hbg = color.new(#21262d, 0)
+    rbg = color.new(#161b22, 5)
+    wht = #e6edf3
+    gry = #8b949e
+
+    // Header row
+    table.cell(t, 0, 0, "Timeframe", text_color=gry, text_size=size.small, bgcolor=hbg)
+    table.cell(t, 1, 0, "Bias",      text_color=gry, text_size=size.small, bgcolor=hbg)
+    table.cell(t, 2, 0, "RSI",       text_color=gry, text_size=size.small, bgcolor=hbg)
+    table.cell(t, 3, 0, "Sc",        text_color=gry, text_size=size.small, bgcolor=hbg)
+
+    // Row helper
+    f_row(col, row, tf_s, sc, rsi) =>
+        rc  = f_scol(sc)
+        rrc = rsi > 60 ? color.new(#ef5350,0) : rsi < 40 ? color.new(#26a69a,0) : color.new(#FFC107,0)
+        scs = sc > 0 ? "+" + str.tostring(sc) : str.tostring(sc)
+        table.cell(t, 0, row, tf_s,                         text_color=wht, text_size=size.small, bgcolor=rbg)
+        table.cell(t, 1, row, f_sig(sc),                    text_color=rc,  text_size=size.small, bgcolor=rbg)
+        table.cell(t, 2, row, str.tostring(rsi,  "#.0"),    text_color=rrc, text_size=size.small, bgcolor=rbg)
+        table.cell(t, 3, row, scs,                          text_color=rc,  text_size=size.small, bgcolor=rbg)
+
+    f_row(t, 1, htf1, sc1, h1rsi)
+    f_row(t, 2, htf2, sc2, h2rsi)
+    f_row(t, 3, htf3, sc3, h3rsi)
+    f_row(t, 4, htf4, sc4, h4rsi)
+    f_row(t, 5, htf5, sc5, h5rsi)
+
+    // Separator
+    sbg = color.new(#21262d, 0)
+    table.cell(t, 0, 6, "─────────", text_color=#30363d, text_size=size.tiny, bgcolor=sbg)
+    table.cell(t, 1, 6, "──────────", text_color=#30363d, text_size=size.tiny, bgcolor=sbg)
+    table.cell(t, 2, 6, "────",       text_color=#30363d, text_size=size.tiny, bgcolor=sbg)
+    table.cell(t, 3, 6, "──",         text_color=#30363d, text_size=size.tiny, bgcolor=sbg)
+
+    // Confluence row (weighted: 1H×1, 4H×1.5, 1D×2, 1W×2.5, 1M×3)
+    wtotal = sc1 * 1.0 + sc2 * 1.5 + sc3 * 2.0 + sc4 * 2.5 + sc5 * 3.0
+    ov_txt = wtotal >= 15 ? "STRONG BULL ▲▲" :
+             wtotal >=  5 ? "BULL ▲"          :
+             wtotal <= -15 ? "STRONG BEAR ▼▼" :
+             wtotal <= -5  ? "BEAR ▼"          : "NEUTRAL ─"
+    ov_c   = wtotal >=  8 ? color.new(#26a69a,0) :
+             wtotal <= -8 ? color.new(#ef5350,0) : color.new(#FFC107,0)
+    wts    = str.tostring(math.round(wtotal, 1))
+
+    table.cell(t, 0, 7, "MTF CONF.",  text_color=wht, text_size=size.small, bgcolor=hbg)
+    table.cell(t, 1, 7, ov_txt,       text_color=ov_c, text_size=size.small, bgcolor=hbg)
+    table.cell(t, 2, 7, "",           text_color=wht, text_size=size.small, bgcolor=hbg)
+    table.cell(t, 3, 7, wts,          text_color=ov_c, text_size=size.small, bgcolor=hbg)
+
+    // Current TF structure row
+    ms_txt = ms ==  1 ? "▲ Bullish" : ms == -1 ? "▼ Bearish" : "─ Init"
+    ms_c   = ms ==  1 ? bull_col    : ms == -1 ? bear_col    : color.new(#FFC107,0)
+    table.cell(t, 0, 8, "Structure",  text_color=gry, text_size=size.small, bgcolor=sbg)
+    table.cell(t, 1, 8, ms_txt,       text_color=ms_c, text_size=size.small, bgcolor=sbg)
+    table.cell(t, 2, 8, "",           text_color=wht, text_size=size.small, bgcolor=sbg)
+    table.cell(t, 3, 8, "",           text_color=wht, text_size=size.small, bgcolor=sbg)
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  BAR COLOURS
+// ══════════════════════════════════════════════════════════════════════════════
+
+barcolor(ms == 1  ? color.new(bull_col, 65) :
+         ms == -1 ? color.new(bear_col, 65) : na)
