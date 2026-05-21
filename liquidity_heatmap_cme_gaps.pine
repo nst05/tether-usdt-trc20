@@ -106,9 +106,12 @@ var line[]  g_lines  = array.new_line()
 var label[] g_labels = array.new_label()
 
 f_clear_liq() =>
-    for b  in g_boxes  => box.delete(b)
-    for l  in g_lines  => line.delete(l)
-    for lb in g_labels => label.delete(lb)
+    for b  in g_boxes
+        box.delete(b)
+    for l  in g_lines
+        line.delete(l)
+    for lb in g_labels
+        label.delete(lb)
     array.clear(g_boxes)
     array.clear(g_lines)
     array.clear(g_labels)
@@ -228,8 +231,10 @@ var box[]   c_boxes  = array.new_box()
 var label[] c_labels = array.new_label()
 
 f_clear_cme() =>
-    for b  in c_boxes  => box.delete(b)
-    for lb in c_labels => label.delete(lb)
+    for b  in c_boxes
+        box.delete(b)
+    for lb in c_labels
+        label.delete(lb)
     array.clear(c_boxes)
     array.clear(c_labels)
 
