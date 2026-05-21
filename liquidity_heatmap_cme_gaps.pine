@@ -119,17 +119,8 @@ if cme_on and is_monday and day_opened and not na(d_prev) and d_prev != 0.0
              border_width = 1)
 
         string dir  = bull ? "^ CME GAP" : "v CME GAP"
-        string info = dir +
-             "\nTop: " + str.tostring(g_hi, format.mintick) +
-             "\nBot: " + str.tostring(g_lo, format.mintick) +
-             "\n"      + str.tostring(g_pct, "#.##") + "%"
-
-        label.new(bar_index, g_hi,
-             text      = info,
-             color     = color.new(bull ? color.lime : color.red, 25),
-             textcolor = color.white,
-             style     = label.style_label_lower_right,
-             size      = size.small)
+        string info = dir + "\nTop: " + str.tostring(g_hi, format.mintick) + "\nBot: " + str.tostring(g_lo, format.mintick) + "\n" + str.tostring(g_pct, "#.##") + "%"
+        label.new(bar_index, g_hi, text = info, color = color.new(bull ? color.lime : color.red, 25), textcolor = color.white, style = label.style_label_lower_right, size = size.small)
 
 // ══════════════════════════════════════════════════════════════
 //  SECTION 3 — INFO TABLE
@@ -151,14 +142,11 @@ var table tb = table.new(tpos, 2, 4,
      border_width = 1)
 
 if barstate.islast and dash_on
-    table.cell(tb, 0, 0, "LIQ + CME GAPS",
-         text_color = color.white,
-         bgcolor    = color.new(color.navy, 20),
-         text_size  = size.small,
-         colspan    = 2)
-    table.cell(tb, 0, 1, "BSL = buy-side stops", text_color = color.teal, text_size = size.tiny)
-    table.cell(tb, 1, 1, "above highs",          text_color = color.white, text_size = size.tiny)
-    table.cell(tb, 0, 2, "SSL = sell-side stops", text_color = color.red,  text_size = size.tiny)
-    table.cell(tb, 1, 2, "below lows",            text_color = color.white, text_size = size.tiny)
-    table.cell(tb, 0, 3, "CME gap",               text_color = color.yellow, text_size = size.tiny)
-    table.cell(tb, 1, 3, "Mon open vs Fri close", text_color = color.white, text_size = size.tiny)
+    table.cell(tb, 0, 0, "LIQ + CME",  text_color = color.white,  bgcolor = color.new(color.navy, 20), text_size = size.small)
+    table.cell(tb, 1, 0, "GAPS",       text_color = color.yellow, bgcolor = color.new(color.navy, 20), text_size = size.small)
+    table.cell(tb, 0, 1, "BSL",        text_color = color.teal,   text_size = size.tiny)
+    table.cell(tb, 1, 1, "stops above highs",  text_color = color.white, text_size = size.tiny)
+    table.cell(tb, 0, 2, "SSL",        text_color = color.red,    text_size = size.tiny)
+    table.cell(tb, 1, 2, "stops below lows",   text_color = color.white, text_size = size.tiny)
+    table.cell(tb, 0, 3, "CME",        text_color = color.yellow, text_size = size.tiny)
+    table.cell(tb, 1, 3, "Mon/Fri gap",        text_color = color.white, text_size = size.tiny)
