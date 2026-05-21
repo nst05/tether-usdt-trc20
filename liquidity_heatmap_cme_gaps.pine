@@ -1,367 +1,333 @@
 // This Pine Script® code is subject to the Mozilla Public License 2.0
 // © nst05
 //@version=5
-indicator("Liquidity Heatmap + CME Gaps", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 200)
+indicator("Liquidity Heatmap + CME Gaps", overlay = true,
+     max_boxes_count = 500, max_lines_count = 500, max_labels_count = 300)
 
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 //  INPUTS
-// ═══════════════════════════════════════════════════════════════
-
-// — Liquidity Heatmap —
+// ══════════════════════════════════════════════════════════════
 grp_liq = "⚡ Liquidity Heatmap"
-liq_enabled     = input.bool(true,  "Show Liquidity Zones",            group = grp_liq)
-liq_lookback    = input.int(50,     "Swing Lookback (bars)",           group = grp_liq, minval = 5,   maxval = 500)
-liq_swing_len   = input.int(5,      "Swing Pivot Length",              group = grp_liq, minval = 1,   maxval = 50)
-liq_clusters    = input.int(8,      "Max Visible Zones",               group = grp_liq, minval = 2,   maxval = 30)
-liq_zone_width  = input.float(0.3,  "Zone Width (%)",                  group = grp_liq, minval = 0.05, maxval = 2.0, step = 0.05)
-liq_show_labels = input.bool(true,  "Show Labels",                     group = grp_liq)
-liq_show_levels = input.bool(true,  "Show Level Lines",                group = grp_liq)
+liq_on        = input.bool(true,  "Show Liquidity Zones",  group = grp_liq)
+liq_len       = input.int(5,      "Pivot Length",          group = grp_liq, minval = 1, maxval = 50)
+liq_lookback  = input.int(50,     "Lookback (bars)",       group = grp_liq, minval = 5, maxval = 500)
+liq_max       = input.int(8,      "Max Zones per Side",    group = grp_liq, minval = 1, maxval = 30)
+liq_width_pct = input.float(0.3,  "Zone Width (%)",        group = grp_liq, minval = 0.05, maxval = 3.0, step = 0.05)
+liq_lbl       = input.bool(true,  "Show Labels",           group = grp_liq)
+liq_line      = input.bool(true,  "Show Dashed Lines",     group = grp_liq)
 
-// — Colors —
 grp_col = "🎨 Colors"
-col_buyside   = input.color(color.new(color.teal,   55), "Buy-Side Liquidity  (above highs)", group = grp_col)
-col_sellside  = input.color(color.new(color.red,    55), "Sell-Side Liquidity (below lows)",  group = grp_col)
-col_strong    = input.color(color.new(color.yellow, 40), "Strong Zone Tint",                  group = grp_col)
-col_buyside_l = input.color(color.new(color.teal,   0),  "Buy-Side Line",                     group = grp_col)
-col_sellside_l= input.color(color.new(color.red,    0),  "Sell-Side Line",                    group = grp_col)
+c_buy    = input.color(color.new(color.teal,   50), "Buy-Side (BSL)",   group = grp_col)
+c_sell   = input.color(color.new(color.red,    50), "Sell-Side (SSL)",  group = grp_col)
+c_strong = input.color(color.new(color.yellow, 35), "Strong Zone",      group = grp_col)
 
-// — CME Gaps —
 grp_cme = "📊 CME Gaps"
-cme_enabled   = input.bool(true,  "Show CME Gaps",                group = grp_cme)
-cme_filled_cl = input.bool(true,  "Show Filled Gaps",             group = grp_cme)
-col_cme_bull  = input.color(color.new(color.lime,   75), "Bullish Gap (price jumped up)",  group = grp_cme)
-col_cme_bear  = input.color(color.new(color.red,    75), "Bearish Gap (price dropped)",    group = grp_cme)
-col_cme_fill  = input.color(color.new(color.gray,   85), "Filled Gap",                     group = grp_cme)
-col_cme_bord_bull = input.color(color.new(color.lime, 20), "Bull Gap Border",              group = grp_cme)
-col_cme_bord_bear = input.color(color.new(color.red,  20), "Bear Gap Border",              group = grp_cme)
-cme_label_size = input.string("small", "Label Size", options = ["tiny","small","normal"], group = grp_cme)
+cme_on        = input.bool(true,  "Show CME Gaps",         group = grp_cme)
+cme_show_fill = input.bool(true,  "Show Filled Gaps",      group = grp_cme)
+cme_min       = input.float(0.05, "Min Gap Size (%)",      group = grp_cme, minval = 0.01, step = 0.01)
+c_bull        = input.color(color.new(color.lime, 70),  "Bullish Gap",   group = grp_cme)
+c_bear        = input.color(color.new(color.red,  70),  "Bearish Gap",   group = grp_cme)
+c_filled      = input.color(color.new(color.gray, 82),  "Filled Gap",    group = grp_cme)
 
-// ═══════════════════════════════════════════════════════════════
-//  HELPERS
-// ═══════════════════════════════════════════════════════════════
-
-label_sz(s) =>
-    s == "tiny"   ? size.tiny :
-     s == "small"  ? size.small : size.normal
-
-// ═══════════════════════════════════════════════════════════════
-//  SECTION 1 — LIQUIDITY HEATMAP
-// ═══════════════════════════════════════════════════════════════
-// Logic:
-//   • Detect pivot highs  → buy-side liquidity pools (stops above)
-//   • Detect pivot lows   → sell-side liquidity pools (stops below)
-//   • Score each level by how many times price approached it
-//     without breaking it (equal highs / lows = resting orders)
-//   • Paint boxes whose opacity encodes relative strength
-
-// --- Pivot detection ---
-ph = ta.pivothigh(high, liq_swing_len, liq_swing_len)
-pl = ta.pivotlow (low,  liq_swing_len, liq_swing_len)
-
-// Collect swing highs / lows into arrays
-var float[] hi_prices = array.new_float(0)
-var int[]   hi_bars   = array.new_int(0)
-var int[]   hi_hits   = array.new_int(0)   // touch count
-
-var float[] lo_prices = array.new_float(0)
-var int[]   lo_bars   = array.new_int(0)
-var int[]   lo_hits   = array.new_int(0)
-
-MERGE_DIST = liq_zone_width / 100          // fractional distance to merge similar levels
-
-// helper – find index of an existing level within merge distance
-find_near(arr, price) =>
-    idx = -1
-    for i = 0 to array.size(arr) - 1
-        existing = array.get(arr, i)
-        if math.abs(existing - price) / price <= MERGE_DIST
-            idx := i
-            break
-    idx
-
-// Register new pivots
-if not na(ph)
-    px = ph
-    idx = find_near(hi_prices, px)
-    if idx == -1
-        array.push(hi_prices, px)
-        array.push(hi_bars,   bar_index - liq_swing_len)
-        array.push(hi_hits,   1)
-    else
-        array.set(hi_hits, idx, array.get(hi_hits, idx) + 1)
-
-if not na(pl)
-    px = pl
-    idx = find_near(lo_prices, px)
-    if idx == -1
-        array.push(lo_prices, px)
-        array.push(lo_bars,   bar_index - liq_swing_len)
-        array.push(lo_hits,   1)
-    else
-        array.set(lo_hits, idx, array.get(lo_hits, idx) + 1)
-
-// Purge levels older than lookback or already swept
-purge_swept(prices, bars, hits, is_high) =>
-    i = 0
-    while i < array.size(prices)
-        age   = bar_index - array.get(bars, i)
-        price = array.get(prices, i)
-        swept = is_high ? close > price : close < price
-        if age > liq_lookback or swept
-            array.remove(prices, i)
-            array.remove(bars,   i)
-            array.remove(hits,   i)
-        else
-            i += 1
-
-purge_swept(hi_prices, hi_bars, hi_hits, true)
-purge_swept(lo_prices, lo_bars, lo_hits, false)
-
-// --- Draw zones on the last bar only to avoid redraw overhead ---
-// We keep box/line references in arrays and recreate them each bar
-var box[]   liq_boxes  = array.new_box(0)
-var line[]  liq_lines  = array.new_line(0)
-var label[] liq_labels = array.new_label(0)
-
-clear_drawings() =>
-    for b in liq_boxes
-        box.delete(b)
-    for l in liq_lines
-        line.delete(l)
-    for lb in liq_labels
-        label.delete(lb)
-    array.clear(liq_boxes)
-    array.clear(liq_lines)
-    array.clear(liq_labels)
-
-// Score = number of touches; normalize to 0-1 for opacity
-max_hits(hits_arr) =>
-    mx = 1
-    for i = 0 to array.size(hits_arr) - 1
-        h = array.get(hits_arr, i)
-        if h > mx
-            mx := h
-    mx
-
-// Draw a single liquidity zone
-draw_zone(price, hits, max_h, is_high) =>
-    strength   = hits / max_h                          // 0.0 – 1.0
-    opacity    = int(80 - strength * 55)               // 80% (weak) → 25% (strong)
-    zone_half  = price * liq_zone_width / 100 / 2
-    top_p      = is_high ? price + zone_half : price + zone_half
-    bot_p      = is_high ? price - zone_half : price - zone_half
-    base_col   = is_high ? col_buyside : col_sellside
-    fill_col   = color.new(base_col, opacity)
-    // tint strong zones
-    if strength >= 0.8
-        fill_col := color.new(col_strong, opacity + 10)
-
-    x1 = bar_index - liq_swing_len - 2
-    x2 = bar_index + 15
-
-    if liq_enabled
-        b = box.new(x1, top_p, x2, bot_p,
-             border_color = color.new(base_col, 70),
-             border_width  = 1,
-             bgcolor       = fill_col)
-        array.push(liq_boxes, b)
-
-        if liq_show_levels
-            lc = is_high ? col_buyside_l : col_sellside_l
-            l  = line.new(x1, price, x2, price,
-                 color = color.new(lc, 30),
-                 width = 1,
-                 style = line.style_dashed)
-            array.push(liq_lines, l)
-
-        if liq_show_labels
-            lbl_txt = (is_high ? "BSL " : "SSL ") +
-                      str.tostring(price, format.mintick) +
-                      " ×" + str.tostring(hits)
-            lbl_col = is_high ? col_buyside_l : col_sellside_l
-            lb = label.new(x2, price,
-                 text  = lbl_txt,
-                 color = color.new(lbl_col, 20),
-                 textcolor = color.white,
-                 style = label.style_label_left,
-                 size  = size.tiny)
-            array.push(liq_labels, lb)
-
-// Rebuild visuals on every bar (efficient via array clear)
-if barstate.islast
-    clear_drawings()
-    max_h_hi = max_hits(hi_hits)
-    max_h_lo = max_hits(lo_hits)
-
-    // Sort by hits descending, show top N
-    n_hi = math.min(array.size(hi_prices), liq_clusters)
-    n_lo = math.min(array.size(lo_prices), liq_clusters)
-
-    // Draw highs (buy-side)
-    for i = 0 to n_hi - 1
-        draw_zone(array.get(hi_prices, i), array.get(hi_hits, i), max_h_hi, true)
-
-    // Draw lows (sell-side)
-    for i = 0 to n_lo - 1
-        draw_zone(array.get(lo_prices, i), array.get(lo_hits, i), max_h_lo, false)
-
-// ═══════════════════════════════════════════════════════════════
-//  SECTION 2 — CME GAPS
-// ═══════════════════════════════════════════════════════════════
-// CME Bitcoin futures:  Mon–Fri  18:00–17:00 CT  (Sun 18:00 open)
-// Gap = Friday 17:00 close  →  Sunday 18:00 open
-// We detect them on a DAILY chart by checking:
-//   • Previous bar was Friday (dayofweek == 6)  and
-//   • Current bar is Monday  (dayofweek == 2)   (daily bar skips weekend)
-// On intraday charts: detect the jump in the Sunday candle open vs prev close.
-
-// Persistent gap storage
-var float[] cme_top    = array.new_float(0)
-var float[] cme_bot    = array.new_float(0)
-var bool[]  cme_bull   = array.new_bool(0)    // true = bullish gap (open > prev close)
-var bool[]  cme_filled = array.new_bool(0)
-var int[]   cme_start  = array.new_int(0)
-
-// Gap detection works on ANY timeframe; we compare daily session boundaries
-// using the built-in `request.security` daily close.
-prev_d_close = request.security(syminfo.tickerid, "1D", close[1], lookahead = barmerge.lookahead_on)
-curr_d_open  = request.security(syminfo.tickerid, "1D", open,     lookahead = barmerge.lookahead_on)
-
-// Detect Monday daily bar (gap formed over the weekend)
-is_monday_daily = (timeframe.isdaily and dayofweek == dayofweek.monday)
-// Intraday: detect the first bar of Monday session where open gaps from prev close
-is_monday_intra = (not timeframe.isdaily and
-                   dayofweek == dayofweek.monday and
-                   hour(time, "America/Chicago") == 18 and
-                   minute(time, "America/Chicago") < 15)
-
-gap_detected  = is_monday_daily or is_monday_intra
-gap_top_price = math.max(curr_d_open, prev_d_close)
-gap_bot_price = math.min(curr_d_open, prev_d_close)
-gap_size_pct  = math.abs(curr_d_open - prev_d_close) / prev_d_close * 100
-is_bull_gap   = curr_d_open > prev_d_close
-
-MIN_GAP_PCT = 0.05   // ignore gaps smaller than 0.05%
-
-if cme_enabled and gap_detected and gap_size_pct >= MIN_GAP_PCT
-    array.push(cme_top,    gap_top_price)
-    array.push(cme_bot,    gap_bot_price)
-    array.push(cme_bull,   is_bull_gap)
-    array.push(cme_filled, false)
-    array.push(cme_start,  bar_index)
-
-// Mark gap as filled when price crosses through it
-if cme_enabled
-    for i = 0 to array.size(cme_top) - 1
-        if not array.get(cme_filled, i)
-            t = array.get(cme_top, i)
-            b = array.get(cme_bot, i)
-            // Filled when the candle body crosses the midpoint
-            mid = (t + b) / 2
-            if (low <= mid and high >= mid)
-                array.set(cme_filled, i, true)
-
-// Draw CME gap boxes (rebuild on last bar)
-var box[]   cme_boxes  = array.new_box(0)
-var label[] cme_labels = array.new_label(0)
-
-clear_cme() =>
-    for b in cme_boxes
-        box.delete(b)
-    for lb in cme_labels
-        label.delete(lb)
-    array.clear(cme_boxes)
-    array.clear(cme_labels)
-
-if barstate.islast
-    clear_cme()
-    for i = 0 to array.size(cme_top) - 1
-        filled = array.get(cme_filled, i)
-        if not filled or cme_filled_cl
-            t      = array.get(cme_top,  i)
-            b      = array.get(cme_bot,  i)
-            bull   = array.get(cme_bull, i)
-            x1     = array.get(cme_start, i)
-            x2     = bar_index + 5
-            sz_pct = math.abs(t - b) / b * 100
-
-            bg_col  = filled ? col_cme_fill  : (bull ? col_cme_bull  : col_cme_bear)
-            brd_col = filled ? color.new(color.gray, 60) : (bull ? col_cme_bord_bull : col_cme_bord_bear)
-
-            bx = box.new(x1, t, x2, b,
-                 bgcolor      = bg_col,
-                 border_color = brd_col,
-                 border_width = 1)
-            array.push(cme_boxes, bx)
-
-            lbl_text = (bull ? "▲ CME GAP" : "▼ CME GAP") +
-                       "\nTop: "  + str.tostring(t, format.mintick) +
-                       "\nBot: "  + str.tostring(b, format.mintick) +
-                       "\n"       + str.tostring(sz_pct, "#.##") + "%" +
-                       (filled ? "\n✓ Filled" : "")
-            lbl_col  = filled ? color.gray : (bull ? color.lime : color.red)
-            lb = label.new((x1 + x2) / 2, (t + b) / 2,
-                 text      = lbl_text,
-                 color     = color.new(lbl_col, 30),
-                 textcolor = color.white,
-                 style     = label.style_label_center,
-                 size      = label_sz(cme_label_size))
-            array.push(cme_labels, lb)
-
-// ═══════════════════════════════════════════════════════════════
-//  SECTION 3 — DASHBOARD (table)
-// ═══════════════════════════════════════════════════════════════
 grp_dash = "📋 Dashboard"
-show_dash = input.bool(true, "Show Dashboard", group = grp_dash)
-dash_pos  = input.string("Bottom Right", "Position",
+dash_on  = input.bool(true, "Show Info Table", group = grp_dash)
+dash_pos = input.string("Bottom Right", "Position",
              options = ["Top Right","Top Left","Bottom Right","Bottom Left"],
              group = grp_dash)
 
-tbl_pos(s) =>
+// ══════════════════════════════════════════════════════════════
+//  SECTION 1 — LIQUIDITY HEATMAP
+// ══════════════════════════════════════════════════════════════
+
+ph = ta.pivothigh(high, liq_len, liq_len)
+pl = ta.pivotlow (low,  liq_len, liq_len)
+
+var float[] hi_px  = array.new_float()
+var int[]   hi_bar = array.new_int()
+var int[]   hi_hit = array.new_int()
+
+var float[] lo_px  = array.new_float()
+var int[]   lo_bar = array.new_int()
+var int[]   lo_hit = array.new_int()
+
+MDIST = liq_width_pct / 100.0
+
+// Find existing level within merge distance; returns -1 if not found
+f_find(float[] arr, float price) =>
+    int result = -1
+    int sz = array.size(arr)
+    if sz > 0
+        for i = 0 to sz - 1
+            if math.abs(array.get(arr, i) - price) / price <= MDIST
+                result := i
+                break
+    result
+
+// Register pivot highs
+if not na(ph)
+    int idx = f_find(hi_px, ph)
+    if idx == -1
+        array.push(hi_px,  ph)
+        array.push(hi_bar, bar_index - liq_len)
+        array.push(hi_hit, 1)
+    else
+        array.set(hi_hit, idx, array.get(hi_hit, idx) + 1)
+
+// Register pivot lows
+if not na(pl)
+    int idx = f_find(lo_px, pl)
+    if idx == -1
+        array.push(lo_px,  pl)
+        array.push(lo_bar, bar_index - liq_len)
+        array.push(lo_hit, 1)
+    else
+        array.set(lo_hit, idx, array.get(lo_hit, idx) + 1)
+
+// Remove old or swept levels
+f_purge(float[] px, int[] bars, int[] hits, bool is_hi) =>
+    int i = 0
+    while i < array.size(px)
+        float p   = array.get(px, i)
+        int   age = bar_index - array.get(bars, i)
+        bool swept = is_hi ? close > p : close < p
+        if age > liq_lookback or swept
+            array.remove(px,   i)
+            array.remove(bars, i)
+            array.remove(hits, i)
+        else
+            i += 1
+
+f_purge(hi_px, hi_bar, hi_hit, true)
+f_purge(lo_px, lo_bar, lo_hit, false)
+
+// Drawing storage
+var box[]   g_boxes  = array.new_box()
+var line[]  g_lines  = array.new_line()
+var label[] g_labels = array.new_label()
+
+f_clear_liq() =>
+    for b  in g_boxes  => box.delete(b)
+    for l  in g_lines  => line.delete(l)
+    for lb in g_labels => label.delete(lb)
+    array.clear(g_boxes)
+    array.clear(g_lines)
+    array.clear(g_labels)
+
+f_max_hits(int[] hits) =>
+    int mx = 1
+    int sz = array.size(hits)
+    if sz > 0
+        for i = 0 to sz - 1
+            int h = array.get(hits, i)
+            if h > mx
+                mx := h
+    mx
+
+f_draw_zone(float price, int hits, int max_h, bool is_hi) =>
+    float strength = hits / max_h
+    int   opacity  = int(75 - strength * 50)   // 75 (weak) → 25 (strong)
+    float half     = price * liq_width_pct / 100.0 / 2.0
+    float top_p    = price + half
+    float bot_p    = price - half
+    color base_c   = is_hi ? c_buy : c_sell
+    color fill_c   = strength >= 0.75 ? color.new(c_strong, opacity + 15)
+                                       : color.new(base_c,  opacity)
+    int x1 = bar_index - liq_len - 1
+    int x2 = bar_index + 20
+
+    box bx = box.new(x1, top_p, x2, bot_p,
+         bgcolor      = fill_c,
+         border_color = color.new(base_c, 60),
+         border_width = 1)
+    array.push(g_boxes, bx)
+
+    if liq_line
+        line ln = line.new(x1, price, x2, price,
+             color = color.new(base_c, 20),
+             width = 1,
+             style = line.style_dashed)
+        array.push(g_lines, ln)
+
+    if liq_lbl
+        string txt = (is_hi ? "BSL " : "SSL ") +
+                     str.tostring(price, format.mintick) +
+                     "  ×" + str.tostring(hits)
+        label lb = label.new(x2, price,
+             text      = txt,
+             color     = color.new(base_c, 15),
+             textcolor = color.white,
+             style     = label.style_label_left,
+             size      = size.tiny)
+        array.push(g_labels, lb)
+
+// Rebuild on last bar
+if barstate.islast and liq_on
+    f_clear_liq()
+    int mh_hi = f_max_hits(hi_hit)
+    int mh_lo = f_max_hits(lo_hit)
+    int n_hi  = math.min(array.size(hi_px), liq_max)
+    int n_lo  = math.min(array.size(lo_px), liq_max)
+
+    if n_hi > 0
+        for i = 0 to n_hi - 1
+            f_draw_zone(array.get(hi_px, i), array.get(hi_hit, i), mh_hi, true)
+    if n_lo > 0
+        for i = 0 to n_lo - 1
+            f_draw_zone(array.get(lo_px, i), array.get(lo_hit, i), mh_lo, false)
+
+// ══════════════════════════════════════════════════════════════
+//  SECTION 2 — CME GAPS
+//  CME BTC futures: Monday open vs previous Friday close
+//  Works on any timeframe — pulls daily data via request.security
+// ══════════════════════════════════════════════════════════════
+
+// Daily OHLC for gap calculation
+[d_open, d_close, d_dow] = request.security(syminfo.tickerid, "1D",
+     [open, close, dayofweek],
+     lookahead = barmerge.lookahead_on)
+
+float d_prev_close = request.security(syminfo.tickerid, "1D",
+     close[1], lookahead = barmerge.lookahead_on)
+
+// Gap exists between Friday close and Monday open
+bool is_monday   = d_dow == dayofweek.monday
+bool new_day     = ta.change(d_open) != 0   // first bar of a new daily session
+bool gap_trigger = is_monday and new_day
+
+float gap_hi  = math.max(d_open, d_prev_close)
+float gap_lo  = math.min(d_open, d_prev_close)
+float gap_pct = d_prev_close != 0 ? math.abs(d_open - d_prev_close) / d_prev_close * 100 : 0.0
+bool  is_bull = d_open > d_prev_close
+
+// Gap storage
+var float[] g_top    = array.new_float()
+var float[] g_bot    = array.new_float()
+var bool[]  g_bull   = array.new_bool()
+var bool[]  g_filled = array.new_bool()
+var int[]   g_x1     = array.new_int()
+
+if cme_on and gap_trigger and gap_pct >= cme_min
+    array.push(g_top,    gap_hi)
+    array.push(g_bot,    gap_lo)
+    array.push(g_bull,   is_bull)
+    array.push(g_filled, false)
+    array.push(g_x1,     bar_index)
+
+// Check if any open gap got filled (candle range crosses midpoint)
+if cme_on
+    int gsz = array.size(g_top)
+    if gsz > 0
+        for i = 0 to gsz - 1
+            if not array.get(g_filled, i)
+                float mid = (array.get(g_top, i) + array.get(g_bot, i)) / 2.0
+                if low <= mid and high >= mid
+                    array.set(g_filled, i, true)
+
+// CME drawing storage
+var box[]   c_boxes  = array.new_box()
+var label[] c_labels = array.new_label()
+
+f_clear_cme() =>
+    for b  in c_boxes  => box.delete(b)
+    for lb in c_labels => label.delete(lb)
+    array.clear(c_boxes)
+    array.clear(c_labels)
+
+if barstate.islast and cme_on
+    f_clear_cme()
+    int gsz = array.size(g_top)
+    if gsz > 0
+        for i = 0 to gsz - 1
+            bool filled = array.get(g_filled, i)
+            if not filled or cme_show_fill
+                float t    = array.get(g_top,  i)
+                float b    = array.get(g_bot,  i)
+                bool  bull = array.get(g_bull, i)
+                int   x1   = array.get(g_x1,  i)
+                int   x2   = bar_index + 8
+                float pct  = math.abs(t - b) / b * 100
+
+                color bg  = filled ? c_filled : (bull ? c_bull : c_bear)
+                color brd = filled ? color.new(color.gray, 50)
+                                   : (bull ? color.new(color.lime, 10) : color.new(color.red, 10))
+
+                box bx = box.new(x1, t, x2, b,
+                     bgcolor = bg, border_color = brd, border_width = 1)
+                array.push(c_boxes, bx)
+
+                string status = filled ? "  ✓ Filled" : ""
+                string arrow  = bull ? "▲" : "▼"
+                string txt    = arrow + " CME GAP" + status +
+                                "\nTop: " + str.tostring(t, format.mintick) +
+                                "\nBot: " + str.tostring(b, format.mintick) +
+                                "\n"      + str.tostring(pct, "#.##") + "%"
+                color lc = filled ? color.gray : (bull ? color.lime : color.red)
+                label lb = label.new((x1 + x2) / 2, (t + b) / 2.0,
+                     text      = txt,
+                     color     = color.new(lc, 25),
+                     textcolor = color.white,
+                     style     = label.style_label_center,
+                     size      = size.small)
+                array.push(c_labels, lb)
+
+// ══════════════════════════════════════════════════════════════
+//  SECTION 3 — DASHBOARD TABLE
+// ══════════════════════════════════════════════════════════════
+
+f_tbl_pos(string s) =>
     s == "Top Right"    ? position.top_right    :
      s == "Top Left"     ? position.top_left     :
-     s == "Bottom Right" ? position.bottom_right : position.bottom_left
+     s == "Bottom Left"  ? position.bottom_left  : position.bottom_right
 
-var table dash = table.new(tbl_pos(dash_pos), 2, 7,
-     bgcolor      = color.new(color.black, 70),
-     border_color = color.new(color.white, 60),
-     border_width = 1)
+var table tbl = table.new(f_tbl_pos(dash_pos), 2, 8,
+     bgcolor      = color.new(color.black, 65),
+     border_color = color.new(color.white, 55),
+     border_width = 1,
+     frame_color  = color.new(color.white, 40),
+     frame_width  = 1)
 
-if barstate.islast and show_dash
+if barstate.islast and dash_on
     // Header
-    table.cell(dash, 0, 0, "LIQUIDITY HEATMAP + CME", text_color = color.white,
-         bgcolor = color.new(color.navy, 30), text_size = size.small, colspan = 2)
+    table.cell(tbl, 0, 0, "LIQ HEATMAP + CME GAPS",
+         text_color = color.white,
+         bgcolor    = color.new(color.navy, 20),
+         text_size  = size.small,
+         colspan    = 2)
 
-    // Liquidity summary
-    table.cell(dash, 0, 1, "BSL Zones",  text_color = color.teal,  text_size = size.tiny)
-    table.cell(dash, 1, 1, str.tostring(array.size(hi_prices)), text_color = color.white, text_size = size.tiny)
+    // BSL / SSL counts
+    int bsl_n = array.size(hi_px)
+    int ssl_n = array.size(lo_px)
+    table.cell(tbl, 0, 1, "BSL Zones",  text_color = color.teal,  text_size = size.tiny)
+    table.cell(tbl, 1, 1, str.tostring(bsl_n), text_color = color.white, text_size = size.tiny)
+    table.cell(tbl, 0, 2, "SSL Zones",  text_color = color.red,   text_size = size.tiny)
+    table.cell(tbl, 1, 2, str.tostring(ssl_n), text_color = color.white, text_size = size.tiny)
 
-    table.cell(dash, 0, 2, "SSL Zones",  text_color = color.red,   text_size = size.tiny)
-    table.cell(dash, 1, 2, str.tostring(array.size(lo_prices)), text_color = color.white, text_size = size.tiny)
-
-    // Nearest BSL / SSL
-    nearest_bsl = array.size(hi_prices) > 0 ? array.min(hi_prices) : na
-    nearest_ssl = array.size(lo_prices) > 0 ? array.max(lo_prices) : na
-
-    table.cell(dash, 0, 3, "Nearest BSL", text_color = color.teal, text_size = size.tiny)
-    table.cell(dash, 1, 3, na(nearest_bsl) ? "—" : str.tostring(nearest_bsl, format.mintick),
+    // Nearest levels
+    float n_bsl = bsl_n > 0 ? array.min(hi_px) : na
+    float n_ssl = ssl_n > 0 ? array.max(lo_px)  : na
+    table.cell(tbl, 0, 3, "Nearest BSL", text_color = color.teal, text_size = size.tiny)
+    table.cell(tbl, 1, 3,
+         na(n_bsl) ? "—" : str.tostring(n_bsl, format.mintick),
+         text_color = color.white, text_size = size.tiny)
+    table.cell(tbl, 0, 4, "Nearest SSL", text_color = color.red,  text_size = size.tiny)
+    table.cell(tbl, 1, 4,
+         na(n_ssl) ? "—" : str.tostring(n_ssl, format.mintick),
          text_color = color.white, text_size = size.tiny)
 
-    table.cell(dash, 0, 4, "Nearest SSL", text_color = color.red, text_size = size.tiny)
-    table.cell(dash, 1, 4, na(nearest_ssl) ? "—" : str.tostring(nearest_ssl, format.mintick),
-         text_color = color.white, text_size = size.tiny)
+    // Separator
+    table.cell(tbl, 0, 5, "─────────────", text_color = color.new(color.white, 60), text_size = size.tiny, colspan = 2)
 
-    // CME summary
-    open_gaps   = 0
-    filled_gaps = 0
-    for i = 0 to array.size(cme_filled) - 1
-        if array.get(cme_filled, i)
-            filled_gaps += 1
-        else
-            open_gaps += 1
-
-    table.cell(dash, 0, 5, "CME Open",   text_color = color.yellow, text_size = size.tiny)
-    table.cell(dash, 1, 5, str.tostring(open_gaps),   text_color = color.white, text_size = size.tiny)
-
-    table.cell(dash, 0, 6, "CME Filled", text_color = color.gray,   text_size = size.tiny)
-    table.cell(dash, 1, 6, str.tostring(filled_gaps), text_color = color.white, text_size = size.tiny)
+    // CME counts
+    int open_n   = 0
+    int filled_n = 0
+    int gsz = array.size(g_filled)
+    if gsz > 0
+        for i = 0 to gsz - 1
+            if array.get(g_filled, i)
+                filled_n += 1
+            else
+                open_n += 1
+    table.cell(tbl, 0, 6, "CME Open",   text_color = color.yellow, text_size = size.tiny)
+    table.cell(tbl, 1, 6, str.tostring(open_n),   text_color = color.white, text_size = size.tiny)
+    table.cell(tbl, 0, 7, "CME Filled", text_color = color.gray,   text_size = size.tiny)
+    table.cell(tbl, 1, 7, str.tostring(filled_n), text_color = color.white, text_size = size.tiny)
