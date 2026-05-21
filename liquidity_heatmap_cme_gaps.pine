@@ -1,6 +1,6 @@
 // This Pine Script® code is subject to the Mozilla Public License 2.0
 // © nst05
-//@version=5
+//@version=6
 indicator("Liquidity Heatmap + CME Gaps", overlay = true,
      max_boxes_count = 500, max_lines_count = 500, max_labels_count = 300)
 
@@ -8,31 +8,31 @@ indicator("Liquidity Heatmap + CME Gaps", overlay = true,
 //  INPUTS
 // ══════════════════════════════════════════════════════════════
 grp_liq = "⚡ Liquidity Heatmap"
-liq_on        = input.bool(true,  "Show Liquidity Zones",  group = grp_liq)
-liq_len       = input.int(5,      "Pivot Length",          group = grp_liq, minval = 1, maxval = 50)
-liq_lookback  = input.int(50,     "Lookback (bars)",       group = grp_liq, minval = 5, maxval = 500)
-liq_max       = input.int(8,      "Max Zones per Side",    group = grp_liq, minval = 1, maxval = 30)
-liq_width_pct = input.float(0.3,  "Zone Width (%)",        group = grp_liq, minval = 0.05, maxval = 3.0, step = 0.05)
-liq_lbl       = input.bool(true,  "Show Labels",           group = grp_liq)
-liq_line      = input.bool(true,  "Show Dashed Lines",     group = grp_liq)
+liq_on        = input.bool(true,  "Show Liquidity Zones", group = grp_liq)
+liq_len       = input.int(5,      "Pivot Length",         group = grp_liq, minval = 1, maxval = 50)
+liq_lookback  = input.int(50,     "Lookback (bars)",      group = grp_liq, minval = 5, maxval = 500)
+liq_max       = input.int(8,      "Max Zones per Side",   group = grp_liq, minval = 1, maxval = 30)
+liq_width_pct = input.float(0.3,  "Zone Width (%)",       group = grp_liq, minval = 0.05, maxval = 3.0, step = 0.05)
+liq_lbl       = input.bool(true,  "Show Labels",          group = grp_liq)
+liq_line      = input.bool(true,  "Show Dashed Lines",    group = grp_liq)
 
 grp_col = "🎨 Colors"
-c_buy    = input.color(color.new(color.teal,   50), "Buy-Side (BSL)",   group = grp_col)
-c_sell   = input.color(color.new(color.red,    50), "Sell-Side (SSL)",  group = grp_col)
-c_strong = input.color(color.new(color.yellow, 35), "Strong Zone",      group = grp_col)
+c_buy    = input.color(color.new(color.teal,   50), "Buy-Side (BSL)",  group = grp_col)
+c_sell   = input.color(color.new(color.red,    50), "Sell-Side (SSL)", group = grp_col)
+c_strong = input.color(color.new(color.yellow, 35), "Strong Zone",     group = grp_col)
 
 grp_cme = "📊 CME Gaps"
-cme_on        = input.bool(true,  "Show CME Gaps",         group = grp_cme)
-cme_show_fill = input.bool(true,  "Show Filled Gaps",      group = grp_cme)
-cme_min       = input.float(0.05, "Min Gap Size (%)",      group = grp_cme, minval = 0.01, step = 0.01)
-c_bull        = input.color(color.new(color.lime, 70),  "Bullish Gap",   group = grp_cme)
-c_bear        = input.color(color.new(color.red,  70),  "Bearish Gap",   group = grp_cme)
-c_filled      = input.color(color.new(color.gray, 82),  "Filled Gap",    group = grp_cme)
+cme_on        = input.bool(true,  "Show CME Gaps",    group = grp_cme)
+cme_show_fill = input.bool(true,  "Show Filled Gaps", group = grp_cme)
+cme_min       = input.float(0.05, "Min Gap Size (%)", group = grp_cme, minval = 0.01, step = 0.01)
+c_bull        = input.color(color.new(color.lime, 70), "Bullish Gap",  group = grp_cme)
+c_bear        = input.color(color.new(color.red,  70), "Bearish Gap",  group = grp_cme)
+c_filled      = input.color(color.new(color.gray, 82), "Filled Gap",   group = grp_cme)
 
 grp_dash = "📋 Dashboard"
 dash_on  = input.bool(true, "Show Info Table", group = grp_dash)
 dash_pos = input.string("Bottom Right", "Position",
-             options = ["Top Right","Top Left","Bottom Right","Bottom Left"],
+             options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"],
              group = grp_dash)
 
 // ══════════════════════════════════════════════════════════════
@@ -50,9 +50,9 @@ var float[] lo_px  = array.new_float()
 var int[]   lo_bar = array.new_int()
 var int[]   lo_hit = array.new_int()
 
-MDIST = liq_width_pct / 100.0
+float MDIST = liq_width_pct / 100.0
 
-// Find existing level within merge distance; returns -1 if not found
+// Find existing level within merge distance (-1 = not found)
 f_find(float[] arr, float price) =>
     int result = -1
     int sz = array.size(arr)
@@ -63,7 +63,6 @@ f_find(float[] arr, float price) =>
                 break
     result
 
-// Register pivot highs
 if not na(ph)
     int idx = f_find(hi_px, ph)
     if idx == -1
@@ -73,7 +72,6 @@ if not na(ph)
     else
         array.set(hi_hit, idx, array.get(hi_hit, idx) + 1)
 
-// Register pivot lows
 if not na(pl)
     int idx = f_find(lo_px, pl)
     if idx == -1
@@ -87,9 +85,9 @@ if not na(pl)
 f_purge(float[] px, int[] bars, int[] hits, bool is_hi) =>
     int i = 0
     while i < array.size(px)
-        float p   = array.get(px, i)
-        int   age = bar_index - array.get(bars, i)
-        bool swept = is_hi ? close > p : close < p
+        float p    = array.get(px, i)
+        int   age  = bar_index - array.get(bars, i)
+        bool  swept = is_hi ? close > p : close < p
         if age > liq_lookback or swept
             array.remove(px,   i)
             array.remove(bars, i)
@@ -106,10 +104,10 @@ var line[]  g_lines  = array.new_line()
 var label[] g_labels = array.new_label()
 
 f_clear_liq() =>
-    for b  in g_boxes
-        box.delete(b)
-    for l  in g_lines
-        line.delete(l)
+    for bx in g_boxes
+        box.delete(bx)
+    for ln in g_lines
+        line.delete(ln)
     for lb in g_labels
         label.delete(lb)
     array.clear(g_boxes)
@@ -128,17 +126,15 @@ f_max_hits(int[] hits) =>
 
 f_draw_zone(float price, int hits, int max_h, bool is_hi) =>
     float strength = hits / max_h
-    int   opacity  = int(75 - strength * 50)   // 75 (weak) → 25 (strong)
+    int   opacity  = int(75 - strength * 50)
     float half     = price * liq_width_pct / 100.0 / 2.0
-    float top_p    = price + half
-    float bot_p    = price - half
     color base_c   = is_hi ? c_buy : c_sell
     color fill_c   = strength >= 0.75 ? color.new(c_strong, opacity + 15)
                                        : color.new(base_c,  opacity)
     int x1 = bar_index - liq_len - 1
     int x2 = bar_index + 20
 
-    box bx = box.new(x1, top_p, x2, bot_p,
+    box bx = box.new(x1, price + half, x2, price - half,
          bgcolor      = fill_c,
          border_color = color.new(base_c, 60),
          border_width = 1)
@@ -154,7 +150,7 @@ f_draw_zone(float price, int hits, int max_h, bool is_hi) =>
     if liq_lbl
         string txt = (is_hi ? "BSL " : "SSL ") +
                      str.tostring(price, format.mintick) +
-                     "  ×" + str.tostring(hits)
+                     "  x" + str.tostring(hits)
         label lb = label.new(x2, price,
              text      = txt,
              color     = color.new(base_c, 15),
@@ -163,7 +159,6 @@ f_draw_zone(float price, int hits, int max_h, bool is_hi) =>
              size      = size.tiny)
         array.push(g_labels, lb)
 
-// Rebuild on last bar
 if barstate.islast and liq_on
     f_clear_liq()
     int mh_hi = f_max_hits(hi_hit)
@@ -180,59 +175,51 @@ if barstate.islast and liq_on
 
 // ══════════════════════════════════════════════════════════════
 //  SECTION 2 — CME GAPS
-//  CME BTC futures: Monday open vs previous Friday close
-//  Works on any timeframe — pulls daily data via request.security
+//  Monday daily open vs Friday daily close = weekend gap
 // ══════════════════════════════════════════════════════════════
 
-// Daily OHLC for gap calculation
-[d_open, d_close, d_dow] = request.security(syminfo.tickerid, "1D",
-     [open, close, dayofweek],
-     lookahead = barmerge.lookahead_on)
+float d_open_now  = request.security(syminfo.tickerid, "1D", open,     lookahead = barmerge.lookahead_on)
+float d_close_prv = request.security(syminfo.tickerid, "1D", close[1], lookahead = barmerge.lookahead_on)
+int   d_dow       = request.security(syminfo.tickerid, "1D", dayofweek, lookahead = barmerge.lookahead_on)
 
-float d_prev_close = request.security(syminfo.tickerid, "1D",
-     close[1], lookahead = barmerge.lookahead_on)
-
-// Gap exists between Friday close and Monday open
 bool is_monday   = d_dow == dayofweek.monday
-bool new_day     = ta.change(d_open) != 0   // first bar of a new daily session
-bool gap_trigger = is_monday and new_day
+bool new_session = ta.change(d_open_now) != 0
+bool gap_trigger = is_monday and new_session and cme_on
 
-float gap_hi  = math.max(d_open, d_prev_close)
-float gap_lo  = math.min(d_open, d_prev_close)
-float gap_pct = d_prev_close != 0 ? math.abs(d_open - d_prev_close) / d_prev_close * 100 : 0.0
-bool  is_bull = d_open > d_prev_close
+float gap_hi  = math.max(d_open_now, d_close_prv)
+float gap_lo  = math.min(d_open_now, d_close_prv)
+float gap_pct = d_close_prv != 0.0 ? math.abs(d_open_now - d_close_prv) / d_close_prv * 100.0 : 0.0
+bool  is_bull = d_open_now > d_close_prv
 
-// Gap storage
 var float[] g_top    = array.new_float()
 var float[] g_bot    = array.new_float()
 var bool[]  g_bull   = array.new_bool()
 var bool[]  g_filled = array.new_bool()
 var int[]   g_x1     = array.new_int()
 
-if cme_on and gap_trigger and gap_pct >= cme_min
+if gap_trigger and gap_pct >= cme_min
     array.push(g_top,    gap_hi)
     array.push(g_bot,    gap_lo)
     array.push(g_bull,   is_bull)
     array.push(g_filled, false)
     array.push(g_x1,     bar_index)
 
-// Check if any open gap got filled (candle range crosses midpoint)
-if cme_on
-    int gsz = array.size(g_top)
-    if gsz > 0
-        for i = 0 to gsz - 1
-            if not array.get(g_filled, i)
-                float mid = (array.get(g_top, i) + array.get(g_bot, i)) / 2.0
-                if low <= mid and high >= mid
-                    array.set(g_filled, i, true)
+// Mark gap filled when candle crosses midpoint
+int gsz_live = array.size(g_top)
+if cme_on and gsz_live > 0
+    for i = 0 to gsz_live - 1
+        if not array.get(g_filled, i)
+            float mid = (array.get(g_top, i) + array.get(g_bot, i)) / 2.0
+            if low <= mid and high >= mid
+                array.set(g_filled, i, true)
 
 // CME drawing storage
 var box[]   c_boxes  = array.new_box()
 var label[] c_labels = array.new_label()
 
 f_clear_cme() =>
-    for b  in c_boxes
-        box.delete(b)
+    for bx in c_boxes
+        box.delete(bx)
     for lb in c_labels
         label.delete(lb)
     array.clear(c_boxes)
@@ -243,31 +230,35 @@ if barstate.islast and cme_on
     int gsz = array.size(g_top)
     if gsz > 0
         for i = 0 to gsz - 1
-            bool filled = array.get(g_filled, i)
+            bool  filled = array.get(g_filled, i)
             if not filled or cme_show_fill
                 float t    = array.get(g_top,  i)
-                float b    = array.get(g_bot,  i)
+                float b2   = array.get(g_bot,  i)
                 bool  bull = array.get(g_bull, i)
                 int   x1   = array.get(g_x1,  i)
                 int   x2   = bar_index + 8
-                float pct  = math.abs(t - b) / b * 100
+                float pct  = math.abs(t - b2) / b2 * 100.0
 
                 color bg  = filled ? c_filled : (bull ? c_bull : c_bear)
                 color brd = filled ? color.new(color.gray, 50)
-                                   : (bull ? color.new(color.lime, 10) : color.new(color.red, 10))
+                                   : bull ? color.new(color.lime, 10)
+                                          : color.new(color.red,  10)
 
-                box bx = box.new(x1, t, x2, b,
-                     bgcolor = bg, border_color = brd, border_width = 1)
+                box bx = box.new(x1, t, x2, b2,
+                     bgcolor      = bg,
+                     border_color = brd,
+                     border_width = 1)
                 array.push(c_boxes, bx)
 
-                string status = filled ? "  ✓ Filled" : ""
-                string arrow  = bull ? "▲" : "▼"
-                string txt    = arrow + " CME GAP" + status +
-                                "\nTop: " + str.tostring(t, format.mintick) +
-                                "\nBot: " + str.tostring(b, format.mintick) +
+                string status = filled ? "  Filled" : ""
+                string arrow  = bull ? "^ CME GAP" : "v CME GAP"
+                string txt    = arrow + status +
+                                "\nTop: " + str.tostring(t,   format.mintick) +
+                                "\nBot: " + str.tostring(b2,  format.mintick) +
                                 "\n"      + str.tostring(pct, "#.##") + "%"
                 color lc = filled ? color.gray : (bull ? color.lime : color.red)
-                label lb = label.new((x1 + x2) / 2, (t + b) / 2.0,
+
+                label lb = label.new((x1 + x2) / 2, (t + b2) / 2.0,
                      text      = txt,
                      color     = color.new(lc, 25),
                      textcolor = color.white,
@@ -280,9 +271,11 @@ if barstate.islast and cme_on
 // ══════════════════════════════════════════════════════════════
 
 f_tbl_pos(string s) =>
-    s == "Top Right"    ? position.top_right    :
-     s == "Top Left"     ? position.top_left     :
-     s == "Bottom Left"  ? position.bottom_left  : position.bottom_right
+    switch s
+        "Top Right"    => position.top_right
+        "Top Left"     => position.top_left
+        "Bottom Left"  => position.bottom_left
+        =>               position.bottom_right
 
 var table tbl = table.new(f_tbl_pos(dash_pos), 2, 8,
      bgcolor      = color.new(color.black, 65),
@@ -292,46 +285,45 @@ var table tbl = table.new(f_tbl_pos(dash_pos), 2, 8,
      frame_width  = 1)
 
 if barstate.islast and dash_on
-    // Header
-    table.cell(tbl, 0, 0, "LIQ HEATMAP + CME GAPS",
+    table.cell(tbl, 0, 0, "LIQ HEATMAP + CME",
          text_color = color.white,
          bgcolor    = color.new(color.navy, 20),
          text_size  = size.small,
          colspan    = 2)
 
-    // BSL / SSL counts
     int bsl_n = array.size(hi_px)
     int ssl_n = array.size(lo_px)
-    table.cell(tbl, 0, 1, "BSL Zones",  text_color = color.teal,  text_size = size.tiny)
-    table.cell(tbl, 1, 1, str.tostring(bsl_n), text_color = color.white, text_size = size.tiny)
-    table.cell(tbl, 0, 2, "SSL Zones",  text_color = color.red,   text_size = size.tiny)
-    table.cell(tbl, 1, 2, str.tostring(ssl_n), text_color = color.white, text_size = size.tiny)
 
-    // Nearest levels
+    table.cell(tbl, 0, 1, "BSL Zones", text_color = color.teal,  text_size = size.tiny)
+    table.cell(tbl, 1, 1, str.tostring(bsl_n),     text_color = color.white, text_size = size.tiny)
+    table.cell(tbl, 0, 2, "SSL Zones", text_color = color.red,   text_size = size.tiny)
+    table.cell(tbl, 1, 2, str.tostring(ssl_n),     text_color = color.white, text_size = size.tiny)
+
     float n_bsl = bsl_n > 0 ? array.min(hi_px) : na
     float n_ssl = ssl_n > 0 ? array.max(lo_px)  : na
+
     table.cell(tbl, 0, 3, "Nearest BSL", text_color = color.teal, text_size = size.tiny)
     table.cell(tbl, 1, 3,
          na(n_bsl) ? "—" : str.tostring(n_bsl, format.mintick),
          text_color = color.white, text_size = size.tiny)
-    table.cell(tbl, 0, 4, "Nearest SSL", text_color = color.red,  text_size = size.tiny)
+    table.cell(tbl, 0, 4, "Nearest SSL", text_color = color.red, text_size = size.tiny)
     table.cell(tbl, 1, 4,
          na(n_ssl) ? "—" : str.tostring(n_ssl, format.mintick),
          text_color = color.white, text_size = size.tiny)
 
-    // Separator
-    table.cell(tbl, 0, 5, "─────────────", text_color = color.new(color.white, 60), text_size = size.tiny, colspan = 2)
+    table.cell(tbl, 0, 5, "──────────", text_color = color.new(color.white, 60),
+         text_size = size.tiny, colspan = 2)
 
-    // CME counts
     int open_n   = 0
     int filled_n = 0
-    int gsz = array.size(g_filled)
-    if gsz > 0
-        for i = 0 to gsz - 1
+    int gsz2 = array.size(g_filled)
+    if gsz2 > 0
+        for i = 0 to gsz2 - 1
             if array.get(g_filled, i)
                 filled_n += 1
             else
                 open_n += 1
+
     table.cell(tbl, 0, 6, "CME Open",   text_color = color.yellow, text_size = size.tiny)
     table.cell(tbl, 1, 6, str.tostring(open_n),   text_color = color.white, text_size = size.tiny)
     table.cell(tbl, 0, 7, "CME Filled", text_color = color.gray,   text_size = size.tiny)
