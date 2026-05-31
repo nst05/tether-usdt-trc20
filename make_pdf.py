@@ -8,61 +8,74 @@ FONT_MB = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 class PDF(FPDF):
     def __init__(self):
         super().__init__()
-        self.add_font("R", "", FONT_R)
-        self.add_font("B", "", FONT_B)
-        self.add_font("M", "", FONT_M)
+        self.add_font("R",  "", FONT_R)
+        self.add_font("B",  "", FONT_B)
+        self.add_font("M",  "", FONT_M)
         self.add_font("MB", "", FONT_MB)
 
     def header(self):
-        self.set_font("B", "", 14)
-        self.set_fill_color(15, 15, 25)
-        self.set_text_color(0, 210, 100)
-        self.cell(0, 13, "NEXUS PENTEST — Полная инструкция", fill=True,
-                  new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
-        self.ln(2)
+        self.set_font("B", "", 15)
+        self.set_fill_color(30, 80, 160)   # синий
+        self.set_text_color(255, 255, 255)  # белый текст
+        self.cell(0, 14, "  NEXUS PENTEST — Полная инструкция", fill=True,
+                  new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
+        self.ln(4)
+        self.set_text_color(30, 30, 30)
 
     def footer(self):
-        self.set_y(-12)
+        self.set_y(-13)
         self.set_font("R", "", 8)
-        self.set_text_color(100, 100, 100)
-        self.cell(0, 10, f"Страница {self.page_no()}", align="C")
+        self.set_draw_color(180, 180, 180)
+        self.line(12, self.get_y(), 198, self.get_y())
+        self.set_text_color(120, 120, 120)
+        self.cell(0, 8, f"NEXUS PENTEST — Инструкция  |  Страница {self.page_no()}", align="C")
 
     def section(self, title):
-        self.ln(3)
+        self.ln(4)
         self.set_font("B", "", 12)
-        self.set_fill_color(25, 30, 50)
-        self.set_text_color(60, 160, 255)
-        self.cell(0, 9, f"  {title}", fill=True,
+        self.set_fill_color(220, 235, 255)  # светло-голубой фон
+        self.set_text_color(20, 60, 140)    # тёмно-синий текст
+        self.set_draw_color(100, 150, 220)
+        self.cell(0, 10, f"  {title}", fill=True, border="LB",
                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.ln(2)
-        self.set_text_color(220, 220, 220)
+        self.set_text_color(30, 30, 30)
+        self.set_draw_color(0, 0, 0)
 
     def sub(self, title):
+        self.ln(2)
         self.set_font("B", "", 10)
-        self.set_text_color(0, 210, 100)
-        self.cell(0, 7, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_text_color(210, 210, 210)
+        self.set_text_color(20, 120, 60)    # тёмно-зелёный
+        self.cell(4, 6, "", new_x=XPos.RIGHT, new_y=YPos.TOP)  # отступ
+        self.cell(0, 6, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_text_color(30, 30, 30)
 
     def body(self, text):
         self.set_font("R", "", 9)
-        self.set_text_color(210, 210, 210)
-        self.multi_cell(0, 5, text)
+        self.set_text_color(40, 40, 40)
+        self.multi_cell(0, 5.5, text)
         self.ln(1)
 
     def code(self, text):
         self.set_font("M", "", 8)
-        self.set_fill_color(10, 12, 20)
-        self.set_text_color(0, 230, 120)
-        self.multi_cell(0, 5, text, fill=True)
-        self.set_text_color(210, 210, 210)
-        self.ln(1)
+        self.set_fill_color(240, 245, 240)  # очень светлый зеленоватый
+        self.set_text_color(20, 100, 40)    # тёмно-зелёный текст
+        self.set_draw_color(180, 210, 180)
+        self.multi_cell(0, 5, text, fill=True, border=1)
+        self.set_text_color(40, 40, 40)
+        self.set_draw_color(0, 0, 0)
+        self.ln(2)
 
     def warn(self, text):
+        self.ln(2)
         self.set_font("B", "", 9)
-        self.set_text_color(255, 80, 80)
-        self.multi_cell(0, 5, text)
-        self.set_text_color(210, 210, 210)
-        self.ln(1)
+        self.set_fill_color(255, 235, 235)  # светло-красный фон
+        self.set_text_color(160, 20, 20)    # тёмно-красный текст
+        self.set_draw_color(220, 100, 100)
+        self.multi_cell(0, 6, text, fill=True, border=1)
+        self.set_text_color(40, 40, 40)
+        self.set_draw_color(0, 0, 0)
+        self.ln(2)
 
 
 pdf = PDF()
