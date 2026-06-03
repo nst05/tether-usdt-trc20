@@ -81,7 +81,7 @@ export const ClientsManagement: React.FC = () => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Поиск по имени, email, компании..."
-          className="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-lg pl-9 pr-4 py-2.5 text-sm outline-none focus:border-amber-500 transition placeholder:text-gray-600"
+          className="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-lg pl-9 pr-4 py-2.5 text-sm outline-none focus:border-blue-500 transition placeholder:text-gray-600"
         />
       </div>
 
@@ -111,7 +111,7 @@ export const ClientsManagement: React.FC = () => {
                   <span className="text-sm font-medium text-gray-300">{client.orders.length}</span>
                 </td>
                 <td className="px-5 py-3 hidden lg:table-cell">
-                  <span className="text-sm font-bold text-amber-400">{formatPrice(client.totalSpent)} ₽</span>
+                  <span className="text-sm font-bold text-blue-400">{formatPrice(client.totalSpent)} ₽</span>
                 </td>
                 <td className="px-5 py-3 hidden md:table-cell">
                   <span className="text-xs text-gray-600">{formatDate(client.firstOrder)}</span>
@@ -120,7 +120,7 @@ export const ClientsManagement: React.FC = () => {
                   <div className="flex justify-end">
                     <button
                       onClick={() => setSelectedClient(client)}
-                      className="p-1.5 text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 rounded transition-all cursor-pointer"
+                      className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-all cursor-pointer"
                     >
                       <Eye size={15} />
                     </button>
@@ -167,7 +167,7 @@ export const ClientsManagement: React.FC = () => {
                 {selectedClient.orders.map((order) => (
                   <div key={order.id} className="bg-gray-800/50 rounded-lg p-3">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-mono text-amber-400">{order.id}</span>
+                      <span className="text-xs font-mono text-blue-400">{order.id}</span>
                       <Badge variant={order.status as Order['status']}>
                         {statusLabels[order.status]}
                       </Badge>
@@ -177,7 +177,7 @@ export const ClientsManagement: React.FC = () => {
                       <span className="text-xs text-gray-600">
                         {formatDate(order.startDate)} – {formatDate(order.endDate)}
                       </span>
-                      <span className="text-xs font-bold text-amber-400">
+                      <span className="text-xs font-bold text-blue-400">
                         {formatPrice(order.totalPrice)} ₽
                       </span>
                     </div>

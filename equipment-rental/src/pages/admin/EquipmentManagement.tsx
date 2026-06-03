@@ -87,7 +87,7 @@ export const EquipmentManagement: React.FC = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Поиск по названию..."
-            className="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-lg pl-9 pr-4 py-2.5 text-sm outline-none focus:border-amber-500 transition placeholder:text-gray-600"
+            className="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-lg pl-9 pr-4 py-2.5 text-sm outline-none focus:border-blue-500 transition placeholder:text-gray-600"
           />
         </div>
         <div className="flex gap-2">
@@ -97,7 +97,7 @@ export const EquipmentManagement: React.FC = () => {
               onClick={() => setCategoryFilter(cat)}
               className={`px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                 categoryFilter === cat
-                  ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                  ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
                   : 'bg-gray-900 border border-gray-700 text-gray-500 hover:border-gray-600'
               }`}
             >
@@ -135,13 +135,13 @@ export const EquipmentManagement: React.FC = () => {
                   <span className="text-xs text-gray-400">{eq.category}</span>
                 </td>
                 <td className="px-5 py-3 hidden lg:table-cell">
-                  <span className="text-sm font-medium text-amber-400">{formatPrice(eq.pricePerDay)} ₽</span>
+                  <span className="text-sm font-medium text-blue-400">{formatPrice(eq.pricePerDay)} ₽</span>
                 </td>
                 <td className="px-5 py-3">
                   <select
                     value={eq.availability}
                     onChange={(e) => updateEquipmentStatus(eq.id, e.target.value as Equipment['availability'])}
-                    className="bg-gray-800 border border-gray-700 text-gray-300 rounded-md px-2 py-1 text-xs outline-none cursor-pointer focus:border-amber-500 transition"
+                    className="bg-gray-800 border border-gray-700 text-gray-300 rounded-md px-2 py-1 text-xs outline-none cursor-pointer focus:border-blue-500 transition"
                   >
                     {STATUS_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -219,7 +219,7 @@ export const EquipmentManagement: React.FC = () => {
                   value={editForm.description}
                   onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                   rows={3}
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-amber-500 transition resize-none placeholder:text-gray-600"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 transition resize-none placeholder:text-gray-600"
                 />
               </div>
             </div>

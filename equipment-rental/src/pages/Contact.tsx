@@ -70,8 +70,8 @@ export const Contact: React.FC = () => {
             {/* Contact info cards */}
             <div className="grid grid-cols-2 gap-4 mb-8">
               {contacts.map(({ icon: Icon, label, values }) => (
-                <div key={label} className="bg-gray-900 border border-gray-700/50 rounded-xl p-4 hover:border-amber-500/30 transition-all">
-                  <Icon size={20} className="text-amber-500 mb-3" />
+                <div key={label} className="bg-gray-900 border border-gray-700/50 rounded-xl p-4 hover:border-blue-500/30 transition-all">
+                  <Icon size={20} className="text-blue-500 mb-3" />
                   <div className="text-xs text-gray-500 mb-1 uppercase tracking-wider">{label}</div>
                   {values.map((v) => (
                     <div key={v} className="text-sm text-gray-300">{v}</div>
@@ -86,7 +86,7 @@ export const Contact: React.FC = () => {
                 {/* Fake map grid overlay */}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center">
-                    <div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center mx-auto mb-2 shadow-[0_0_20px_rgba(245,158,11,0.6)]">
+                    <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-2 shadow-[0_0_20px_rgba(37,99,235,0.6)]">
                       <MapPin size={18} className="text-gray-900" />
                     </div>
                     <div className="text-xs text-gray-400 bg-gray-900/80 px-3 py-1.5 rounded-lg">
@@ -109,7 +109,7 @@ export const Contact: React.FC = () => {
             <div className="grid grid-cols-2 gap-3">
               {warehouses.map((w) => (
                 <div key={w.name} className="bg-gray-900 border border-gray-700/50 rounded-lg p-3">
-                  <div className="text-xs font-bold text-amber-400 mb-1">{w.name}</div>
+                  <div className="text-xs font-bold text-blue-400 mb-1">{w.name}</div>
                   <div className="text-xs text-gray-500">{w.address}</div>
                   <div className="text-xs text-gray-400 mt-1">{w.tel}</div>
                 </div>
@@ -131,7 +131,7 @@ export const Contact: React.FC = () => {
                   <p className="text-gray-500 text-sm">Мы ответим вам в течение рабочего дня.</p>
                   <button
                     onClick={() => { setSubmitted(false); setForm({ name: '', email: '', phone: '', message: '' }) }}
-                    className="mt-6 text-amber-400 text-sm hover:underline cursor-pointer"
+                    className="mt-6 text-blue-400 text-sm hover:underline cursor-pointer"
                   >
                     Отправить ещё одно сообщение
                   </button>
@@ -170,7 +170,7 @@ export const Contact: React.FC = () => {
                       rows={5}
                       placeholder="Опишите ваш запрос..."
                       required
-                      className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition placeholder:text-gray-600 resize-none"
+                      className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-600/20 transition placeholder:text-gray-600 resize-none"
                     />
                   </div>
                   <Button type="submit" loading={loading} className="w-full gap-2">

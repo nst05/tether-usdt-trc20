@@ -52,7 +52,7 @@ export const Dashboard: React.FC = () => {
 
   const kpis = [
     { label: 'Активных аренд', value: activeOrders, icon: Package, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', trend: '+3' },
-    { label: 'Выручка (месяц)', value: formatPrice(monthRevenue) + ' ₽', icon: TrendingUp, color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', trend: '+12%' },
+    { label: 'Выручка (месяц)', value: formatPrice(monthRevenue) + ' ₽', icon: TrendingUp, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20', trend: '+12%' },
     { label: 'Новых заявок', value: pendingOrders, icon: ClipboardList, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20', trend: `+${pendingOrders}` },
     { label: 'На обслуживании', value: maintenanceCount, icon: Wrench, color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20', trend: '' },
   ]
@@ -97,7 +97,7 @@ export const Dashboard: React.FC = () => {
                   </div>
                   <div className="w-full relative" style={{ height: `${Math.max(heightPct * 0.9, 5)}%` }}>
                     <div
-                      className="absolute bottom-0 w-full bg-gradient-to-t from-amber-600 to-amber-400 rounded-t-sm hover:from-amber-500 hover:to-amber-300 transition-colors"
+                      className="absolute bottom-0 w-full bg-gradient-to-t from-blue-600 to-amber-400 rounded-t-sm hover:from-blue-500 hover:to-amber-300 transition-colors"
                       style={{ height: '100%' }}
                     />
                   </div>
@@ -156,7 +156,7 @@ export const Dashboard: React.FC = () => {
             {[
               { label: 'Доступно', count: availableCount, color: 'bg-emerald-500' },
               { label: 'Арендовано', count: rentedCount, color: 'bg-red-500' },
-              { label: 'Обслуживание', count: maintenanceCount, color: 'bg-amber-500' },
+              { label: 'Обслуживание', count: maintenanceCount, color: 'bg-blue-500' },
             ].map(({ label, count, color }) => (
               <div key={label} className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">
@@ -175,7 +175,7 @@ export const Dashboard: React.FC = () => {
         <div className="bg-gray-900 border border-gray-700/50 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-200">Последние заявки</h2>
-            <Link to="/admin/orders" className="text-xs text-amber-400 hover:underline">
+            <Link to="/admin/orders" className="text-xs text-blue-400 hover:underline">
               Все заявки
             </Link>
           </div>
@@ -200,7 +200,7 @@ export const Dashboard: React.FC = () => {
         <div className="bg-gray-900 border border-gray-700/50 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-200">Топ техники</h2>
-            <Link to="/admin/equipment" className="text-xs text-amber-400 hover:underline">
+            <Link to="/admin/equipment" className="text-xs text-blue-400 hover:underline">
               Весь парк
             </Link>
           </div>
@@ -215,7 +215,7 @@ export const Dashboard: React.FC = () => {
                   <div className="text-sm text-gray-300 truncate">{eq.name}</div>
                   <div className="text-xs text-gray-600">{eq.orderCount} заказов</div>
                 </div>
-                <div className="text-xs text-amber-400 font-medium shrink-0">
+                <div className="text-xs text-blue-400 font-medium shrink-0">
                   {formatPrice(eq.pricePerDay)} ₽/д
                 </div>
               </div>

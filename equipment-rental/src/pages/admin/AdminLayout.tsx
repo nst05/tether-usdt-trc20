@@ -24,12 +24,12 @@ export const AdminLayout: React.FC = () => {
       <aside className={`${collapsed ? 'w-16' : 'w-56'} transition-all duration-300 bg-gray-900 border-r border-gray-800/50 flex flex-col shrink-0`}>
         {/* Logo */}
         <div className={`flex items-center gap-2.5 p-4 border-b border-gray-800/50 ${collapsed ? 'justify-center' : ''}`}>
-          <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center shrink-0">
             <Cog size={16} className="text-gray-900" />
           </div>
           {!collapsed && (
             <span className="font-black text-sm tracking-wider text-white">
-              ТЕХ<span className="text-amber-400">ПРОКАТ</span>
+              ТЕХ<span className="text-blue-400">ПРОКАТ</span>
             </span>
           )}
         </div>
@@ -43,7 +43,7 @@ export const AdminLayout: React.FC = () => {
               title={collapsed ? label : undefined}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
                 isActive(to, exact)
-                  ? 'bg-amber-500/15 text-amber-400 font-medium'
+                  ? 'bg-blue-500/15 text-blue-400 font-medium'
                   : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
               } ${collapsed ? 'justify-center' : ''}`}
             >

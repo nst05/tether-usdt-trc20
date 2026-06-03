@@ -86,11 +86,11 @@ export const EquipmentDetail: React.FC = () => {
       <div className="bg-gray-900/50 border-b border-gray-800/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Link to="/" className="hover:text-amber-400 transition-colors">Главная</Link>
+            <Link to="/" className="hover:text-blue-400 transition-colors">Главная</Link>
             <ChevronRight size={14} />
-            <Link to="/catalog" className="hover:text-amber-400 transition-colors">Каталог</Link>
+            <Link to="/catalog" className="hover:text-blue-400 transition-colors">Каталог</Link>
             <ChevronRight size={14} />
-            <Link to={`/catalog?category=${encodeURIComponent(equipment.category)}`} className="hover:text-amber-400 transition-colors">
+            <Link to={`/catalog?category=${encodeURIComponent(equipment.category)}`} className="hover:text-blue-400 transition-colors">
               {equipment.category}
             </Link>
             <ChevronRight size={14} />
@@ -114,7 +114,7 @@ export const EquipmentDetail: React.FC = () => {
                 <Badge variant={equipment.availability as 'available' | 'rented' | 'maintenance'}>
                   {statusLabels[equipment.availability]}
                 </Badge>
-                <span className="bg-amber-500/90 text-gray-900 text-xs font-bold px-2.5 py-1 rounded-md">
+                <span className="bg-blue-500/90 text-gray-900 text-xs font-bold px-2.5 py-1 rounded-md">
                   {equipment.category}
                 </span>
               </div>
@@ -150,7 +150,7 @@ export const EquipmentDetail: React.FC = () => {
               <ul className="space-y-2.5">
                 {equipment.features.map((f) => (
                   <li key={f} className="flex items-center gap-3 text-sm text-gray-400">
-                    <CheckCircle size={16} className="text-amber-500 shrink-0" />
+                    <CheckCircle size={16} className="text-blue-500 shrink-0" />
                     {f}
                   </li>
                 ))}
@@ -168,7 +168,7 @@ export const EquipmentDetail: React.FC = () => {
                   <Star
                     key={i}
                     size={14}
-                    className={i < Math.floor(equipment.rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-600'}
+                    className={i < Math.floor(equipment.rating) ? 'text-blue-400 fill-blue-400' : 'text-gray-600'}
                   />
                 ))}
                 <span className="text-sm text-gray-400 ml-1">{equipment.rating.toFixed(1)}</span>
@@ -189,9 +189,9 @@ export const EquipmentDetail: React.FC = () => {
                 { period: 'неделя', price: equipment.pricePerWeek },
                 { period: 'месяц', price: equipment.pricePerMonth },
               ].map(({ period, price }) => (
-                <div key={period} className="bg-gray-900 border border-gray-700/50 rounded-lg p-3 text-center hover:border-amber-500/30 transition-all">
+                <div key={period} className="bg-gray-900 border border-gray-700/50 rounded-lg p-3 text-center hover:border-blue-500/30 transition-all">
                   <div className="text-xs text-gray-500 mb-1">{period}</div>
-                  <div className="font-bold text-amber-400 text-sm">{formatPrice(price)} ₽</div>
+                  <div className="font-bold text-blue-400 text-sm">{formatPrice(price)} ₽</div>
                 </div>
               ))}
             </div>
@@ -199,7 +199,7 @@ export const EquipmentDetail: React.FC = () => {
             {/* Booking form */}
             <div className="bg-gray-900 border border-gray-700/50 rounded-xl p-5 mb-6">
               <h2 className="font-bold text-gray-200 mb-4 flex items-center gap-2">
-                <Calendar size={18} className="text-amber-500" />
+                <Calendar size={18} className="text-blue-500" />
                 Забронировать
               </h2>
 
@@ -211,7 +211,7 @@ export const EquipmentDetail: React.FC = () => {
                     value={startDate}
                     min={today}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-amber-500 transition"
+                    className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 transition"
                   />
                 </div>
                 <div>
@@ -221,7 +221,7 @@ export const EquipmentDetail: React.FC = () => {
                     value={endDate}
                     min={startDate || today}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-amber-500 transition"
+                    className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 transition"
                   />
                 </div>
               </div>
@@ -233,7 +233,7 @@ export const EquipmentDetail: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400 text-sm">Итого:</span>
-                    <span className="text-xl font-bold text-amber-400">{formatPrice(totalPrice())} ₽</span>
+                    <span className="text-xl font-bold text-blue-400">{formatPrice(totalPrice())} ₽</span>
                   </div>
                 </div>
               )}
@@ -250,7 +250,7 @@ export const EquipmentDetail: React.FC = () => {
               {isInCart && (
                 <button
                   onClick={() => navigate('/booking')}
-                  className="w-full mt-2 py-2.5 text-sm font-medium text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                  className="w-full mt-2 py-2.5 text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
                 >
                   Перейти к оформлению →
                 </button>
@@ -290,10 +290,10 @@ export const EquipmentDetail: React.FC = () => {
 
             {/* Contact */}
             <div className="mt-4 flex items-center gap-3 p-4 bg-gray-900 border border-gray-700/50 rounded-xl">
-              <Phone size={20} className="text-amber-500 shrink-0" />
+              <Phone size={20} className="text-blue-500 shrink-0" />
               <div>
                 <div className="text-sm text-gray-400">Вопросы по аренде</div>
-                <a href="tel:+74951234567" className="font-bold text-white hover:text-amber-400 transition-colors">
+                <a href="tel:+74951234567" className="font-bold text-white hover:text-blue-400 transition-colors">
                   +7 (495) 123-45-67
                 </a>
               </div>

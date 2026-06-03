@@ -83,10 +83,10 @@ export const Booking: React.FC = () => {
           <div className="flex items-center gap-2 mb-8">
             {[1, 2, 3].map((s) => (
               <React.Fragment key={s}>
-                <div className={`flex items-center gap-2 ${s <= step ? 'text-amber-400' : 'text-gray-600'}`}>
+                <div className={`flex items-center gap-2 ${s <= step ? 'text-blue-400' : 'text-gray-600'}`}>
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border ${
-                    s < step ? 'bg-amber-500 border-amber-500 text-gray-900' :
-                    s === step ? 'border-amber-500 text-amber-400' :
+                    s < step ? 'bg-blue-500 border-blue-500 text-gray-900' :
+                    s === step ? 'border-blue-500 text-blue-400' :
                     'border-gray-700 text-gray-600'
                   }`}>
                     {s < step ? <Check size={12} /> : s}
@@ -95,7 +95,7 @@ export const Booking: React.FC = () => {
                     {s === 1 ? 'Контакты' : s === 2 ? 'Доставка' : 'Подтверждение'}
                   </span>
                 </div>
-                {s < 3 && <div className={`flex-1 h-px ${s < step ? 'bg-amber-500' : 'bg-gray-700'}`} />}
+                {s < 3 && <div className={`flex-1 h-px ${s < step ? 'bg-blue-500' : 'bg-gray-700'}`} />}
               </React.Fragment>
             ))}
           </div>
@@ -164,7 +164,7 @@ export const Booking: React.FC = () => {
                       onChange={(e) => setForm({ ...form, notes: e.target.value })}
                       rows={4}
                       placeholder="Дополнительные пожелания, особенности объекта..."
-                      className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition placeholder:text-gray-600 resize-none"
+                      className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-600/20 transition placeholder:text-gray-600 resize-none"
                     />
                   </div>
                   <div className="flex justify-between mt-4">
@@ -227,7 +227,7 @@ export const Booking: React.FC = () => {
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium text-gray-300 truncate">{item.equipment.name}</div>
                         <div className="text-xs text-gray-600">{item.days} дней</div>
-                        <div className="text-sm font-bold text-amber-400">{formatPrice(item.totalPrice)} ₽</div>
+                        <div className="text-sm font-bold text-blue-400">{formatPrice(item.totalPrice)} ₽</div>
                       </div>
                       <button
                         onClick={() => removeItem(item.equipment.id)}
@@ -245,7 +245,7 @@ export const Booking: React.FC = () => {
                   </div>
                   <div className="flex justify-between font-bold">
                     <span className="text-gray-300">Итого:</span>
-                    <span className="text-amber-400 text-lg">{formatPrice(getTotalPrice())} ₽</span>
+                    <span className="text-blue-400 text-lg">{formatPrice(getTotalPrice())} ₽</span>
                   </div>
                 </div>
               </div>
@@ -261,8 +261,8 @@ export const Booking: React.FC = () => {
             </div>
             <h2 className="text-3xl font-black text-white mb-3">Заявка отправлена!</h2>
             <p className="text-gray-400 mb-2">Ваш номер заявки:</p>
-            <div className="inline-block bg-gray-900 border border-amber-500/30 rounded-xl px-6 py-3 mb-6">
-              <span className="text-2xl font-mono font-bold text-amber-400">{orderId}</span>
+            <div className="inline-block bg-gray-900 border border-blue-500/30 rounded-xl px-6 py-3 mb-6">
+              <span className="text-2xl font-mono font-bold text-blue-400">{orderId}</span>
             </div>
             <p className="text-gray-500 max-w-md mx-auto mb-8">
               Наш менеджер свяжется с вами в течение 30 минут для подтверждения заявки и уточнения деталей доставки.

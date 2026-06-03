@@ -88,11 +88,11 @@ export const Analytics: React.FC = () => {
                   const heightPct = (value / maxMonthly) * 100
                   return (
                     <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
-                      <div className="text-xs text-gray-700 group-hover:text-amber-400 transition-colors opacity-0 group-hover:opacity-100">
+                      <div className="text-xs text-gray-700 group-hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100">
                         {formatPrice(value / 1000)}к
                       </div>
                       <div
-                        className="w-full bg-gradient-to-t from-amber-600 to-amber-400 rounded-t hover:from-amber-500 hover:to-amber-300 transition-colors cursor-default"
+                        className="w-full bg-gradient-to-t from-blue-600 to-amber-400 rounded-t hover:from-blue-500 hover:to-amber-300 transition-colors cursor-default"
                         style={{ height: `${heightPct * 0.85}%` }}
                         title={`${MONTHS[i]}: ${formatPrice(value)} ₽`}
                       />

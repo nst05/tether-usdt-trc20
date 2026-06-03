@@ -193,8 +193,8 @@ export const ProjectWizard: React.FC = () => {
         <div className="border-b border-gray-800/50 bg-gray-900/30">
           <div className="max-w-3xl mx-auto px-4 py-6">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-center">
-                <Zap size={16} className="text-amber-400" />
+              <div className="w-8 h-8 bg-blue-500/20 border border-blue-500/40 rounded-lg flex items-center justify-center">
+                <Zap size={16} className="text-blue-400" />
               </div>
               <h1 className="text-xl font-black text-white">Мастер подбора проектной конфигурации</h1>
             </div>
@@ -204,13 +204,13 @@ export const ProjectWizard: React.FC = () => {
               {[1, 2, 3, 4].map((s) => (
                 <React.Fragment key={s}>
                   <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold transition-all ${
-                    step > s ? 'bg-amber-500 text-gray-900' :
-                    step === s ? 'bg-amber-500/20 border border-amber-500 text-amber-400' :
+                    step > s ? 'bg-blue-500 text-gray-900' :
+                    step === s ? 'bg-blue-500/20 border border-blue-500 text-blue-400' :
                     'bg-gray-800 border border-gray-700 text-gray-600'
                   }`}>
                     {step > s ? <Check size={12} /> : s}
                   </div>
-                  {s < 4 && <div className={`flex-1 h-px ${step > s ? 'bg-amber-500' : 'bg-gray-700'}`} />}
+                  {s < 4 && <div className={`flex-1 h-px ${step > s ? 'bg-blue-500' : 'bg-gray-700'}`} />}
                 </React.Fragment>
               ))}
             </div>
@@ -238,12 +238,12 @@ export const ProjectWizard: React.FC = () => {
                   onClick={() => { setWizardData(d => ({ ...d, projectType: pt.id })); setStep(2) }}
                   className={`group text-left p-5 rounded-xl border transition-all cursor-pointer ${
                     wizardData.projectType === pt.id
-                      ? 'border-amber-500 bg-amber-500/10'
-                      : 'border-gray-700/50 bg-gray-900 hover:border-amber-500/40 hover:bg-amber-500/5'
+                      ? 'border-blue-500 bg-blue-500/10'
+                      : 'border-gray-700/50 bg-gray-900 hover:border-blue-500/40 hover:bg-blue-500/5'
                   }`}
                 >
                   <div className="text-3xl mb-3">{pt.icon}</div>
-                  <div className="font-bold text-gray-100 group-hover:text-amber-400 transition-colors">{pt.label}</div>
+                  <div className="font-bold text-gray-100 group-hover:text-blue-400 transition-colors">{pt.label}</div>
                   <div className="text-sm text-gray-500 mt-1">{pt.desc}</div>
                 </button>
               ))}
@@ -296,7 +296,7 @@ export const ProjectWizard: React.FC = () => {
                   value={wizardData.startDate}
                   min={today}
                   onChange={(e) => setWizardData(d => ({ ...d, startDate: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-amber-500 transition"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 transition"
                 />
               </div>
               <div>
@@ -306,7 +306,7 @@ export const ProjectWizard: React.FC = () => {
                   value={wizardData.endDate}
                   min={wizardData.startDate || today}
                   onChange={(e) => setWizardData(d => ({ ...d, endDate: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-amber-500 transition"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 transition"
                 />
               </div>
             </div>
@@ -363,34 +363,34 @@ export const ProjectWizard: React.FC = () => {
           <div className="fixed inset-0 bg-gray-950 flex flex-col items-center justify-center z-50">
             <div className="relative w-64 h-64 mb-12">
               {/* Pulsing rings */}
-              <div className="absolute inset-0 rounded-full border border-amber-500/20 scanner-ping" />
-              <div className="absolute inset-6 rounded-full border border-amber-500/30 scanner-ping-2" />
-              <div className="absolute inset-12 rounded-full border border-amber-500/50 scanner-ping-3" />
+              <div className="absolute inset-0 rounded-full border border-blue-500/20 scanner-ping" />
+              <div className="absolute inset-6 rounded-full border border-blue-500/30 scanner-ping-2" />
+              <div className="absolute inset-12 rounded-full border border-blue-500/50 scanner-ping-3" />
 
               {/* Rotating ring */}
               <div
                 className="absolute inset-0 rounded-full border-2 border-transparent scanner-rotate"
-                style={{ borderTopColor: '#F59E0B', borderRightColor: 'rgba(245,158,11,0.3)' }}
+                style={{ borderTopColor: '#F59E0B', borderRightColor: 'rgba(37,99,235,0.3)' }}
               />
 
               {/* Center */}
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/40 rounded-full flex items-center justify-center">
-                  <Zap size={36} className="text-amber-400" />
+                <div className="w-20 h-20 bg-blue-500/10 border border-blue-500/40 rounded-full flex items-center justify-center">
+                  <Zap size={36} className="text-blue-400" />
                 </div>
               </div>
             </div>
 
             <div className="text-center w-full max-w-sm px-4">
               <h2 className="text-2xl font-black text-white mb-3">Анализ проекта</h2>
-              <p className="text-amber-400 text-sm font-medium mb-6 h-5 transition-all">
+              <p className="text-blue-400 text-sm font-medium mb-6 h-5 transition-all">
                 {SCAN_MESSAGES[scanMsg]}
               </p>
 
               {/* Progress bar */}
               <div className="w-full bg-gray-800 rounded-full h-2 mb-2 overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-amber-600 to-amber-400 rounded-full transition-all duration-100"
+                  className="h-full bg-gradient-to-r from-blue-600 to-amber-400 rounded-full transition-all duration-100"
                   style={{ width: `${scanProgress}%` }}
                 />
               </div>
@@ -451,7 +451,7 @@ export const ProjectWizard: React.FC = () => {
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <h3 className="font-bold text-gray-100 text-sm">{rec.equipment.name}</h3>
-                            <p className="text-xs text-amber-400/80 mt-1 leading-relaxed">{rec.reason}</p>
+                            <p className="text-xs text-blue-400/80 mt-1 leading-relaxed">{rec.reason}</p>
                           </div>
                           <button
                             onClick={() => setRemovedIds((ids) =>
@@ -468,7 +468,7 @@ export const ProjectWizard: React.FC = () => {
                         </div>
                         <div className="flex items-center justify-between mt-3">
                           <span className="text-xs text-gray-500">{rec.days} дней</span>
-                          <span className="font-bold text-amber-400">
+                          <span className="font-bold text-blue-400">
                             {new Intl.NumberFormat('ru-RU').format(rec.subtotal)} ₽
                           </span>
                         </div>
@@ -480,14 +480,14 @@ export const ProjectWizard: React.FC = () => {
             </div>
 
             {/* Total */}
-            <div className="bg-gray-900 border border-amber-500/20 rounded-xl p-5 mb-6">
+            <div className="bg-gray-900 border border-blue-500/20 rounded-xl p-5 mb-6">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-gray-400">Единиц техники:</span>
                 <span className="font-bold text-gray-200">{activeRecs.length}</span>
               </div>
               <div className="flex justify-between items-center mb-4">
                 <span className="text-gray-400">Итоговая стоимость пакета:</span>
-                <span className="text-2xl font-black text-amber-400">
+                <span className="text-2xl font-black text-blue-400">
                   {new Intl.NumberFormat('ru-RU').format(totalPackagePrice)} ₽
                 </span>
               </div>

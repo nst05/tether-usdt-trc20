@@ -7,29 +7,44 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#0A0E1A',
-        card: '#111827',
-        'card-light': '#1F2937',
+        background: '#04101F',
+        card: '#071829',
+        'card-light': '#0D2240',
+        // Remap amber → corporate blue (all amber-* classes become blue)
         amber: {
-          400: '#FBBF24',
-          500: '#F59E0B',
-          600: '#D97706',
+          300: '#93C5FD',
+          400: '#60A5FA',
+          500: '#2563EB',
+          600: '#1D4ED8',
+        },
+        // Navy-tinted grays (all gray-* classes get a blue-navy hue)
+        gray: {
+          100: '#EFF3F8',
+          200: '#D9E2EE',
+          300: '#B0C1D6',
+          400: '#7D96B2',
+          500: '#4F6A85',
+          600: '#2E4A65',
+          700: '#1A3352',
+          800: '#0D2240',
+          900: '#071829',
+          950: '#04101F',
         },
         blue: {
+          400: '#60A5FA',
           500: '#3B82F6',
           600: '#2563EB',
+          700: '#1D4ED8',
         },
-        gray: {
-          400: '#9CA3AF',
-          500: '#6B7280',
-          600: '#4B5563',
-          700: '#374151',
-          800: '#1F2937',
-          900: '#111827',
+        slate: {
+          300: '#CBD5E1',
+          400: '#94A3B8',
+          500: '#64748B',
+          600: '#475569',
         },
         text: {
-          primary: '#F9FAFB',
-          secondary: '#6B7280',
+          primary: '#F0F6FF',
+          secondary: '#7D96B2',
         },
       },
       fontFamily: {
@@ -47,8 +62,8 @@ export default {
       },
       keyframes: {
         'pulse-glow': {
-          '0%, 100%': { boxShadow: '0 0 5px rgba(245, 158, 11, 0.3)' },
-          '50%': { boxShadow: '0 0 20px rgba(245, 158, 11, 0.8), 0 0 40px rgba(245, 158, 11, 0.4)' },
+          '0%, 100%': { boxShadow: '0 0 5px rgba(37, 99, 235, 0.3)' },
+          '50%': { boxShadow: '0 0 20px rgba(37, 99, 235, 0.6), 0 0 40px rgba(37, 99, 235, 0.3)' },
         },
         'scan-line': {
           '0%': { transform: 'translateY(-100%)' },
@@ -69,11 +84,16 @@ export default {
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'gradient-amber': 'linear-gradient(135deg, #F59E0B, #D97706)',
-        'grid-pattern': 'linear-gradient(rgba(59,130,246,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(59,130,246,0.05) 1px, transparent 1px)',
+        'gradient-blue': 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+        'grid-pattern': 'linear-gradient(rgba(37,99,235,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.05) 1px, transparent 1px)',
       },
       backgroundSize: {
         'grid': '50px 50px',
+      },
+      boxShadow: {
+        'card': '0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.3)',
+        'card-hover': '0 4px 24px rgba(37,99,235,0.15), 0 8px 32px rgba(0,0,0,0.4)',
+        'btn': '0 2px 8px rgba(37,99,235,0.3)',
       },
     },
   },

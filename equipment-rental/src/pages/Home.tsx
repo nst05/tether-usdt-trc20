@@ -31,12 +31,12 @@ const steps = [
 ]
 
 const categoryList = [
-  { name: 'Экскаваторы', count: 5, icon: '⛏', color: 'from-amber-500/20 to-amber-600/10', border: 'border-amber-500/20' },
-  { name: 'Краны', count: 3, icon: '🏗', color: 'from-blue-500/20 to-blue-600/10', border: 'border-blue-500/20' },
-  { name: 'Бульдозеры', count: 2, icon: '🚜', color: 'from-orange-500/20 to-orange-600/10', border: 'border-orange-500/20' },
-  { name: 'Погрузчики', count: 4, icon: '🚛', color: 'from-emerald-500/20 to-emerald-600/10', border: 'border-emerald-500/20' },
-  { name: 'Дорожная техника', count: 5, icon: '🛣', color: 'from-purple-500/20 to-purple-600/10', border: 'border-purple-500/20' },
-  { name: 'Буровая техника', count: 3, icon: '🔩', color: 'from-red-500/20 to-red-600/10', border: 'border-red-500/20' },
+  { name: 'Экскаваторы', count: 5, icon: '⛏', color: 'from-blue-500/15 to-blue-600/5', border: 'border-blue-500/20' },
+  { name: 'Краны', count: 3, icon: '🏗', color: 'from-sky-500/15 to-sky-600/5', border: 'border-sky-500/20' },
+  { name: 'Бульдозеры', count: 2, icon: '🚜', color: 'from-indigo-500/15 to-indigo-600/5', border: 'border-indigo-500/20' },
+  { name: 'Погрузчики', count: 4, icon: '🚛', color: 'from-cyan-500/15 to-cyan-600/5', border: 'border-cyan-500/20' },
+  { name: 'Дорожная техника', count: 5, icon: '🛣', color: 'from-violet-500/15 to-violet-600/5', border: 'border-violet-500/20' },
+  { name: 'Буровая техника', count: 3, icon: '🔩', color: 'from-blue-400/15 to-blue-500/5', border: 'border-blue-400/20' },
 ]
 
 const testimonials = [
@@ -73,30 +73,32 @@ export const Home: React.FC = () => {
     <div className="min-h-screen">
       {/* HERO */}
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-        {/* Background */}
         <div className="absolute inset-0 bg-gray-950">
-          <div className="absolute inset-0 bg-grid opacity-30" />
-          <div className="absolute inset-0 bg-gradient-radial from-amber-500/5 via-transparent to-transparent" />
+          <div className="absolute inset-0 bg-grid opacity-40" />
+          <div className="absolute inset-0 bg-gradient-radial from-blue-600/8 via-transparent to-transparent" />
+          {/* Subtle accent line at top */}
+          <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-600/60 to-transparent" />
         </div>
 
-        {/* Floating shape */}
-        <div className="absolute right-10 top-1/2 -translate-y-1/2 hidden lg:block animate-float opacity-20">
-          <svg width="400" height="400" viewBox="0 0 400 400" fill="none">
-            <rect x="50" y="150" width="300" height="100" rx="8" fill="#F59E0B" opacity="0.6" />
-            <rect x="80" y="120" width="60" height="30" rx="4" fill="#F59E0B" opacity="0.8" />
-            <rect x="150" y="80" width="180" height="40" rx="6" fill="#F59E0B" opacity="0.5" />
-            <circle cx="80" cy="260" r="20" fill="#374151" stroke="#F59E0B" strokeWidth="4" />
-            <circle cx="320" cy="260" r="20" fill="#374151" stroke="#F59E0B" strokeWidth="4" />
-            <rect x="100" y="250" width="200" height="10" rx="5" fill="#F59E0B" opacity="0.4" />
-            <rect x="300" y="130" width="20" height="120" rx="4" fill="#F59E0B" opacity="0.7" />
+        {/* Geometric shape — professional machinery silhouette */}
+        <div className="absolute right-8 top-1/2 -translate-y-1/2 hidden lg:block animate-float opacity-15">
+          <svg width="420" height="380" viewBox="0 0 420 380" fill="none">
+            <rect x="60" y="160" width="300" height="90" rx="6" fill="#3B82F6" opacity="0.7" />
+            <rect x="90" y="130" width="55" height="32" rx="4" fill="#3B82F6" opacity="0.9" />
+            <rect x="160" y="90" width="170" height="42" rx="5" fill="#2563EB" opacity="0.6" />
+            <circle cx="100" cy="265" r="22" fill="#0A1628" stroke="#3B82F6" strokeWidth="4" />
+            <circle cx="320" cy="265" r="22" fill="#0A1628" stroke="#3B82F6" strokeWidth="4" />
+            <rect x="120" y="258" width="185" height="10" rx="5" fill="#3B82F6" opacity="0.35" />
+            <rect x="310" y="140" width="18" height="110" rx="3" fill="#2563EB" opacity="0.8" />
+            <rect x="60" y="250" width="300" height="6" rx="3" fill="#1D4ED8" opacity="0.4" />
           </svg>
         </div>
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-32">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-full px-4 py-1.5 mb-6">
-              <Zap size={14} className="text-amber-400" />
-              <span className="text-sm text-amber-300 font-medium">Более 500 единиц техники в наличии</span>
+            <div className="inline-flex items-center gap-2 bg-blue-600/10 border border-blue-500/25 rounded-full px-4 py-1.5 mb-6">
+              <Zap size={14} className="text-blue-400" />
+              <span className="text-sm text-blue-300 font-medium">Более 500 единиц техники в наличии</span>
             </div>
 
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black mb-6 leading-none tracking-tight">
@@ -133,7 +135,7 @@ export const Home: React.FC = () => {
                 { icon: Wrench, text: 'Тех. поддержка 24/7' },
               ].map(({ icon: Icon, text }) => (
                 <div key={text} className="flex items-center gap-2 text-sm text-gray-500">
-                  <Icon size={14} className="text-amber-500" />
+                  <Icon size={14} className="text-blue-400" />
                   {text}
                 </div>
               ))}
@@ -141,22 +143,21 @@ export const Home: React.FC = () => {
           </div>
         </div>
 
-        {/* Scroll indicator */}
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-40">
           <span className="text-xs text-gray-500">прокрутите вниз</span>
           <div className="w-5 h-8 border border-gray-600 rounded-full flex items-start justify-center pt-1.5">
-            <div className="w-1 h-2 bg-amber-500 rounded-full animate-bounce" />
+            <div className="w-1 h-2 bg-blue-500 rounded-full animate-bounce" />
           </div>
         </div>
       </section>
 
       {/* STATS */}
-      <section ref={statsRef} className="bg-gray-900/50 border-y border-gray-800/50 py-12">
+      <section ref={statsRef} className="bg-gray-900/60 border-y border-gray-700/40 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {stats.map((stat) => (
               <div key={stat.label} className="text-center">
-                <div className="text-4xl font-black text-amber-400 mb-1">{stat.value}</div>
+                <div className="text-4xl font-black text-blue-400 mb-1">{stat.value}</div>
                 <div className="text-sm text-gray-500">{stat.label}</div>
               </div>
             ))}
@@ -175,12 +176,11 @@ export const Home: React.FC = () => {
           </div>
 
           <div className="relative grid md:grid-cols-3 gap-8">
-            {/* Connecting line */}
-            <div className="hidden md:block absolute top-12 left-1/6 right-1/6 h-px bg-gradient-to-r from-transparent via-amber-500/30 to-transparent" />
+            <div className="hidden md:block absolute top-12 left-1/6 right-1/6 h-px bg-gradient-to-r from-transparent via-blue-600/30 to-transparent" />
 
             {steps.map((step, i) => (
               <div key={i} className="relative text-center group">
-                <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gray-900 border-2 border-amber-500/30 group-hover:border-amber-500 transition-all mb-6 relative">
+                <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gray-900 border-2 border-blue-500/25 group-hover:border-blue-500/60 transition-all mb-6">
                   <span className="text-3xl font-black gradient-text">{step.num}</span>
                 </div>
                 <h3 className="text-xl font-bold text-white mb-3">{step.title}</h3>
@@ -206,12 +206,12 @@ export const Home: React.FC = () => {
               <Link
                 key={cat.name}
                 to={`/catalog?category=${encodeURIComponent(cat.name)}`}
-                className={`group bg-gradient-to-br ${cat.color} border ${cat.border} rounded-xl p-6 hover:scale-[1.02] transition-all duration-200 cursor-pointer`}
+                className={`group bg-gradient-to-br ${cat.color} border ${cat.border} rounded-xl p-6 hover:scale-[1.02] transition-all duration-200`}
               >
                 <div className="text-4xl mb-3">{cat.icon}</div>
-                <h3 className="text-base font-bold text-white group-hover:text-amber-400 transition-colors">{cat.name}</h3>
+                <h3 className="text-base font-bold text-white group-hover:text-blue-300 transition-colors">{cat.name}</h3>
                 <p className="text-sm text-gray-500 mt-1">{cat.count} единиц</p>
-                <div className="flex items-center gap-1 mt-3 text-xs text-gray-600 group-hover:text-amber-500 transition-colors">
+                <div className="flex items-center gap-1 mt-3 text-xs text-gray-600 group-hover:text-blue-400 transition-colors">
                   Перейти в каталог <ArrowRight size={12} />
                 </div>
               </Link>
@@ -254,13 +254,13 @@ export const Home: React.FC = () => {
       </section>
 
       {/* WIZARD CTA */}
-      <section className="py-20 bg-gradient-to-r from-amber-600/10 via-amber-500/5 to-transparent border-y border-amber-500/10">
+      <section className="py-20 bg-gradient-to-r from-blue-700/10 via-blue-600/5 to-transparent border-y border-blue-600/15">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col lg:flex-row items-center gap-12">
             <div className="flex-1">
-              <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-full px-4 py-1.5 mb-6">
-                <Zap size={14} className="text-amber-400" />
-                <span className="text-sm text-amber-300 font-medium">ИИ-подбор за 30 секунд</span>
+              <div className="inline-flex items-center gap-2 bg-blue-600/10 border border-blue-500/25 rounded-full px-4 py-1.5 mb-6">
+                <Zap size={14} className="text-blue-400" />
+                <span className="text-sm text-blue-300 font-medium">ИИ-подбор за 30 секунд</span>
               </div>
               <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
                 Мастер подбора <span className="gradient-text">проектной</span> конфигурации
@@ -276,7 +276,7 @@ export const Home: React.FC = () => {
                   'Мгновенное бронирование всего пакета одним кликом',
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2 text-sm text-gray-400">
-                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
                     {item}
                   </li>
                 ))}
@@ -291,16 +291,15 @@ export const Home: React.FC = () => {
 
             <div className="flex-shrink-0 relative">
               <div className="w-64 h-64 relative">
-                {/* Scanner animation */}
-                <div className="absolute inset-0 rounded-full border-2 border-amber-500/20 scanner-ping" />
-                <div className="absolute inset-4 rounded-full border-2 border-amber-500/30 scanner-ping-2" />
-                <div className="absolute inset-8 rounded-full border-2 border-amber-500/40 scanner-ping-3" />
+                <div className="absolute inset-0 rounded-full border-2 border-blue-500/20 scanner-ping" />
+                <div className="absolute inset-4 rounded-full border-2 border-blue-500/30 scanner-ping-2" />
+                <div className="absolute inset-8 rounded-full border-2 border-blue-500/40 scanner-ping-3" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-24 h-24 bg-amber-500/10 border border-amber-500/30 rounded-full flex items-center justify-center">
-                    <Zap size={40} className="text-amber-400" />
+                  <div className="w-24 h-24 bg-blue-600/10 border border-blue-500/30 rounded-full flex items-center justify-center">
+                    <Zap size={40} className="text-blue-400" />
                   </div>
                 </div>
-                <div className="absolute inset-0 rounded-full border border-amber-500/10 scanner-rotate" style={{ borderTopColor: 'rgba(245, 158, 11, 0.6)' }} />
+                <div className="absolute inset-0 rounded-full border border-blue-500/10 scanner-rotate" style={{ borderTopColor: 'rgba(37, 99, 235, 0.7)' }} />
               </div>
             </div>
           </div>
@@ -319,13 +318,13 @@ export const Home: React.FC = () => {
 
           <div className="grid md:grid-cols-3 gap-6">
             {testimonials.map((t, i) => (
-              <div key={i} className="bg-gray-900 border border-gray-700/50 rounded-xl p-6 hover:border-amber-500/30 transition-all">
+              <div key={i} className="bg-gray-900 border border-gray-700/50 rounded-xl p-6 hover:border-blue-500/30 transition-all">
                 <div className="flex items-center gap-1 mb-4">
                   {Array.from({ length: 5 }).map((_, j) => (
                     <Star
                       key={j}
                       size={14}
-                      className={j < t.rating ? 'text-amber-400 fill-amber-400' : 'text-gray-700'}
+                      className={j < t.rating ? 'text-blue-400 fill-blue-400' : 'text-gray-700'}
                     />
                   ))}
                 </div>
@@ -341,9 +340,9 @@ export const Home: React.FC = () => {
       </section>
 
       {/* CTA */}
-      <section className="py-16 bg-gray-900/50 border-t border-gray-800/50">
+      <section className="py-16 bg-gray-900/50 border-t border-gray-700/40">
         <div className="max-w-3xl mx-auto px-4 text-center">
-          <Phone size={40} className="text-amber-500 mx-auto mb-4" />
+          <Phone size={40} className="text-blue-500 mx-auto mb-4" />
           <h2 className="text-2xl sm:text-3xl font-black text-white mb-3">
             Нужна консультация?
           </h2>

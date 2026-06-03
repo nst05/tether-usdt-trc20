@@ -51,7 +51,7 @@ const EquipmentListItem: React.FC<{ equipment: Equipment }> = ({ equipment }) =>
   }[equipment.availability]
 
   return (
-    <div className="bg-gray-900 border border-gray-700/50 rounded-xl overflow-hidden hover:border-amber-500/30 transition-all flex">
+    <div className="bg-gray-900 border border-gray-700/50 rounded-xl overflow-hidden hover:border-blue-500/30 transition-all flex">
       <div className="w-48 shrink-0 overflow-hidden">
         <img src={equipment.image} alt={equipment.name} className="w-full h-full object-cover" />
       </div>
@@ -74,19 +74,19 @@ const EquipmentListItem: React.FC<{ equipment: Equipment }> = ({ equipment }) =>
         </div>
         <div className="flex items-center justify-between mt-4">
           <div>
-            <span className="text-xl font-bold text-amber-400">{formatPrice(equipment.pricePerDay)}</span>
+            <span className="text-xl font-bold text-blue-400">{formatPrice(equipment.pricePerDay)}</span>
             <span className="text-gray-500 text-sm"> ₽/день</span>
           </div>
           <div className="flex gap-2">
             <Link to={`/catalog/${equipment.id}`}>
-              <button className="px-4 py-2 border border-amber-500 text-amber-500 rounded-lg text-sm font-medium hover:bg-amber-500/10 transition-all cursor-pointer">
+              <button className="px-4 py-2 border border-blue-500 text-blue-500 rounded-lg text-sm font-medium hover:bg-blue-500/10 transition-all cursor-pointer">
                 Подробнее
               </button>
             </Link>
             <button
               onClick={() => !isInCart && equipment.availability === 'available' && addItem(equipment, startDate, endDate)}
               disabled={equipment.availability !== 'available' || isInCart}
-              className="px-4 py-2 bg-amber-500 text-gray-900 rounded-lg text-sm font-bold hover:bg-amber-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className="px-4 py-2 bg-blue-500 text-gray-900 rounded-lg text-sm font-bold hover:bg-amber-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               {isInCart ? 'В корзине' : 'В корзину'}
             </button>
@@ -181,7 +181,7 @@ export const Catalog: React.FC = () => {
             Каталог <span className="gradient-text">техники</span>
           </h1>
           <p className="text-gray-500">
-            Найдено: <span className="text-amber-400 font-medium">{filtered.length}</span> единиц
+            Найдено: <span className="text-blue-400 font-medium">{filtered.length}</span> единиц
           </p>
         </div>
 
@@ -194,7 +194,7 @@ export const Catalog: React.FC = () => {
                 {activeFiltersCount > 0 && (
                   <button
                     onClick={resetFilters}
-                    className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 cursor-pointer"
                   >
                     <X size={12} />
                     Сбросить ({activeFiltersCount})
@@ -212,7 +212,7 @@ export const Catalog: React.FC = () => {
                     value={search}
                     onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                     placeholder="Название, тег..."
-                    className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg pl-9 pr-4 py-2 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition placeholder:text-gray-600"
+                    className="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg pl-9 pr-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-600/20 transition placeholder:text-gray-600"
                   />
                 </div>
               </div>
@@ -227,7 +227,7 @@ export const Catalog: React.FC = () => {
                       onClick={() => handleCategoryChange(cat)}
                       className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all cursor-pointer ${
                         category === cat
-                          ? 'bg-amber-500/15 text-amber-400 font-medium'
+                          ? 'bg-blue-500/15 text-blue-400 font-medium'
                           : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
                       }`}
                     >
@@ -247,7 +247,7 @@ export const Catalog: React.FC = () => {
                       onClick={() => { setAvailability(opt.value); setPage(1) }}
                       className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all cursor-pointer ${
                         availability === opt.value
-                          ? 'bg-amber-500/15 text-amber-400 font-medium'
+                          ? 'bg-blue-500/15 text-blue-400 font-medium'
                           : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
                       }`}
                     >
@@ -271,7 +271,7 @@ export const Catalog: React.FC = () => {
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
                   <span>5 000 ₽</span>
-                  <span className="text-amber-400 font-medium">{formatPrice(priceMax)} ₽</span>
+                  <span className="text-blue-400 font-medium">{formatPrice(priceMax)} ₽</span>
                 </div>
               </div>
             </div>
@@ -283,12 +283,12 @@ export const Catalog: React.FC = () => {
             <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="lg:hidden flex items-center gap-2 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 hover:border-amber-500/40 transition-all cursor-pointer"
+                className="lg:hidden flex items-center gap-2 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 hover:border-blue-500/40 transition-all cursor-pointer"
               >
                 <SlidersHorizontal size={16} />
                 Фильтры
                 {activeFiltersCount > 0 && (
-                  <span className="bg-amber-500 text-gray-900 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                  <span className="bg-blue-500 text-gray-900 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
                     {activeFiltersCount}
                   </span>
                 )}
@@ -305,13 +305,13 @@ export const Catalog: React.FC = () => {
                 <div className="flex border border-gray-700 rounded-lg overflow-hidden">
                   <button
                     onClick={() => setViewMode('grid')}
-                    className={`p-2 transition-colors cursor-pointer ${viewMode === 'grid' ? 'bg-amber-500/20 text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+                    className={`p-2 transition-colors cursor-pointer ${viewMode === 'grid' ? 'bg-blue-500/20 text-blue-400' : 'text-gray-500 hover:text-gray-300'}`}
                   >
                     <Grid3X3 size={16} />
                   </button>
                   <button
                     onClick={() => setViewMode('list')}
-                    className={`p-2 transition-colors cursor-pointer ${viewMode === 'list' ? 'bg-amber-500/20 text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+                    className={`p-2 transition-colors cursor-pointer ${viewMode === 'list' ? 'bg-blue-500/20 text-blue-400' : 'text-gray-500 hover:text-gray-300'}`}
                   >
                     <List size={16} />
                   </button>
@@ -327,7 +327,7 @@ export const Catalog: React.FC = () => {
                 <p className="text-sm mt-1">Попробуйте изменить параметры фильтров</p>
                 <button
                   onClick={resetFilters}
-                  className="mt-4 text-amber-400 text-sm hover:underline cursor-pointer"
+                  className="mt-4 text-blue-400 text-sm hover:underline cursor-pointer"
                 >
                   Сбросить все фильтры
                 </button>
@@ -354,7 +354,7 @@ export const Catalog: React.FC = () => {
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="p-2 rounded-lg border border-gray-700 text-gray-400 hover:border-amber-500/40 hover:text-amber-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  className="p-2 rounded-lg border border-gray-700 text-gray-400 hover:border-blue-500/40 hover:text-blue-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                 >
                   <ChevronLeft size={16} />
                 </button>
@@ -364,8 +364,8 @@ export const Catalog: React.FC = () => {
                     onClick={() => setPage(i + 1)}
                     className={`w-9 h-9 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                       page === i + 1
-                        ? 'bg-amber-500 text-gray-900'
-                        : 'border border-gray-700 text-gray-400 hover:border-amber-500/40 hover:text-amber-400'
+                        ? 'bg-blue-500 text-gray-900'
+                        : 'border border-gray-700 text-gray-400 hover:border-blue-500/40 hover:text-blue-400'
                     }`}
                   >
                     {i + 1}
@@ -374,7 +374,7 @@ export const Catalog: React.FC = () => {
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="p-2 rounded-lg border border-gray-700 text-gray-400 hover:border-amber-500/40 hover:text-amber-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  className="p-2 rounded-lg border border-gray-700 text-gray-400 hover:border-blue-500/40 hover:text-blue-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                 >
                   <ChevronRight size={16} />
                 </button>

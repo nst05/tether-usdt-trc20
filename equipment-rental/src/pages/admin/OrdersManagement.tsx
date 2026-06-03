@@ -72,12 +72,12 @@ export const OrdersManagement: React.FC = () => {
             onClick={() => setTab(value)}
             className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
               tab === value
-                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
                 : 'bg-gray-900 border border-gray-700/50 text-gray-500 hover:border-gray-600'
             }`}
           >
             {label}
-            <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === value ? 'bg-amber-500/30 text-amber-300' : 'bg-gray-800 text-gray-600'}`}>
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${tab === value ? 'bg-blue-500/30 text-blue-300' : 'bg-gray-800 text-gray-600'}`}>
               {tabCount(value)}
             </span>
           </button>
@@ -92,7 +92,7 @@ export const OrdersManagement: React.FC = () => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Поиск по клиенту, ID, технике..."
-          className="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-lg pl-9 pr-4 py-2.5 text-sm outline-none focus:border-amber-500 transition placeholder:text-gray-600"
+          className="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-lg pl-9 pr-4 py-2.5 text-sm outline-none focus:border-blue-500 transition placeholder:text-gray-600"
         />
       </div>
 
@@ -115,7 +115,7 @@ export const OrdersManagement: React.FC = () => {
               {filtered.map((order) => (
                 <tr key={order.id} className="border-b border-gray-800/50 last:border-0 hover:bg-gray-800/20 transition-colors">
                   <td className="px-5 py-3">
-                    <div className="text-xs font-mono text-amber-400">{order.id}</div>
+                    <div className="text-xs font-mono text-blue-400">{order.id}</div>
                     <div className="text-xs text-gray-600">{formatDate(order.createdAt)}</div>
                   </td>
                   <td className="px-5 py-3">
@@ -133,13 +133,13 @@ export const OrdersManagement: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-5 py-3 hidden lg:table-cell">
-                    <span className="text-sm font-bold text-amber-400">{formatPrice(order.totalPrice)} ₽</span>
+                    <span className="text-sm font-bold text-blue-400">{formatPrice(order.totalPrice)} ₽</span>
                   </td>
                   <td className="px-5 py-3">
                     <select
                       value={order.status}
                       onChange={(e) => updateOrderStatus(order.id, e.target.value as Order['status'])}
-                      className="bg-gray-800 border border-gray-700 text-gray-300 rounded-md px-2 py-1 text-xs outline-none cursor-pointer focus:border-amber-500 transition"
+                      className="bg-gray-800 border border-gray-700 text-gray-300 rounded-md px-2 py-1 text-xs outline-none cursor-pointer focus:border-blue-500 transition"
                     >
                       {STATUS_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -150,7 +150,7 @@ export const OrdersManagement: React.FC = () => {
                     <div className="flex justify-end">
                       <button
                         onClick={() => setSelectedOrder(order)}
-                        className="p-1.5 text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 rounded transition-all cursor-pointer"
+                        className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-all cursor-pointer"
                       >
                         <Eye size={15} />
                       </button>
@@ -204,7 +204,7 @@ export const OrdersManagement: React.FC = () => {
               <div className="border-t border-gray-800 pt-3">
                 <div className="flex justify-between">
                   <span className="text-gray-400 font-medium">Итого:</span>
-                  <span className="text-xl font-black text-amber-400">
+                  <span className="text-xl font-black text-blue-400">
                     {formatPrice(selectedOrder.totalPrice)} ₽
                   </span>
                 </div>

@@ -38,7 +38,7 @@ export const Settings: React.FC = () => {
               'Отчёты на email (еженедельно)',
             ].map((item) => (
               <label key={item} className="flex items-center gap-3 cursor-pointer">
-                <div className="w-10 h-5 bg-amber-500 rounded-full relative">
+                <div className="w-10 h-5 bg-blue-500 rounded-full relative">
                   <div className="absolute right-0.5 top-0.5 w-4 h-4 bg-white rounded-full" />
                 </div>
                 <span className="text-sm text-gray-400">{item}</span>

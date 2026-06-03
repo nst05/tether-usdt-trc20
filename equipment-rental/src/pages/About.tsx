@@ -48,7 +48,7 @@ export const About: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-16">
           {fleetStats.map(({ icon: Icon, value, label }) => (
             <div key={label} className="bg-gray-900 border border-gray-700/50 rounded-xl p-5 text-center">
-              <Icon size={28} className="text-amber-500 mx-auto mb-3" />
+              <Icon size={28} className="text-blue-500 mx-auto mb-3" />
               <div className="text-3xl font-black text-white mb-1">{value}</div>
               <div className="text-sm text-gray-500">{label}</div>
             </div>
@@ -81,10 +81,10 @@ export const About: React.FC = () => {
             ].map(({ year, event }) => (
               <div key={year} className="flex gap-4">
                 <div className="w-12 shrink-0 text-right">
-                  <span className="text-amber-400 font-bold text-sm">{year}</span>
+                  <span className="text-blue-400 font-bold text-sm">{year}</span>
                 </div>
                 <div className="flex gap-3 items-start">
-                  <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                  <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
                   <span className="text-gray-400 text-sm">{event}</span>
                 </div>
               </div>
@@ -99,12 +99,12 @@ export const About: React.FC = () => {
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
             {team.map((member) => (
-              <div key={member.name} className="bg-gray-900 border border-gray-700/50 rounded-xl p-5 text-center hover:border-amber-500/30 transition-all">
-                <div className="w-16 h-16 bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Users size={24} className="text-amber-400" />
+              <div key={member.name} className="bg-gray-900 border border-gray-700/50 rounded-xl p-5 text-center hover:border-blue-500/30 transition-all">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Users size={24} className="text-blue-400" />
                 </div>
                 <h3 className="font-bold text-gray-200 text-sm mb-1">{member.name}</h3>
-                <div className="text-xs text-amber-400 mb-1">{member.role}</div>
+                <div className="text-xs text-blue-400 mb-1">{member.role}</div>
                 <div className="text-xs text-gray-600">{member.exp}</div>
               </div>
             ))}
@@ -119,7 +119,7 @@ export const About: React.FC = () => {
           <div className="grid md:grid-cols-2 gap-3">
             {certs.map((cert) => (
               <div key={cert} className="flex items-center gap-3 bg-gray-900 border border-gray-700/50 rounded-lg p-3">
-                <CheckCircle size={16} className="text-amber-500 shrink-0" />
+                <CheckCircle size={16} className="text-blue-500 shrink-0" />
                 <span className="text-sm text-gray-400">{cert}</span>
               </div>
             ))}
@@ -133,7 +133,7 @@ export const About: React.FC = () => {
             {['Liebherr', 'Caterpillar', 'Komatsu', 'Volvo CE', 'Bomag', 'Wirtgen', 'JCB', 'Bauer', 'Potain', 'Grove', 'Dynapac', 'Atlas Copco'].map((brand) => (
               <div
                 key={brand}
-                className="bg-gray-900 border border-gray-700/50 rounded-lg p-3 text-center hover:border-amber-500/30 transition-all"
+                className="bg-gray-900 border border-gray-700/50 rounded-lg p-3 text-center hover:border-blue-500/30 transition-all"
               >
                 <div className="text-xs font-bold text-gray-500">{brand}</div>
               </div>

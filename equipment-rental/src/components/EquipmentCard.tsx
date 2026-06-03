@@ -31,7 +31,7 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment }) => {
   }
 
   return (
-    <div className="group relative bg-gray-900 border border-gray-700/50 rounded-xl overflow-hidden transition-all duration-300 hover:border-amber-500/40 hover:shadow-[0_0_20px_rgba(245,158,11,0.1),0_8px_32px_rgba(0,0,0,0.4)] hover:-translate-y-1">
+    <div className="group relative bg-gray-900 border border-gray-700/50 rounded-xl overflow-hidden transition-all duration-300 hover:border-blue-500/40 hover:shadow-[0_4px_24px_rgba(37,99,235,0.12),0_8px_32px_rgba(0,0,0,0.4)] hover:-translate-y-1">
       {/* Image */}
       <div className="relative overflow-hidden h-52">
         <img
@@ -44,7 +44,7 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment }) => {
 
         {/* Category badge */}
         <div className="absolute top-3 left-3">
-          <span className="bg-amber-500/90 text-gray-900 text-xs font-bold px-2.5 py-1 rounded-md">
+          <span className="bg-blue-600/90 text-white text-xs font-semibold px-2.5 py-1 rounded-md">
             {equipment.category}
           </span>
         </div>
@@ -59,7 +59,7 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment }) => {
 
       {/* Content */}
       <div className="p-4">
-        <h3 className="text-base font-semibold text-gray-100 mb-1 line-clamp-2 group-hover:text-amber-400 transition-colors">
+        <h3 className="text-base font-semibold text-gray-100 mb-1 line-clamp-2 group-hover:text-blue-300 transition-colors">
           {equipment.name}
         </h3>
 
@@ -75,7 +75,7 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment }) => {
               <Star
                 key={i}
                 size={12}
-                className={i < Math.floor(equipment.rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-600'}
+                className={i < Math.floor(equipment.rating) ? 'text-blue-400 fill-blue-400' : 'text-gray-600'}
               />
             ))}
           </div>
@@ -97,7 +97,7 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment }) => {
         <div className="flex items-end justify-between mb-4">
           <div>
             <div className="text-xs text-gray-500">от</div>
-            <div className="text-xl font-bold text-amber-400">
+            <div className="text-xl font-bold text-blue-400">
               {formatPrice(equipment.pricePerDay)} <span className="text-sm text-gray-400">₽/день</span>
             </div>
           </div>
