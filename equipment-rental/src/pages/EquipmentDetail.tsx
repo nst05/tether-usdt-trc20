@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { PageTransition } from '../components/PageTransition'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Star, MapPin, ChevronRight, ShoppingCart, Phone, CheckCircle, Calendar } from 'lucide-react'
 import { equipmentData } from '../data/equipment'
@@ -81,6 +82,7 @@ export const EquipmentDetail: React.FC = () => {
   const bookedDates = ['2024-03-25', '2024-03-26', '2024-03-27', '2024-04-01', '2024-04-02']
 
   return (
+    <PageTransition>
     <div className="min-h-screen pt-16">
       {/* Breadcrumb */}
       <div className="bg-gray-900/50 border-b border-gray-800/50">
@@ -316,5 +318,6 @@ export const EquipmentDetail: React.FC = () => {
         )}
       </div>
     </div>
+    </PageTransition>
   )
 }

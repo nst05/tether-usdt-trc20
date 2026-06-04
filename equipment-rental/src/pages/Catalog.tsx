@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react'
+import { PageTransition } from '../components/PageTransition'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Search, SlidersHorizontal, Grid3X3, List, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { EquipmentCard } from '../components/EquipmentCard'
@@ -174,6 +175,7 @@ export const Catalog: React.FC = () => {
   ].filter(Boolean).length
 
   return (
+    <PageTransition>
     <div className="min-h-screen pt-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
@@ -384,5 +386,6 @@ export const Catalog: React.FC = () => {
         </div>
       </div>
     </div>
+    </PageTransition>
   )
 }

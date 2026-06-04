@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { PageTransition } from '../components/PageTransition'
 import { Link } from 'react-router-dom'
 import { ShoppingCart, Trash2, Check, ChevronRight, ChevronLeft } from 'lucide-react'
 import { useCartStore } from '../store/cartStore'
@@ -73,6 +74,7 @@ export const Booking: React.FC = () => {
   }
 
   return (
+    <PageTransition>
     <div className="min-h-screen pt-16">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <h1 className="text-3xl font-black text-white mb-2">
@@ -279,5 +281,6 @@ export const Booking: React.FC = () => {
         )}
       </div>
     </div>
+    </PageTransition>
   )
 }

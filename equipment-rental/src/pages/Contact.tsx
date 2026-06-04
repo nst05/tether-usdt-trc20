@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { PageTransition } from '../components/PageTransition'
 import { Phone, Mail, MapPin, Clock, Send, Check } from 'lucide-react'
 import { Input } from '../components/ui/Input'
 import { Button } from '../components/ui/Button'
@@ -52,6 +53,7 @@ export const Contact: React.FC = () => {
   }
 
   return (
+    <PageTransition>
     <div className="min-h-screen pt-16">
       {/* Hero */}
       <div className="bg-gray-900/50 border-b border-gray-800/50 py-12">
@@ -187,5 +189,6 @@ export const Contact: React.FC = () => {
         </div>
       </div>
     </div>
+    </PageTransition>
   )
 }

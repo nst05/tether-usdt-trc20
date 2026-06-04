@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { PageTransition } from '../components/PageTransition'
 import { Award, Users, Truck, Clock, CheckCircle } from 'lucide-react'
 
 const team = [
@@ -30,6 +31,7 @@ export const About: React.FC = () => {
   }, [])
 
   return (
+    <PageTransition>
     <div className="min-h-screen pt-16">
       {/* Hero */}
       <div className="bg-gray-900/50 border-b border-gray-800/50 py-16">
@@ -142,5 +144,6 @@ export const About: React.FC = () => {
         </div>
       </div>
     </div>
+    </PageTransition>
   )
 }

@@ -1,5 +1,6 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { AnimatePresence } from 'framer-motion'
 import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
 import { Home } from './pages/Home'
@@ -25,11 +26,11 @@ const PublicLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   </div>
 )
 
-function App() {
+function AnimatedRoutes() {
+  const location = useLocation()
   return (
-    <BrowserRouter basename="/tether-usdt-trc20">
-      <Routes>
-        {/* Public routes */}
+    <AnimatePresence mode="wait" initial={false}>
+      <Routes location={location} key={location.pathname}>
         <Route path="/" element={<PublicLayout><Home /></PublicLayout>} />
         <Route path="/catalog" element={<PublicLayout><Catalog /></PublicLayout>} />
         <Route path="/catalog/:id" element={<PublicLayout><EquipmentDetail /></PublicLayout>} />
@@ -37,8 +38,6 @@ function App() {
         <Route path="/booking" element={<PublicLayout><Booking /></PublicLayout>} />
         <Route path="/about" element={<PublicLayout><About /></PublicLayout>} />
         <Route path="/contact" element={<PublicLayout><Contact /></PublicLayout>} />
-
-        {/* Admin routes */}
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="equipment" element={<EquipmentManagement />} />
@@ -48,6 +47,14 @@ function App() {
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
+    </AnimatePresence>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter basename="/tether-usdt-trc20">
+      <AnimatedRoutes />
     </BrowserRouter>
   )
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { PageTransition } from '../components/PageTransition'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, ChevronLeft, Zap, Check, X, ShoppingCart } from 'lucide-react'
 import { Button } from '../components/ui/Button'
@@ -187,6 +188,7 @@ export const ProjectWizard: React.FC = () => {
   const today = new Date().toISOString().split('T')[0]
 
   return (
+    <PageTransition>
     <div className="min-h-screen pt-16 bg-gray-950">
       {/* Header */}
       {step !== 5 && (
@@ -509,5 +511,6 @@ export const ProjectWizard: React.FC = () => {
         )}
       </div>
     </div>
+    </PageTransition>
   )
 }
