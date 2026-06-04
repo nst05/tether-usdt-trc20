@@ -1,12 +1,16 @@
 import { Equipment } from '../types'
 
+function pexels(id: number): string {
+  return `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&w=800&h=600&dpr=1`
+}
+
 export const equipmentData: Equipment[] = [
   {
     id: 'exc-320',
     name: 'Гусеничный экскаватор CAT 320',
     category: 'Экскаваторы',
     subcategory: 'Гусеничные',
-    image: 'https://images.unsplash.com/photo-nkxB5Ab-ONY?w=800&auto=format&fit=crop&q=80',
+    image: pexels(2449603),
     specs: {
       'Вместимость ковша': '0.9 – 1.2 м³',
       'Глубина копания': '6.7 м',
@@ -34,7 +38,7 @@ export const equipmentData: Equipment[] = [
     name: 'Гусеничный экскаватор Komatsu PC200',
     category: 'Экскаваторы',
     subcategory: 'Гусеничные',
-    image: 'https://images.unsplash.com/photo-maVHoAWycOs?w=800&auto=format&fit=crop&q=80',
+    image: pexels(69483),
     specs: {
       'Вместимость ковша': '0.8 – 1.0 м³',
       'Глубина копания': '6.6 м',
@@ -60,7 +64,7 @@ export const equipmentData: Equipment[] = [
     name: 'Автокран Liebherr LTM 1100-5.2',
     category: 'Краны',
     subcategory: 'Автомобильные',
-    image: 'https://images.unsplash.com/photo-CsrdRF5Tiig?w=800&auto=format&fit=crop&q=80',
+    image: pexels(14169558),
     specs: {
       'Грузоподъёмность': '100 т',
       'Длина стрелы': '60 м (с гуськом 84 м)',
@@ -87,7 +91,7 @@ export const equipmentData: Equipment[] = [
     name: 'Автокран Grove GMK3060',
     category: 'Краны',
     subcategory: 'Автомобильные',
-    image: 'https://images.unsplash.com/photo-GiQoWgtkNzQ?w=800&auto=format&fit=crop&q=80',
+    image: pexels(7108780),
     specs: {
       'Грузоподъёмность': '60 т',
       'Длина стрелы': '48 м',
@@ -113,7 +117,7 @@ export const equipmentData: Equipment[] = [
     name: 'Бульдозер CAT D6T',
     category: 'Бульдозеры',
     subcategory: 'Гусеничные',
-    image: 'https://images.unsplash.com/photo-rpP7zWy-Uxc?w=800&auto=format&fit=crop&q=80',
+    image: pexels(259966),
     specs: {
       'Отвал': '3.2 × 1.1 м, объём 3.5 м³',
       'Тяговое усилие': '17 740 кг',
@@ -139,7 +143,7 @@ export const equipmentData: Equipment[] = [
     name: 'Бульдозер Komatsu D155A-6',
     category: 'Бульдозеры',
     subcategory: 'Гусеничные',
-    image: 'https://images.unsplash.com/photo-Sx_m5bdAfQU?w=800&auto=format&fit=crop&q=80',
+    image: pexels(13923406),
     specs: {
       'Отвал': '4.1 × 1.2 м',
       'Тяговое усилие': '34 300 кгс',
@@ -164,7 +168,7 @@ export const equipmentData: Equipment[] = [
     name: 'Фронтальный погрузчик CAT 950M',
     category: 'Погрузчики',
     subcategory: 'Фронтальные',
-    image: 'https://images.unsplash.com/photo-6zWFTlXFTKI?w=800&auto=format&fit=crop&q=80',
+    image: pexels(33321432),
     specs: {
       'Объём ковша': '3.8 м³',
       'Грузоподъёмность': '5 700 кг',
@@ -190,7 +194,7 @@ export const equipmentData: Equipment[] = [
     name: 'Экскаватор-погрузчик JCB 3CX',
     category: 'Погрузчики',
     subcategory: 'Экскаваторы-погрузчики',
-    image: 'https://images.unsplash.com/photo-3U7jsNq1ZSk?w=800&auto=format&fit=crop&q=80',
+    image: pexels(1238864),
     specs: {
       'Ковш погрузчика': '1.0 м³',
       'Ковш экскаватора': '0.29 м³',
@@ -216,7 +220,7 @@ export const equipmentData: Equipment[] = [
     name: 'Автогрейдер CAT 140M',
     category: 'Дорожная техника',
     subcategory: 'Грейдеры',
-    image: 'https://images.unsplash.com/photo-gbHdN5BvXeo?w=800&auto=format&fit=crop&q=80',
+    image: pexels(12546415),
     specs: {
       'Длина отвала': '3.96 м',
       'Угол поворота отвала': '360°',
@@ -242,7 +246,7 @@ export const equipmentData: Equipment[] = [
     name: 'Дорожный каток Bomag BW 213 DH',
     category: 'Дорожная техника',
     subcategory: 'Катки',
-    image: 'https://images.unsplash.com/photo-bGMyTnSlYvE?w=800&auto=format&fit=crop&q=80',
+    image: pexels(1579356),
     specs: {
       'Ширина вальца': '2.1 м',
       'Статическая нагрузка': '9.8 т/м',
@@ -268,7 +272,7 @@ export const equipmentData: Equipment[] = [
     name: 'Буровая установка Atlas Copco ROC D7C',
     category: 'Буровая техника',
     subcategory: 'Самоходные',
-    image: 'https://images.unsplash.com/photo-gxmE_k37cxE?w=800&auto=format&fit=crop&q=80',
+    image: pexels(3216911),
     specs: {
       'Диаметр бурения': '64 – 127 мм',
       'Глубина бурения': '18 – 30 м',
@@ -294,7 +298,7 @@ export const equipmentData: Equipment[] = [
     name: 'Мини-экскаватор Kubota KX080-4',
     category: 'Экскаваторы',
     subcategory: 'Мини-экскаваторы',
-    image: 'https://images.unsplash.com/photo-dcjshK1JXP0?w=800&auto=format&fit=crop&q=80',
+    image: pexels(6245621),
     specs: {
       'Вместимость ковша': '0.18 – 0.33 м³',
       'Глубина копания': '4.55 м',
@@ -320,7 +324,7 @@ export const equipmentData: Equipment[] = [
     name: 'Башенный кран Potain MDT 219',
     category: 'Краны',
     subcategory: 'Башенные',
-    image: 'https://images.unsplash.com/photo-1547036967-23d11aacaee0?w=800&auto=format&fit=crop&q=80',
+    image: pexels(224924),
     specs: {
       'Максимальная нагрузка': '10 т',
       'Вылет стрелы': '60 м',
@@ -346,7 +350,7 @@ export const equipmentData: Equipment[] = [
     name: 'Асфальтоукладчик Vögele SUPER 1800-3i',
     category: 'Дорожная техника',
     subcategory: 'Укладчики',
-    image: 'https://images.unsplash.com/photo-oYXwd_t6Dtc?w=800&auto=format&fit=crop&q=80',
+    image: pexels(12228684),
     specs: {
       'Ширина укладки': '2.55 – 9.0 м',
       'Производительность': 'до 700 т/ч',
@@ -372,7 +376,7 @@ export const equipmentData: Equipment[] = [
     name: 'Телескопический погрузчик JLG 4013PS',
     category: 'Погрузчики',
     subcategory: 'Телескопические',
-    image: 'https://images.unsplash.com/photo-pBOdUlrzYAU?w=800&auto=format&fit=crop&q=80',
+    image: pexels(4513940),
     specs: {
       'Грузоподъёмность': '4 000 кг',
       'Высота подъёма': '12.5 м',
@@ -398,7 +402,7 @@ export const equipmentData: Equipment[] = [
     name: 'Экскаватор с длинной рукоятью CAT 374',
     category: 'Экскаваторы',
     subcategory: 'Спецификация',
-    image: 'https://images.unsplash.com/photo-sLvqDyA-pX8?w=800&auto=format&fit=crop&q=80',
+    image: pexels(28442180),
     specs: {
       'Вместимость ковша': '2.0 – 3.5 м³',
       'Длина стрелы + рукоять': '18 м',
@@ -424,7 +428,7 @@ export const equipmentData: Equipment[] = [
     name: 'Скрепер CAT 637K',
     category: 'Дорожная техника',
     subcategory: 'Скреперы',
-    image: 'https://images.unsplash.com/photo-HCz4TanHCXU?w=800&auto=format&fit=crop&q=80',
+    image: pexels(14651),
     specs: {
       'Объём ковша': '19.9 – 24.5 м³',
       'Нагрузка резания': '37 230 кг',
@@ -449,7 +453,7 @@ export const equipmentData: Equipment[] = [
     name: 'Вибропогружатель ICE 44-65B',
     category: 'Буровая техника',
     subcategory: 'Вибропогружатели',
-    image: 'https://images.unsplash.com/photo-zmW-UG2OX_M?w=800&auto=format&fit=crop&q=80',
+    image: pexels(4170184),
     specs: {
       'Момент дебаланса': '65 кНм',
       'Центробежная сила': '1 390 кН',
@@ -475,7 +479,7 @@ export const equipmentData: Equipment[] = [
     name: 'Фрезерная машина Wirtgen W 200i',
     category: 'Дорожная техника',
     subcategory: 'Фрезы',
-    image: 'https://images.unsplash.com/photo-8PKEeac1hzw?w=800&auto=format&fit=crop&q=80',
+    image: pexels(12181590),
     specs: {
       'Ширина фрезерования': '2 000 мм',
       'Глубина фрезерования': 'до 330 мм',
@@ -501,7 +505,7 @@ export const equipmentData: Equipment[] = [
     name: 'Мини-погрузчик Bobcat S770',
     category: 'Погрузчики',
     subcategory: 'Мини-погрузчики',
-    image: 'https://images.unsplash.com/photo-gcynzrxSPCE?w=800&auto=format&fit=crop&q=80',
+    image: pexels(3998410),
     specs: {
       'Грузоподъёмность': '1 565 кг',
       'Высота выгрузки': '2.4 м',
