@@ -3,9 +3,7 @@ name: Deploy equipment-rental to GitHub Pages
 on:
   push:
     branches: [claude/equipment-rental-site-iI1tD]
-    paths:
-      - 'equipment-rental/**'
-      - '.github/workflows/deploy-equipment-rental.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
