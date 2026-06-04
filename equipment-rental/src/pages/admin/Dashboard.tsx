@@ -87,20 +87,19 @@ export const Dashboard: React.FC = () => {
         {/* Revenue chart */}
         <div className="lg:col-span-2 bg-gray-900 border border-gray-700/50 rounded-xl p-5">
           <h2 className="font-bold text-gray-200 mb-5">Выручка за 7 дней</h2>
-          <div className="flex items-end gap-2 h-40">
+          <div className="flex items-end gap-2" style={{ height: '160px' }}>
             {revenueData.map(({ day, value }) => {
-              const heightPct = (value / maxRevenue) * 100
+              const barH = Math.max(Math.round((value / maxRevenue) * 130), 6)
               return (
-                <div key={day} className="flex-1 flex flex-col items-center gap-2">
+                <div key={day} className="flex-1 flex flex-col items-center gap-1">
                   <div className="text-xs text-gray-600 font-medium">
                     {formatPrice(value / 1000)}к
                   </div>
-                  <div className="w-full relative" style={{ height: `${Math.max(heightPct * 0.9, 5)}%` }}>
-                    <div
-                      className="absolute bottom-0 w-full bg-gradient-to-t from-blue-600 to-amber-400 rounded-t-sm hover:from-blue-500 hover:to-amber-300 transition-colors"
-                      style={{ height: '100%' }}
-                    />
-                  </div>
+                  <div
+                    className="w-full bg-gradient-to-t from-amber-600 to-amber-400 rounded-t-sm hover:from-amber-500 hover:to-amber-300 transition-colors cursor-default"
+                    style={{ height: `${barH}px` }}
+                    title={`${day}: ${formatPrice(value)} ₽`}
+                  />
                   <div className="text-xs text-gray-600">{day}</div>
                 </div>
               )

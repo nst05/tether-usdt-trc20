@@ -370,7 +370,7 @@ export const ProjectWizard: React.FC = () => {
               {/* Rotating ring */}
               <div
                 className="absolute inset-0 rounded-full border-2 border-transparent scanner-rotate"
-                style={{ borderTopColor: '#F59E0B', borderRightColor: 'rgba(37,99,235,0.3)' }}
+                style={{ borderTopColor: '#F59E0B', borderRightColor: 'rgba(245,158,11,0.2)' }}
               />
 
               {/* Center */}

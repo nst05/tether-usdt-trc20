@@ -86,7 +86,7 @@ export const Contact: React.FC = () => {
                 {/* Fake map grid overlay */}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center">
-                    <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-2 shadow-[0_0_20px_rgba(37,99,235,0.6)]">
+                    <div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center mx-auto mb-2 shadow-[0_0_20px_rgba(245,158,11,0.6)]">
                       <MapPin size={18} className="text-gray-900" />
                     </div>
                     <div className="text-xs text-gray-400 bg-gray-900/80 px-3 py-1.5 rounded-lg">

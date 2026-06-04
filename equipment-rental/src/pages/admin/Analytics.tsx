@@ -11,7 +11,7 @@ const maxMonthly = Math.max(...monthlyRevenue)
 
 const utilizationData = [
   { name: 'Экскаваторы', value: 78, color: '#F59E0B' },
-  { name: 'Краны', value: 65, color: '#3B82F6' },
+  { name: 'Краны', value: 65, color: '#FBBF24' },
   { name: 'Бульдозеры', value: 82, color: '#10B981' },
   { name: 'Погрузчики', value: 91, color: '#8B5CF6' },
   { name: 'Дорожная', value: 55, color: '#EF4444' },
@@ -19,7 +19,7 @@ const utilizationData = [
 ]
 
 const categoryRevShare = [
-  { name: 'Краны', pct: 35, color: '#3B82F6' },
+  { name: 'Краны', pct: 35, color: '#FBBF24' },
   { name: 'Экскаваторы', pct: 28, color: '#F59E0B' },
   { name: 'Буровая', pct: 15, color: '#F97316' },
   { name: 'Дорожная', pct: 12, color: '#EF4444' },
@@ -83,17 +83,17 @@ export const Analytics: React.FC = () => {
                 />
               ))}
               {/* Bars and line */}
-              <div className="flex items-end gap-1 h-48 relative z-10">
+              <div className="flex items-end gap-1 relative z-10" style={{ height: '192px' }}>
                 {monthlyRevenue.map((value, i) => {
-                  const heightPct = (value / maxMonthly) * 100
+                  const barH = Math.max(Math.round((value / maxMonthly) * 155), 6)
                   return (
                     <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
-                      <div className="text-xs text-gray-700 group-hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100">
+                      <div className="text-xs text-gray-700 group-hover:text-amber-400 transition-colors opacity-0 group-hover:opacity-100">
                         {formatPrice(value / 1000)}к
                       </div>
                       <div
-                        className="w-full bg-gradient-to-t from-blue-600 to-amber-400 rounded-t hover:from-blue-500 hover:to-amber-300 transition-colors cursor-default"
-                        style={{ height: `${heightPct * 0.85}%` }}
+                        className="w-full bg-gradient-to-t from-amber-600 to-amber-400 rounded-t hover:from-amber-500 hover:to-amber-300 transition-colors cursor-default"
+                        style={{ height: `${barH}px` }}
                         title={`${MONTHS[i]}: ${formatPrice(value)} ₽`}
                       />
                       <div className="text-xs text-gray-600">{MONTHS[i]}</div>
