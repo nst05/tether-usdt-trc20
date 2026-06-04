@@ -27,7 +27,7 @@ const PublicLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/tether-usdt-trc20">
       <Routes>
         {/* Public routes */}
         <Route path="/" element={<PublicLayout><Home /></PublicLayout>} />
