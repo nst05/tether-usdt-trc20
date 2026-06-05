@@ -1,387 +1,283 @@
 //@version=6
-// =============================================================================
-//  Smart Macro Signals PRO — интерактивный индикатор BUY/SELL
-// =============================================================================
-//  Объединяет 4 модуля анализа в единый счёт (-100..+100) и выводит сигналы
-//  прямо на график. Все данные берутся ОНЛАЙН из TradingView в реальном времени.
-//
-//  МОДУЛИ:
-//    1) История/Тренд      — структура цены, EMA, RSI, MACD, momentum,
-//                            + интерактивный якорь истории (клик по графику)
-//    2) Корреляция активов — DXY, S&P500, Gold, BTC (учитывает знак корреляции)
-//    3) МАКРОЭКОНОМИКА      — РЕАЛЬНЫЕ онлайн-показатели через ECONOMICS:*
-//                            ставка ФРС, инфляция, безработица, M2, US10Y, VIX
-//    4) Smart Money (SMC)   — BOS/CHoCH, снятие ликвидности, структура рынка,
-//                            + интерактивный ключевой уровень (клик по графику)
-//
-//  ИНТЕРАКТИВНОСТЬ (клик мышью по графику при добавлении / в настройках):
-//    • 🖱 Ключевой уровень  — input.price: кликните точку на цене
-//    • 🖱 Якорь истории      — input.time:  кликните бар, с которого считать ход
-//
-//  ВЫВОДИТ НА ГРАФИК:
-//    • Метку BUY/SELL: цена входа, Stop-Loss, TP1/TP2
-//    • ⏱ Оценку времени отработки (баров и часов/дней) — эвристика, не прогноз
-//    • 🎯 Уверенность (%), панель по модулям, таблицу мультитаймфрейм
-//
-//  ⚠️ ОГРАНИЧЕНИЯ (честно):
-//    - Pine Script НЕ умеет ходить во внешний интернет/новостные API. Любые
-//      «онлайн-данные» — это только то, что есть внутри TradingView (котировки
-//      и макро ECONOMICS:*), и они real-time. Внешних API/новостей в Pine нет.
-//    - Это инструмент поддержки решений, НЕ финансовый совет и НЕ «грааль».
-//    - «Время отработки» — статистика по скорости цены (ATR), не гарантия.
-//    - Сигналы по ЗАКРЫТИЮ бара (без заглядывания вперёд) — нет перерисовки.
-//    - Если какой-то макротикер недоступен на вашем тарифе → он автоматически
-//      исключается из расчёта (вернёт na, модуль усреднит остальные).
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
+//  Smart Macro Signals PRO  |  Pine Script v6
+//  Бычий/медвежий счёт -100…+100 из 4 модулей.
+//  Гарантированный вывод: plot(score) в нижней панели + barcolor + стрелки.
+// ─────────────────────────────────────────────────────────────────────────────
+indicator("Smart Macro Signals PRO", "SMS PRO", overlay=false,
+          max_labels_count=200, max_lines_count=200)
 
-indicator("Smart Macro Signals PRO", shorttitle="SMS PRO", overlay=true, max_labels_count=500, max_lines_count=500)
+// ══════════════════════════════════════════════════════════════════════════════
+//  НАСТРОЙКИ
+// ══════════════════════════════════════════════════════════════════════════════
+// Веса
+wTrend = input.float(1.0, "Вес Тренд",        minval=0, maxval=3, step=0.1, group="Веса")
+wCorr  = input.float(1.0, "Вес Корреляция",   minval=0, maxval=3, step=0.1, group="Веса")
+wMacro = input.float(0.5, "Вес Макро",        minval=0, maxval=3, step=0.1, group="Веса")
+wSMC   = input.float(1.0, "Вес Smart Money",  minval=0, maxval=3, step=0.1, group="Веса")
 
-// =============================================================================
-//  ИНТЕРАКТИВНЫЕ ВХОДЫ (клик по графику)
-// =============================================================================
-grpI = "🖱️  Интерактив (кликните по графику)"
-// confirm=false → индикатор добавляется сразу, БЕЗ режима «кликни по графику»
-// (именно блокирующий клик мешал ему появиться). Уровень/якорь задаются в настройках.
-// Хотите ставить их кликом мыши — поменяйте confirm на true у нужного поля.
-useKeyLevel = input.bool(false, "Учитывать ключевой уровень", group=grpI)
-keyLevel    = input.price(0.0, "Ключевой уровень (можно вписать вручную)", confirm=false, group=grpI)
-useAnchor   = input.bool(false, "Учитывать якорь истории", group=grpI)
-anchorTime  = input.time(timestamp("01 Jan 2024 00:00"), "Якорь истории (дата)", confirm=false, group=grpI)
+// Пороги
+buyThr  = input.float( 25, "Порог BUY  (≥)", minval=5,  maxval=90, step=1, group="Сигналы")
+sellThr = input.float(-25, "Порог SELL (≤)", minval=-90, maxval=-5, step=1, group="Сигналы")
+confMin = input.float( 30, "Мин. уверенность %", minval=0, maxval=100, step=5, group="Сигналы")
 
-// =============================================================================
-//  ВЕСА МОДУЛЕЙ
-// =============================================================================
-grpW = "⚖️  Веса модулей"
-wTrend = input.float(1.0, "Вес: История / Тренд", minval=0, maxval=3, step=0.1, group=grpW)
-wCorr  = input.float(1.0, "Вес: Корреляция активов", minval=0, maxval=3, step=0.1, group=grpW)
-wMacro = input.float(1.0, "Вес: Макроэкономика", minval=0, maxval=3, step=0.1, group=grpW)
-wSMC   = input.float(1.0, "Вес: Smart Money (SMC)", minval=0, maxval=3, step=0.1, group=grpW)
+// Тренд
+emaFast = input.int(50,  "EMA быстрая",   minval=2,  group="Тренд")
+emaSlow = input.int(200, "EMA медленная", minval=10, group="Тренд")
+rsiLen  = input.int(14,  "RSI период",    minval=2,  group="Тренд")
 
-// =============================================================================
-//  СИГНАЛЫ
-// =============================================================================
-grpS = "🎯  Сигналы и пороги"
-buyThr  = input.float(25.0, "Порог BUY (счёт ≥)",  minval=5, maxval=95, step=1, group=grpS)
-sellThr = input.float(-25.0,"Порог SELL (счёт ≤)", minval=-95, maxval=-5, step=1, group=grpS)
-confMin = input.float(30.0, "Мин. уверенность для метки, %", minval=0, maxval=100, step=5, group=grpS)
+// Корреляция
+corrLen = input.int(50, "Окно корреляции", minval=10, group="Корреляция")
+sym1 = input.symbol("TVC:DXY",         "Актив 1 (DXY)",   group="Корреляция")
+sym2 = input.symbol("SP:SPX",          "Актив 2 (SPX)",   group="Корреляция")
+sym3 = input.symbol("TVC:GOLD",        "Актив 3 (Gold)",  group="Корреляция")
+sym4 = input.symbol("BINANCE:BTCUSDT", "Актив 4 (BTC)",   group="Корреляция")
 
-// =============================================================================
-//  МОДУЛЬ 1 — ИСТОРИЯ / ТРЕНД
-// =============================================================================
-grpT = "📈  История / Тренд"
-emaFastLen = input.int(50,  "EMA быстрая", minval=2, group=grpT)
-emaSlowLen = input.int(200, "EMA медленная", minval=5, group=grpT)
-rsiLen     = input.int(14,  "RSI период", minval=2, group=grpT)
-rocLen     = input.int(20,  "Momentum (ROC) период", minval=2, group=grpT)
+// Макро
+symYield = input.symbol("TVC:US10Y", "US10Y (доходность)", group="Макро")
+symVix   = input.symbol("CBOE:VIX",  "VIX (волатильность)", group="Макро")
 
-// =============================================================================
+// SMC
+swingLen = input.int(10, "Pivot-свинг (баров)", minval=2, group="Smart Money")
+
+// Риск
+atrLen   = input.int(14,   "ATR период",       minval=2,   group="Риск")
+slMul    = input.float(1.5,"SL = ATR ×",       minval=0.2, step=0.1, group="Риск")
+rr1      = input.float(1.5,"TP1  R:R",         minval=0.5, step=0.1, group="Риск")
+rr2      = input.float(3.0,"TP2  R:R",         minval=0.5, step=0.1, group="Риск")
+moveEff  = input.float(0.5,"Эффективность хода",minval=0.1,maxval=1.0,step=0.05,group="Риск")
+
+// Отображение
+showTbl  = input.bool(true,  "Панель с цифрами",        group="Вид")
+showMTF  = input.bool(true,  "Таблица таймфреймов",      group="Вид")
+tf1 = input.timeframe("15",  "TF1", group="Вид")
+tf2 = input.timeframe("60",  "TF2", group="Вид")
+tf3 = input.timeframe("240", "TF3", group="Вид")
+tf4 = input.timeframe("D",   "TF4", group="Вид")
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ВСПОМ. ФУНКЦИИ
+// ══════════════════════════════════════════════════════════════════════════════
+clamp1(x)          => math.max(-1.0, math.min(1.0, x))
+soft(x, s)         => clamp1(s == 0 ? math.sign(x) : x / s)
+nz0(x)             => na(x) ? 0.0 : x
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  МОДУЛЬ 1 — ТРЕНД
+// ══════════════════════════════════════════════════════════════════════════════
+_atr   = ta.atr(atrLen)
+_ef    = ta.ema(close, emaFast)
+_es    = ta.ema(close, emaSlow)
+_rsi   = ta.rsi(close, rsiLen)
+[_ml, _sl, _hist] = ta.macd(close, 12, 26, 9)
+_roc   = ta.roc(close, 20)
+
+emaAlign   = (close > _ef ? 0.5 : -0.5) + (_ef > _es ? 0.5 : -0.5)
+emaSlope   = soft(_ef - _ef[3], _atr)
+rsiS       = clamp1((_rsi - 50) / 25)
+macdS      = soft(_hist, _atr * 0.5)
+rocS       = soft(_roc, 5.0)
+trendScore = clamp1((emaAlign + emaSlope + rsiS + macdS + rocS) / 5.0)
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  МОДУЛЬ 2 — КОРРЕЛЯЦИЯ
-// =============================================================================
-grpC = "🔗  Корреляция активов"
-corrLen = input.int(50, "Окно корреляции (баров)", minval=10, group=grpC)
-sym1 = input.symbol("TVC:DXY",         "Актив 1 (индекс доллара)", group=grpC)
-sym2 = input.symbol("SP:SPX",          "Актив 2 (S&P 500)", group=grpC)
-sym3 = input.symbol("TVC:GOLD",        "Актив 3 (золото)", group=grpC)
-sym4 = input.symbol("BINANCE:BTCUSDT", "Актив 4 (Bitcoin)", group=grpC)
+//  Для каждого актива: corr(close_нашего, close_актива) × знак(тренд_актива)
+// ══════════════════════════════════════════════════════════════════════════════
+_get(sym) =>
+    [request.security(sym, timeframe.period, close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true),
+     request.security(sym, timeframe.period, ta.ema(close,50), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)]
 
-// =============================================================================
-//  МОДУЛЬ 3 — МАКРОЭКОНОМИКА (реальные онлайн-показатели)
-// =============================================================================
-grpM = "🏦  Макроэкономика (онлайн ECONOMICS:*)"
-symRate   = input.symbol("ECONOMICS:USINTR", "Ставка ФРС", group=grpM)
-symInfl   = input.symbol("ECONOMICS:USIRYY", "Инфляция (CPI г/г)", group=grpM)
-symUnemp  = input.symbol("ECONOMICS:USUNR",  "Безработица", group=grpM)
-symM2     = input.symbol("ECONOMICS:USM2",   "Денежная масса M2", group=grpM)
-symYield  = input.symbol("TVC:US10Y",        "Доходность US10Y", group=grpM)
-symVix    = input.symbol("CBOE:VIX",         "Индекс волатильности VIX", group=grpM)
+[a1, a1e] = _get(sym1)
+[a2, a2e] = _get(sym2)
+[a3, a3e] = _get(sym3)
+[a4, a4e] = _get(sym4)
 
-// =============================================================================
-//  МОДУЛЬ 4 — SMART MONEY
-// =============================================================================
-grpK = "💰  Smart Money (структура рынка)"
-swingLen = input.int(10, "Длина свинга (pivot)", minval=2, group=grpK)
+contrib(aClose, aEma) =>
+    na(aClose) or na(aEma) ? 0.0 :
+     clamp1(nz0(ta.correlation(close, aClose, corrLen)) * (aClose > aEma ? 1.0 : -1.0))
 
-// =============================================================================
-//  РИСК / ЦЕЛИ
-// =============================================================================
-grpR = "🛡️  Риск-менеджмент / Цели"
-atrLen   = input.int(14,  "ATR период", minval=2, group=grpR)
-slAtrMul = input.float(1.5, "Stop-Loss = ATR ×", minval=0.2, step=0.1, group=grpR)
-rr1      = input.float(1.5, "Take-Profit 1 (R:R)", minval=0.5, step=0.1, group=grpR)
-rr2      = input.float(3.0, "Take-Profit 2 (R:R)", minval=0.5, step=0.1, group=grpR)
-moveEff  = input.float(0.5, "Эффективность хода (оценка времени)", minval=0.1, maxval=1.0, step=0.05, group=grpR, tooltip="Доля ATR за бар в сторону цели. Меньше = дольше отработка.")
+c1 = contrib(a1, a1e)
+c2 = contrib(a2, a2e)
+c3 = contrib(a3, a3e)
+c4 = contrib(a4, a4e)
+corrScore = clamp1((c1 + c2 + c3 + c4) / 4.0)
 
-// =============================================================================
-//  ОТОБРАЖЕНИЕ
-// =============================================================================
-grpV = "🖥️  Отображение"
-showLabels = input.bool(true, "Метки BUY/SELL", group=grpV)
-showLevels = input.bool(true, "Линии входа / SL / TP", group=grpV)
-showPanel  = input.bool(true, "Информационная панель", group=grpV)
-showMTF    = input.bool(true, "Таблица мультитаймфрейм", group=grpV)
-tf1 = input.timeframe("15", "TF 1", group=grpV)
-tf2 = input.timeframe("60", "TF 2", group=grpV)
-tf3 = input.timeframe("240","TF 3", group=grpV)
-tf4 = input.timeframe("D",  "TF 4", group=grpV)
+// ══════════════════════════════════════════════════════════════════════════════
+//  МОДУЛЬ 3 — МАКРО (реальные тикеры TradingView, risk-on/off)
+//  Рост US10Y / VIX = risk-off → отрицательный вклад
+// ══════════════════════════════════════════════════════════════════════════════
+yNow  = request.security(symYield, "D", close,             lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+yMa   = request.security(symYield, "D", ta.sma(close, 20), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+vNow  = request.security(symVix,   "D", close,             lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+vMa   = request.security(symVix,   "D", ta.sma(close, 20), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
 
-// =============================================================================
-//  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-// =============================================================================
-f_clamp1(x) => math.max(-1.0, math.min(1.0, x))
-f_softsign(x, scale) => f_clamp1(scale == 0 ? math.sign(x) : x / scale)
-atr = ta.atr(atrLen)
+yS = (na(yNow) or na(yMa)) ? 0.0 : -soft(yNow - yMa, math.max(yMa * 0.05, 0.01))
+vS = (na(vNow) or na(vMa)) ? 0.0 : -soft(vNow - vMa, math.max(vMa * 0.15, 1.0))
+macroScore = clamp1((yS + vS) / 2.0)
 
-// =============================================================================
-//  МОДУЛЬ 1 — ИСТОРИЯ / ТРЕНД  (+ интерактивный якорь)
-// =============================================================================
-emaFast = ta.ema(close, emaFastLen)
-emaSlow = ta.ema(close, emaSlowLen)
-rsi     = ta.rsi(close, rsiLen)
-[macdLine, signalLine, macdHist] = ta.macd(close, 12, 26, 9)
-roc     = ta.roc(close, rocLen)
-
-emaAlign  = (close > emaFast ? 0.5 : -0.5) + (emaFast > emaSlow ? 0.5 : -0.5)
-emaSlope  = f_softsign(emaFast - emaFast[3], atr)
-rsiScore  = f_clamp1((rsi - 50) / 25)
-macdScore = f_softsign(macdHist, atr * 0.5)
-rocScore  = f_softsign(roc, 5.0)
-
-// Интерактивный якорь истории: ход цены от выбранного бара
-var float anchorPrice = na
-if useAnchor and na(anchorPrice) and time >= anchorTime
-    anchorPrice := close
-anchoredPerf = useAnchor and not na(anchorPrice) ? f_softsign((close - anchorPrice) / anchorPrice, 0.10) : 0.0
-
-trendScore = f_clamp1((emaAlign + emaSlope + rsiScore + macdScore + rocScore + anchoredPerf) / (useAnchor and not na(anchorPrice) ? 6.0 : 5.0))
-
-// =============================================================================
-//  МОДУЛЬ 2 — КОРРЕЛЯЦИЯ
-// =============================================================================
-f_assetContribution(sym) =>
-    aClose = request.security(sym, timeframe.period, close, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-    aEma   = request.security(sym, timeframe.period, ta.ema(close, 50), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-    corr   = ta.correlation(close, aClose, corrLen)
-    corr   := na(corr) ? 0.0 : corr
-    aTrend = aClose > aEma ? 1.0 : -1.0
-    na(aClose) ? na : f_clamp1(corr * aTrend)
-
-c1 = f_assetContribution(sym1)
-c2 = f_assetContribution(sym2)
-c3 = f_assetContribution(sym3)
-c4 = f_assetContribution(sym4)
-corrArr = array.new_float()
-if not na(c1)
-    array.push(corrArr, c1)
-if not na(c2)
-    array.push(corrArr, c2)
-if not na(c3)
-    array.push(corrArr, c3)
-if not na(c4)
-    array.push(corrArr, c4)
-corrScore = array.size(corrArr) > 0 ? f_clamp1(array.avg(corrArr)) : 0.0
-
-// =============================================================================
-//  МОДУЛЬ 3 — МАКРОЭКОНОМИКА (реальные онлайн-данные, направление учтено)
-//  dir = +1 : рост показателя → позитив для риск-активов (напр. M2)
-//  dir = -1 : рост показателя → негатив (ставка, инфляция, безработица, yield, VIX)
-// =============================================================================
-f_macroTrend(sym, dir) =>
-    v = request.security(sym, "D", close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-    m = request.security(sym, "D", ta.sma(close, 20), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-    na(v) or na(m) ? na : dir * f_softsign(v - m, math.max(math.abs(m) * 0.05, 0.0001))
-
-mRate  = f_macroTrend(symRate,  -1)
-mInfl  = f_macroTrend(symInfl,  -1)
-mUnemp = f_macroTrend(symUnemp, -1)
-mM2    = f_macroTrend(symM2,     1)
-mYield = f_macroTrend(symYield, -1)
-mVix   = f_macroTrend(symVix,   -1)
-
-macroArr = array.new_float()
-if not na(mRate)
-    array.push(macroArr, mRate)
-if not na(mInfl)
-    array.push(macroArr, mInfl)
-if not na(mUnemp)
-    array.push(macroArr, mUnemp)
-if not na(mM2)
-    array.push(macroArr, mM2)
-if not na(mYield)
-    array.push(macroArr, mYield)
-if not na(mVix)
-    array.push(macroArr, mVix)
-macroScore = array.size(macroArr) > 0 ? f_clamp1(array.avg(macroArr)) : 0.0
-
-// =============================================================================
-//  МОДУЛЬ 4 — SMART MONEY  (+ интерактивный ключевой уровень)
-// =============================================================================
+// ══════════════════════════════════════════════════════════════════════════════
+//  МОДУЛЬ 4 — SMART MONEY (BOS/CHoCH + Liquidity Sweep)
+// ══════════════════════════════════════════════════════════════════════════════
 ph = ta.pivothigh(high, swingLen, swingLen)
-pl = ta.pivotlow(low, swingLen, swingLen)
+pl = ta.pivotlow(low,  swingLen, swingLen)
 
-var float lastSwingHigh = na
-var float lastSwingLow  = na
-if not na(ph)
-    lastSwingHigh := ph
-if not na(pl)
-    lastSwingLow := pl
+var float swHigh = na
+var float swLow  = na
+if not na(ph) then swHigh := ph
+if not na(pl) then swLow  := pl
 
-var int structureBias = 0
-if not na(lastSwingHigh) and close > lastSwingHigh
-    structureBias := 1
-if not na(lastSwingLow) and close < lastSwingLow
-    structureBias := -1
+var int structBias = 0
+if not na(swHigh) and close > swHigh then structBias := 1
+if not na(swLow)  and close < swLow  then structBias := -1
 
-bullSweep = not na(lastSwingLow)  and low  < lastSwingLow  and close > lastSwingLow
-bearSweep = not na(lastSwingHigh) and high > lastSwingHigh and close < lastSwingHigh
+bullSweep  = not na(swLow)  and low  < swLow  and close > swLow
+bearSweep  = not na(swHigh) and high > swHigh and close < swHigh
 sweepScore = bullSweep ? 1.0 : bearSweep ? -1.0 : 0.0
 
-// Интерактивный ключевой уровень: цена выше = бычий контекст, ниже = медвежий
-keyScore = useKeyLevel and keyLevel > 0 ? f_softsign(close - keyLevel, atr * 3) : 0.0
+smcScore = clamp1(structBias * 0.7 + sweepScore * 0.3)
 
-smcParts = structureBias * 0.5 + sweepScore * 0.25 + keyScore * 0.25
-smcScore = f_clamp1(smcParts)
+// ══════════════════════════════════════════════════════════════════════════════
+//  ИТОГОВЫЙ СЧЁТ
+// ══════════════════════════════════════════════════════════════════════════════
+wSum = math.max(wTrend + wCorr + wMacro + wSMC, 0.0001)
+raw  = (trendScore*wTrend + corrScore*wCorr + macroScore*wMacro + smcScore*wSMC) / wSum
+score = nz0(raw) * 100.0                         // −100…+100, никогда не na
 
-// =============================================================================
-//  КОМПОЗИТНЫЙ СЧЁТ
-// =============================================================================
-wSum = wTrend + wCorr + wMacro + wSMC
-wSum := wSum == 0 ? 1 : wSum
-rawScore = (trendScore * wTrend + corrScore * wCorr + macroScore * wMacro + smcScore * wSMC) / wSum
-score    = rawScore * 100.0
+agree = (math.sign(trendScore)==math.sign(raw) and trendScore!=0 ? 1:0) +
+        (math.sign(corrScore) ==math.sign(raw) and corrScore !=0 ? 1:0) +
+        (math.sign(macroScore)==math.sign(raw) and macroScore!=0 ? 1:0) +
+        (math.sign(smcScore)  ==math.sign(raw) and smcScore  !=0 ? 1:0)
+confidence = math.round(math.min(100, math.abs(score)*0.6 + agree*10))
 
-agree = (math.sign(trendScore) == math.sign(rawScore) and trendScore != 0 ? 1 : 0) + (math.sign(corrScore)  == math.sign(rawScore) and corrScore  != 0 ? 1 : 0) + (math.sign(macroScore) == math.sign(rawScore) and macroScore != 0 ? 1 : 0) + (math.sign(smcScore)   == math.sign(rawScore) and smcScore   != 0 ? 1 : 0)
-confidence = math.round(math.min(100, math.abs(score) * 0.6 + agree * 10))
+// ══════════════════════════════════════════════════════════════════════════════
+//  СИГНАЛЫ (по закрытию бара, без перерисовки)
+// ══════════════════════════════════════════════════════════════════════════════
+var int state = 0
+buy  = ta.crossover(score,  buyThr)  and confidence >= confMin and state <= 0
+sell = ta.crossunder(score, sellThr) and confidence >= confMin and state >= 0
+if buy  then state := 1
+if sell then state := -1
 
-// =============================================================================
-//  СИГНАЛЫ (по закрытию, без перерисовки)
-// =============================================================================
-var int signalState = 0
-buySignal  = ta.crossover(score, buyThr)   and confidence >= confMin and signalState <= 0
-sellSignal = ta.crossunder(score, sellThr) and confidence >= confMin and signalState >= 0
-if buySignal
-    signalState := 1
-if sellSignal
-    signalState := -1
+// ══════════════════════════════════════════════════════════════════════════════
+//  ВИЗУАЛИЗАЦИЯ В ОТДЕЛЬНОЙ ПАНЕЛИ (overlay=false — score всегда виден!)
+// ══════════════════════════════════════════════════════════════════════════════
+// Заливка зон
+hline( buyThr,  "Buy zone",  color=color.new(color.green,60), linestyle=hline.style_dashed)
+hline( sellThr, "Sell zone", color=color.new(color.red,  60), linestyle=hline.style_dashed)
+hline(0, "Zero", color=color.new(color.gray, 50))
 
-// =============================================================================
-//  РИСК: ВХОД / STOP / TARGET / ВРЕМЯ
-// =============================================================================
-f_calcLevels(isBuy) =>
+// Гистограмма счёта (всегда видна)
+scoreCol = score > 0 ? color.new(color.green, 20) : color.new(color.red, 20)
+plot(score, "Счёт", color=scoreCol, style=plot.style_histogram, linewidth=3)
+plot(score, "Линия счёта", color=scoreCol, linewidth=1)
+
+// Стрелки сигналов
+plotshape(buy,  "BUY",  shape.triangleup,   location.bottom, color.lime,  size=size.small)
+plotshape(sell, "SELL", shape.triangledown, location.top,    color.red,   size=size.small)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  МЕТКИ С УРОВНЯМИ (рисуем на score-панели)
+// ══════════════════════════════════════════════════════════════════════════════
+calcLevels(isBuy) =>
     entry = close
-    stop  = isBuy ? entry - atr * slAtrMul : entry + atr * slAtrMul
-    risk  = math.abs(entry - stop)
-    tp1   = isBuy ? entry + risk * rr1 : entry - risk * rr1
-    tp2   = isBuy ? entry + risk * rr2 : entry - risk * rr2
-    barsToTp1 = atr * moveEff > 0 ? math.round(math.abs(tp1 - entry) / (atr * moveEff)) : na
-    [entry, stop, tp1, tp2, barsToTp1]
+    sl    = isBuy ? entry - _atr*slMul : entry + _atr*slMul
+    risk  = math.abs(entry - sl)
+    tp1   = isBuy ? entry + risk*rr1 : entry - risk*rr1
+    tp2   = isBuy ? entry + risk*rr2 : entry - risk*rr2
+    bars  = _atr*moveEff > 0 ? math.round(risk*rr1 / (_atr*moveEff)) : 0
+    [entry, sl, tp1, tp2, bars]
 
-f_barsToTime(bars) =>
-    secPerBar = timeframe.in_seconds(timeframe.period)
-    totalSec  = bars * secPerBar
-    hours     = totalSec / 3600.0
-    hours < 1 ? str.tostring(math.round(totalSec / 60.0)) + " мин" : hours < 48 ? str.tostring(math.round(hours, 1)) + " ч" : str.tostring(math.round(hours / 24.0, 1)) + " дн"
+barsToStr(bars) =>
+    sec   = bars * timeframe.in_seconds(timeframe.period)
+    hours = sec / 3600.0
+    hours < 1 ? str.tostring(math.round(sec/60)) + " мин" :
+     hours < 48 ? str.tostring(math.round(hours,1)) + " ч" :
+     str.tostring(math.round(hours/24,1)) + " дн"
 
-// =============================================================================
-//  ВИЗУАЛИЗАЦИЯ
-// =============================================================================
-var line slLine = na
-var line tp1Line = na
-var line tp2Line = na
-var line enLine = na
+if buy
+    [en, sl, t1, t2, b] = calcLevels(true)
+    txt = "▲ BUY\nВход : " + str.tostring(en, format.mintick) +
+          "\nSL    : " + str.tostring(sl, format.mintick) +
+          "\nTP1   : " + str.tostring(t1, format.mintick) +
+          "\nTP2   : " + str.tostring(t2, format.mintick) +
+          "\n⏱ ~"  + barsToStr(b) +
+          "\n🎯 "  + str.tostring(confidence) + "%"
+    label.new(bar_index, buyThr + 5, txt, style=label.style_label_up,
+              color=color.new(color.green,10), textcolor=color.white, size=size.small)
 
-f_drawLevels(entry, stop, tp1, tp2) =>
-    if showLevels
-        line.delete(slLine)
-        line.delete(tp1Line)
-        line.delete(tp2Line)
-        line.delete(enLine)
-        enLine  := line.new(bar_index, entry, bar_index + 30, entry, color=color.gray,  style=line.style_dotted, width=1)
-        slLine  := line.new(bar_index, stop,  bar_index + 30, stop,  color=color.red,   style=line.style_dashed, width=1)
-        tp1Line := line.new(bar_index, tp1,   bar_index + 30, tp1,   color=color.teal,  style=line.style_dashed, width=1)
-        tp2Line := line.new(bar_index, tp2,   bar_index + 30, tp2,   color=color.green, style=line.style_dashed, width=1)
+if sell
+    [en, sl, t1, t2, b] = calcLevels(false)
+    txt = "▼ SELL\nВход : " + str.tostring(en, format.mintick) +
+          "\nSL    : " + str.tostring(sl, format.mintick) +
+          "\nTP1   : " + str.tostring(t1, format.mintick) +
+          "\nTP2   : " + str.tostring(t2, format.mintick) +
+          "\n⏱ ~"  + barsToStr(b) +
+          "\n🎯 "  + str.tostring(confidence) + "%"
+    label.new(bar_index, sellThr - 5, txt, style=label.style_label_down,
+              color=color.new(color.red,10), textcolor=color.white, size=size.small)
 
-if buySignal
-    [entry, stop, tp1, tp2, bars] = f_calcLevels(true)
-    f_drawLevels(entry, stop, tp1, tp2)
-    if showLabels
-        txt = "🟢 BUY  " + str.tostring(math.round(score)) + "\nВход: " + str.tostring(entry, format.mintick) + "\nSL: " + str.tostring(stop, format.mintick) + "\nTP1: " + str.tostring(tp1, format.mintick) + " | TP2: " + str.tostring(tp2, format.mintick) + "\n⏱ ~" + (na(bars) ? "n/a" : str.tostring(bars) + " бар / " + f_barsToTime(bars)) + "\n🎯 Увер.: " + str.tostring(confidence) + "%"
-        label.new(bar_index, low, txt, style=label.style_label_up, color=color.new(color.green, 15), textcolor=color.white, size=size.normal)
-
-if sellSignal
-    [entry, stop, tp1, tp2, bars] = f_calcLevels(false)
-    f_drawLevels(entry, stop, tp1, tp2)
-    if showLabels
-        txt = "🔴 SELL  " + str.tostring(math.round(score)) + "\nВход: " + str.tostring(entry, format.mintick) + "\nSL: " + str.tostring(stop, format.mintick) + "\nTP1: " + str.tostring(tp1, format.mintick) + " | TP2: " + str.tostring(tp2, format.mintick) + "\n⏱ ~" + (na(bars) ? "n/a" : str.tostring(bars) + " бар / " + f_barsToTime(bars)) + "\n🎯 Увер.: " + str.tostring(confidence) + "%"
-        label.new(bar_index, high, txt, style=label.style_label_down, color=color.new(color.red, 15), textcolor=color.white, size=size.normal)
-
-bgcolor(score >= buyThr ? color.new(color.green, 92) : score <= sellThr ? color.new(color.red, 92) : na)
-
-// Гарантированно видимые элементы: окраска баров по биасу + стрелки сигналов
-barcolor(score >= buyThr ? color.lime : score <= sellThr ? color.red : color.gray)
-plotshape(buySignal,  title="BUY",  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.small)
-plotshape(sellSignal, title="SELL", style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.small)
-
-// Линия ключевого уровня (если задан)
-plot(useKeyLevel and keyLevel > 0 ? keyLevel : na, "Ключевой уровень", color=color.new(color.orange, 0), linewidth=2, style=plot.style_linebr)
-
-// =============================================================================
+// ══════════════════════════════════════════════════════════════════════════════
 //  ИНФОРМАЦИОННАЯ ПАНЕЛЬ
-// =============================================================================
-f_scoreColor(s) => s > 0 ? color.new(color.green, 0) : s < 0 ? color.new(color.red, 0) : color.gray
-f_scoreTxt(s)   => str.tostring(math.round(s * 100))
+// ══════════════════════════════════════════════════════════════════════════════
+sCol(s) => s > 0 ? color.new(color.green,50) : s < 0 ? color.new(color.red,50) : color.new(color.gray,50)
+sTxt(s) => str.tostring(math.round(s*100))
 
-if showPanel and barstate.islast
-    var table panel = table.new(position.top_right, 2, 7, border_width=1, frame_color=color.gray, frame_width=1)
-    table.cell(panel, 0, 0, "SMS PRO", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small)
-    bias  = score >= buyThr ? "ЛОНГ ▲" : score <= sellThr ? "ШОРТ ▼" : "НЕЙТРАЛ ●"
-    biasC = score >= buyThr ? color.green : score <= sellThr ? color.red : color.gray
-    table.cell(panel, 1, 0, bias, text_color=color.white, bgcolor=color.new(biasC, 0), text_size=size.small)
-    table.cell(panel, 0, 1, "Композит. счёт", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 1, str.tostring(math.round(score)) + " / 100", text_color=color.white, bgcolor=color.new(f_scoreColor(score), 70), text_size=size.small)
-    table.cell(panel, 0, 2, "Тренд", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 2, f_scoreTxt(trendScore), text_color=color.white, bgcolor=color.new(f_scoreColor(trendScore), 60), text_size=size.small)
-    table.cell(panel, 0, 3, "Корреляция", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 3, f_scoreTxt(corrScore), text_color=color.white, bgcolor=color.new(f_scoreColor(corrScore), 60), text_size=size.small)
-    table.cell(panel, 0, 4, "Макро", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 4, f_scoreTxt(macroScore), text_color=color.white, bgcolor=color.new(f_scoreColor(macroScore), 60), text_size=size.small)
-    table.cell(panel, 0, 5, "Smart Money", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 5, f_scoreTxt(smcScore), text_color=color.white, bgcolor=color.new(f_scoreColor(smcScore), 60), text_size=size.small)
-    table.cell(panel, 0, 6, "Уверенность", text_color=color.white, text_size=size.small)
-    table.cell(panel, 1, 6, str.tostring(confidence) + "%", text_color=color.white, bgcolor=color.new(color.purple, 50), text_size=size.small)
+if showTbl and barstate.islast
+    var table p = table.new(position.top_right, 2, 7,
+                            border_width=1, frame_color=color.gray, frame_width=1)
+    biasLbl = score >= buyThr ? "ЛОНГ ▲" : score <= sellThr ? "ШОРТ ▼" : "НЕЙТРАЛ"
+    biasCol = score >= buyThr ? color.green : score <= sellThr ? color.red : color.gray
+    table.cell(p,0,0,"SMS PRO",     bgcolor=color.navy,     text_color=color.white, text_size=size.small)
+    table.cell(p,1,0, biasLbl,      bgcolor=biasCol,        text_color=color.white, text_size=size.small)
+    table.cell(p,0,1,"Счёт",        text_color=color.white, text_size=size.small)
+    table.cell(p,1,1, str.tostring(math.round(score)) + " / 100",
+                                    bgcolor=sCol(score),    text_color=color.white, text_size=size.small)
+    table.cell(p,0,2,"Тренд",       text_color=color.white, text_size=size.small)
+    table.cell(p,1,2, sTxt(trendScore), bgcolor=sCol(trendScore), text_color=color.white, text_size=size.small)
+    table.cell(p,0,3,"Корреляция",  text_color=color.white, text_size=size.small)
+    table.cell(p,1,3, sTxt(corrScore),  bgcolor=sCol(corrScore),  text_color=color.white, text_size=size.small)
+    table.cell(p,0,4,"Макро",       text_color=color.white, text_size=size.small)
+    table.cell(p,1,4, sTxt(macroScore), bgcolor=sCol(macroScore), text_color=color.white, text_size=size.small)
+    table.cell(p,0,5,"Smart Money", text_color=color.white, text_size=size.small)
+    table.cell(p,1,5, sTxt(smcScore),   bgcolor=sCol(smcScore),   text_color=color.white, text_size=size.small)
+    table.cell(p,0,6,"Уверенность", text_color=color.white, text_size=size.small)
+    table.cell(p,1,6, str.tostring(confidence) + "%",
+                                    bgcolor=color.new(color.purple,50), text_color=color.white, text_size=size.small)
 
-// =============================================================================
+// ══════════════════════════════════════════════════════════════════════════════
 //  МУЛЬТИТАЙМФРЕЙМ
-// =============================================================================
-f_simpleBias() =>
-    ef = ta.ema(close, emaFastLen)
-    es = ta.ema(close, emaSlowLen)
+// ══════════════════════════════════════════════════════════════════════════════
+simpleBias() =>
+    ef = ta.ema(close, emaFast)
+    es = ta.ema(close, emaSlow)
     r  = ta.rsi(close, rsiLen)
-    s  = (close > ef ? 0.34 : -0.34) + (ef > es ? 0.33 : -0.33) + f_clamp1((r - 50) / 25) * 0.33
-    f_clamp1(s) * 100
+    s  = (close>ef?0.34:-0.34) + (ef>es?0.33:-0.33) + clamp1((r-50)/25)*0.33
+    clamp1(s) * 100.0
 
-b1 = request.security(syminfo.tickerid, tf1, f_simpleBias(), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-b2 = request.security(syminfo.tickerid, tf2, f_simpleBias(), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-b3 = request.security(syminfo.tickerid, tf3, f_simpleBias(), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-b4 = request.security(syminfo.tickerid, tf4, f_simpleBias(), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+b1 = request.security(syminfo.tickerid, tf1, simpleBias(), lookahead=barmerge.lookahead_off)
+b2 = request.security(syminfo.tickerid, tf2, simpleBias(), lookahead=barmerge.lookahead_off)
+b3 = request.security(syminfo.tickerid, tf3, simpleBias(), lookahead=barmerge.lookahead_off)
+b4 = request.security(syminfo.tickerid, tf4, simpleBias(), lookahead=barmerge.lookahead_off)
 
-f_mtfTxt(b) => b > 20 ? "BUY" : b < -20 ? "SELL" : "—"
-f_mtfCol(b) => b > 20 ? color.green : b < -20 ? color.red : color.gray
+mtfTxt(b) => nz0(b) > 20 ? "BUY ▲" : nz0(b) < -20 ? "SELL ▼" : "—"
+mtfCol(b) => nz0(b) > 20 ? color.new(color.green,30) : nz0(b) < -20 ? color.new(color.red,30) : color.new(color.gray,50)
 
 if showMTF and barstate.islast
-    var table mtf = table.new(position.bottom_right, 2, 5, border_width=1, frame_color=color.gray, frame_width=1)
-    table.cell(mtf, 0, 0, "ТФ", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small)
-    table.cell(mtf, 1, 0, "Сигнал", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small)
-    table.cell(mtf, 0, 1, tf1, text_color=color.white, text_size=size.small)
-    table.cell(mtf, 1, 1, f_mtfTxt(b1), text_color=color.white, bgcolor=color.new(f_mtfCol(b1), 30), text_size=size.small)
-    table.cell(mtf, 0, 2, tf2, text_color=color.white, text_size=size.small)
-    table.cell(mtf, 1, 2, f_mtfTxt(b2), text_color=color.white, bgcolor=color.new(f_mtfCol(b2), 30), text_size=size.small)
-    table.cell(mtf, 0, 3, tf3, text_color=color.white, text_size=size.small)
-    table.cell(mtf, 1, 3, f_mtfTxt(b3), text_color=color.white, bgcolor=color.new(f_mtfCol(b3), 30), text_size=size.small)
-    table.cell(mtf, 0, 4, tf4, text_color=color.white, text_size=size.small)
-    table.cell(mtf, 1, 4, f_mtfTxt(b4), text_color=color.white, bgcolor=color.new(f_mtfCol(b4), 30), text_size=size.small)
+    var table m = table.new(position.bottom_right, 2, 5,
+                            border_width=1, frame_color=color.gray, frame_width=1)
+    table.cell(m,0,0,"ТФ",    bgcolor=color.navy, text_color=color.white, text_size=size.small)
+    table.cell(m,1,0,"Сигнал",bgcolor=color.navy, text_color=color.white, text_size=size.small)
+    table.cell(m,0,1, tf1, text_color=color.white, text_size=size.small)
+    table.cell(m,1,1, mtfTxt(b1), bgcolor=mtfCol(b1), text_color=color.white, text_size=size.small)
+    table.cell(m,0,2, tf2, text_color=color.white, text_size=size.small)
+    table.cell(m,1,2, mtfTxt(b2), bgcolor=mtfCol(b2), text_color=color.white, text_size=size.small)
+    table.cell(m,0,3, tf3, text_color=color.white, text_size=size.small)
+    table.cell(m,1,3, mtfTxt(b3), bgcolor=mtfCol(b3), text_color=color.white, text_size=size.small)
+    table.cell(m,0,4, tf4, text_color=color.white, text_size=size.small)
+    table.cell(m,1,4, mtfTxt(b4), bgcolor=mtfCol(b4), text_color=color.white, text_size=size.small)
 
-// =============================================================================
+// ══════════════════════════════════════════════════════════════════════════════
 //  АЛЕРТЫ
-// =============================================================================
-alertcondition(buySignal,  title="BUY сигнал",  message="SMS PRO: BUY на {{ticker}} ({{interval}}), счёт пробил порог покупки")
-alertcondition(sellSignal, title="SELL сигнал", message="SMS PRO: SELL на {{ticker}} ({{interval}}), счёт пробил порог продажи")
+// ══════════════════════════════════════════════════════════════════════════════
+alertcondition(buy,  "BUY",  "SMS PRO: BUY {{ticker}} ({{interval}})")
+alertcondition(sell, "SELL", "SMS PRO: SELL {{ticker}} ({{interval}})")
