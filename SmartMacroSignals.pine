@@ -1,5 +1,5 @@
 //@version=6
-indicator("Smart Macro Signals PRO", "SMS PRO", overlay=false, max_labels_count=200, max_lines_count=200)
+indicator("Smart Macro Signals PRO", "SMS PRO", overlay=false, max_labels_count=50, max_lines_count=50)
 
 // ── НАСТРОЙКИ ────────────────────────────────────────────────────────────────
 wTrend  = input.float(1.0, "Вес Тренд",       minval=0, maxval=3, step=0.1, group="Веса")
@@ -7,29 +7,30 @@ wCorr   = input.float(1.0, "Вес Корреляция",  minval=0, maxval=3, s
 wMacro  = input.float(0.5, "Вес Макро",       minval=0, maxval=3, step=0.1, group="Веса")
 wSMC    = input.float(1.0, "Вес Smart Money", minval=0, maxval=3, step=0.1, group="Веса")
 
-buyThr  = input.float( 25, "Порог BUY (≥)",       minval=5,   maxval=90,  step=1,    group="Сигналы")
-sellThr = input.float(-25, "Порог SELL (≤)",      minval=-90, maxval=-5,  step=1,    group="Сигналы")
-confMin = input.float( 30, "Мин. уверенность %",  minval=0,   maxval=100, step=5,    group="Сигналы")
+buyThr  = input.float( 25, "Порог BUY (≥)",      minval=5,   maxval=90, step=1, group="Сигналы")
+sellThr = input.float(-25, "Порог SELL (≤)",     minval=-90, maxval=-5, step=1, group="Сигналы")
+confMin = input.float( 30, "Мин. уверенность %", minval=0, maxval=100, step=5, group="Сигналы")
+maxLbls = input.int(5, "Макс. меток на графике", minval=1, maxval=20, group="Сигналы")
 
-emaFast  = input.int(50,  "EMA быстрая",          minval=2,  group="Тренд")
-emaSlow  = input.int(200, "EMA медленная",         minval=10, group="Тренд")
-rsiLen   = input.int(14,  "RSI период",            minval=2,  group="Тренд")
+emaFast  = input.int(50,  "EMA быстрая",  minval=2,  group="Тренд")
+emaSlow  = input.int(200, "EMA медленная",minval=10, group="Тренд")
+rsiLen   = input.int(14,  "RSI период",   minval=2,  group="Тренд")
 
-corrLen  = input.int(50, "Окно корреляции",        minval=10, group="Корреляция")
-sym1     = input.symbol("TVC:DXY",         "Актив 1 (DXY)",  group="Корреляция")
-sym2     = input.symbol("SP:SPX",          "Актив 2 (SPX)",  group="Корреляция")
-sym3     = input.symbol("TVC:GOLD",        "Актив 3 (Gold)", group="Корреляция")
-sym4     = input.symbol("BINANCE:BTCUSDT", "Актив 4 (BTC)",  group="Корреляция")
+corrLen  = input.int(50, "Окно корреляции", minval=10, group="Корреляция")
+sym1     = input.symbol("TVC:DXY",         "Актив 1 DXY",  group="Корреляция")
+sym2     = input.symbol("SP:SPX",          "Актив 2 SPX",  group="Корреляция")
+sym3     = input.symbol("TVC:GOLD",        "Актив 3 Gold", group="Корреляция")
+sym4     = input.symbol("BINANCE:BTCUSDT", "Актив 4 BTC",  group="Корреляция")
 
 symYield = input.symbol("TVC:US10Y", "US10Y", group="Макро")
 symVix   = input.symbol("CBOE:VIX",  "VIX",   group="Макро")
 
-swingLen = input.int(10,  "Pivot-свинг",      minval=2,   group="Smart Money")
-atrLen   = input.int(14,  "ATR период",       minval=2,   group="Риск")
-slMul    = input.float(1.5,"SL = ATR ×",      minval=0.2, step=0.1, group="Риск")
-rr1      = input.float(1.5,"TP1 R:R",         minval=0.5, step=0.1, group="Риск")
-rr2      = input.float(3.0,"TP2 R:R",         minval=0.5, step=0.1, group="Риск")
-moveEff  = input.float(0.5,"Эффективность хода", minval=0.1, maxval=1.0, step=0.05, group="Риск")
+swingLen = input.int(10,   "Pivot-свинг",       minval=2,   group="Smart Money")
+atrLen   = input.int(14,   "ATR период",        minval=2,   group="Риск")
+slMul    = input.float(1.5,"SL = ATR ×",        minval=0.2, step=0.1, group="Риск")
+rr1      = input.float(1.5,"TP1 R:R",           minval=0.5, step=0.1, group="Риск")
+rr2      = input.float(3.0,"TP2 R:R",           minval=0.5, step=0.1, group="Риск")
+moveEff  = input.float(0.5,"Эффективность хода",minval=0.1, maxval=1.0, step=0.05, group="Риск")
 
 showTbl  = input.bool(true, "Панель с цифрами",   group="Вид")
 showMTF  = input.bool(true, "Таблица таймфреймов", group="Вид")
@@ -59,14 +60,14 @@ rocS       = soft(_roc, 5.0)
 trendScore = clamp1((emaAlign + emaSlope + rsiS + macdS + rocS) / 5.0)
 
 // ── МОДУЛЬ 2: КОРРЕЛЯЦИЯ ─────────────────────────────────────────────────────
-a1c = request.security(sym1, timeframe.period, close,           lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-a1e = request.security(sym1, timeframe.period, ta.ema(close,50),lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-a2c = request.security(sym2, timeframe.period, close,           lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-a2e = request.security(sym2, timeframe.period, ta.ema(close,50),lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-a3c = request.security(sym3, timeframe.period, close,           lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-a3e = request.security(sym3, timeframe.period, ta.ema(close,50),lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-a4c = request.security(sym4, timeframe.period, close,           lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-a4e = request.security(sym4, timeframe.period, ta.ema(close,50),lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a1c = request.security(sym1, timeframe.period, close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a1e = request.security(sym1, timeframe.period, ta.ema(close, 50),lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a2c = request.security(sym2, timeframe.period, close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a2e = request.security(sym2, timeframe.period, ta.ema(close, 50),lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a3c = request.security(sym3, timeframe.period, close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a3e = request.security(sym3, timeframe.period, ta.ema(close, 50),lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a4c = request.security(sym4, timeframe.period, close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a4e = request.security(sym4, timeframe.period, ta.ema(close, 50),lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
 
 contrib(ac, ae) => na(ac) or na(ae) ? 0.0 : clamp1(nz0(ta.correlation(close, ac, corrLen)) * (ac > ae ? 1.0 : -1.0))
 
@@ -77,10 +78,10 @@ c4 = contrib(a4c, a4e)
 corrScore = clamp1((c1 + c2 + c3 + c4) / 4.0)
 
 // ── МОДУЛЬ 3: МАКРО ──────────────────────────────────────────────────────────
-yNow = request.security(symYield, "D", close,             lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-yMa  = request.security(symYield, "D", ta.sma(close, 20), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-vNow = request.security(symVix,   "D", close,             lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
-vMa  = request.security(symVix,   "D", ta.sma(close, 20), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+yNow = request.security(symYield, "D", close,              lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+yMa  = request.security(symYield, "D", ta.sma(close, 20),  lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+vNow = request.security(symVix,   "D", close,              lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+vMa  = request.security(symVix,   "D", ta.sma(close, 20),  lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
 
 yS = (na(yNow) or na(yMa)) ? 0.0 : -soft(yNow - yMa, math.max(yMa * 0.05, 0.01))
 vS = (na(vNow) or na(vMa)) ? 0.0 : -soft(vNow - vMa, math.max(vMa * 0.15, 1.0))
@@ -113,10 +114,10 @@ wSum  = math.max(wTrend + wCorr + wMacro + wSMC, 0.0001)
 raw   = (trendScore * wTrend + corrScore * wCorr + macroScore * wMacro + smcScore * wSMC) / wSum
 score = nz0(raw) * 100.0
 
-ag1   = math.sign(trendScore) == math.sign(raw) and trendScore != 0 ? 1 : 0
-ag2   = math.sign(corrScore)  == math.sign(raw) and corrScore  != 0 ? 1 : 0
-ag3   = math.sign(macroScore) == math.sign(raw) and macroScore != 0 ? 1 : 0
-ag4   = math.sign(smcScore)   == math.sign(raw) and smcScore   != 0 ? 1 : 0
+ag1 = math.sign(trendScore) == math.sign(raw) and trendScore != 0 ? 1 : 0
+ag2 = math.sign(corrScore)  == math.sign(raw) and corrScore  != 0 ? 1 : 0
+ag3 = math.sign(macroScore) == math.sign(raw) and macroScore != 0 ? 1 : 0
+ag4 = math.sign(smcScore)   == math.sign(raw) and smcScore   != 0 ? 1 : 0
 confidence = math.round(math.min(100, math.abs(score) * 0.6 + (ag1 + ag2 + ag3 + ag4) * 10))
 
 // ── СИГНАЛЫ ──────────────────────────────────────────────────────────────────
@@ -128,65 +129,68 @@ if buy
 if sell
     state := -1
 
-// ── ВИЗУАЛИЗАЦИЯ ─────────────────────────────────────────────────────────────
-hline(buyThr,  "Buy zone",  color=color.new(color.green, 60), linestyle=hline.style_dashed)
-hline(sellThr, "Sell zone", color=color.new(color.red,   60), linestyle=hline.style_dashed)
-hline(0,       "Zero",      color=color.new(color.gray,  50))
+// ── ГИСТОГРАММА СЧЁТА (всегда видна) ────────────────────────────────────────
+hline(buyThr,  "BUY порог",  color=color.new(color.green, 40), linestyle=hline.style_dashed)
+hline(sellThr, "SELL порог", color=color.new(color.red,   40), linestyle=hline.style_dashed)
+hline(0, "Ноль", color=color.new(color.gray, 60))
 
-scoreCol = score > 0 ? color.new(color.green, 20) : color.new(color.red, 20)
-plot(score, "Счёт",        color=scoreCol, style=plot.style_histogram, linewidth=3)
-plot(score, "Линия счёта", color=scoreCol, linewidth=1)
+scoreCol = score > 0 ? color.new(color.green, 25) : color.new(color.red, 25)
+plot(score, "Счёт", color=scoreCol, style=plot.style_histogram, linewidth=4)
+plot(score, "Линия", color=color.new(scoreCol, 0), linewidth=2)
 
-plotshape(buy,  "BUY",  shape.triangleup,   location.bottom, color.lime, size=size.small)
-plotshape(sell, "SELL", shape.triangledown, location.top,    color.red,  size=size.small)
+plotshape(buy,  "BUY  ▲", shape.triangleup,   location.bottom, color.lime, size=size.normal)
+plotshape(sell, "SELL ▼", shape.triangledown, location.top,    color.red,  size=size.normal)
 
-// ── МЕТКИ С УРОВНЯМИ ─────────────────────────────────────────────────────────
+// ── МЕТКИ: ТОЛЬКО ПОСЛЕДНИЕ N ────────────────────────────────────────────────
+// Храним метки в массиве, при переполнении удаляем старые
+var label[] lblArr = array.new_label()
+
+addLabel(isBuy) =>
+    sl   = isBuy ? close - _atr * slMul : close + _atr * slMul
+    risk = math.abs(close - sl)
+    tp1  = isBuy ? close + risk * rr1 : close - risk * rr1
+    tp2  = isBuy ? close + risk * rr2 : close - risk * rr2
+    bars = _atr * moveEff > 0 ? math.round(risk * rr1 / (_atr * moveEff)) : 0
+    sec  = bars * timeframe.in_seconds(timeframe.period)
+    hrs  = sec / 3600.0
+    tstr = hrs < 1 ? str.tostring(math.round(sec / 60)) + "м" : hrs < 48 ? str.tostring(math.round(hrs, 1)) + "ч" : str.tostring(math.round(hrs / 24, 1)) + "д"
+    dir  = isBuy ? "▲ BUY" : "▼ SELL"
+    txt  = dir + "  " + str.tostring(math.round(score)) + "\n" + "Вход " + str.tostring(close, format.mintick) + "\n" + "SL     " + str.tostring(sl, format.mintick) + "\n" + "TP1  " + str.tostring(tp1, format.mintick) + "\n" + "TP2  " + str.tostring(tp2, format.mintick) + "\n" + "⏱ " + tstr + "   🎯 " + str.tostring(confidence) + "%"
+    ypos  = isBuy ? buyThr + 8 : sellThr - 8
+    styl  = isBuy ? label.style_label_up : label.style_label_down
+    clr   = isBuy ? color.new(color.green, 5) : color.new(color.red, 5)
+    lbl   = label.new(bar_index, ypos, txt, style=styl, color=clr, textcolor=color.white, size=size.normal)
+    array.push(lblArr, lbl)
+    if array.size(lblArr) > maxLbls
+        label.delete(array.shift(lblArr))
+
 if buy
-    sl   = close - _atr * slMul
-    risk = math.abs(close - sl)
-    tp1  = close + risk * rr1
-    tp2  = close + risk * rr2
-    bars = _atr * moveEff > 0 ? math.round(risk * rr1 / (_atr * moveEff)) : 0
-    sec  = bars * timeframe.in_seconds(timeframe.period)
-    hrs  = sec / 3600.0
-    tstr = hrs < 1 ? str.tostring(math.round(sec / 60)) + " мин" : hrs < 48 ? str.tostring(math.round(hrs, 1)) + " ч" : str.tostring(math.round(hrs / 24, 1)) + " дн"
-    txt  = "▲ BUY\nВход: " + str.tostring(close, format.mintick) + "\nSL: " + str.tostring(sl, format.mintick) + "\nTP1: " + str.tostring(tp1, format.mintick) + "\nTP2: " + str.tostring(tp2, format.mintick) + "\n⏱ ~" + tstr + "\n🎯 " + str.tostring(confidence) + "%"
-    label.new(bar_index, buyThr + 5, txt, style=label.style_label_up, color=color.new(color.green, 10), textcolor=color.white, size=size.small)
-
+    addLabel(true)
 if sell
-    sl   = close + _atr * slMul
-    risk = math.abs(close - sl)
-    tp1  = close - risk * rr1
-    tp2  = close - risk * rr2
-    bars = _atr * moveEff > 0 ? math.round(risk * rr1 / (_atr * moveEff)) : 0
-    sec  = bars * timeframe.in_seconds(timeframe.period)
-    hrs  = sec / 3600.0
-    tstr = hrs < 1 ? str.tostring(math.round(sec / 60)) + " мин" : hrs < 48 ? str.tostring(math.round(hrs, 1)) + " ч" : str.tostring(math.round(hrs / 24, 1)) + " дн"
-    txt  = "▼ SELL\nВход: " + str.tostring(close, format.mintick) + "\nSL: " + str.tostring(sl, format.mintick) + "\nTP1: " + str.tostring(tp1, format.mintick) + "\nTP2: " + str.tostring(tp2, format.mintick) + "\n⏱ ~" + tstr + "\n🎯 " + str.tostring(confidence) + "%"
-    label.new(bar_index, sellThr - 5, txt, style=label.style_label_down, color=color.new(color.red, 10), textcolor=color.white, size=size.small)
+    addLabel(false)
 
-// ── ПАНЕЛЬ ───────────────────────────────────────────────────────────────────
-sCol(s) => s > 0 ? color.new(color.green, 50) : s < 0 ? color.new(color.red, 50) : color.new(color.gray, 50)
+// ── ПАНЕЛЬ (крупнее) ─────────────────────────────────────────────────────────
+sCol(s) => s > 0 ? color.new(color.green, 40) : s < 0 ? color.new(color.red, 40) : color.new(color.gray, 40)
 sTxt(s) => str.tostring(math.round(s * 100))
 
 if showTbl and barstate.islast
-    var table p = table.new(position.top_right, 2, 7, border_width=1, frame_color=color.gray, frame_width=1)
-    biasLbl = score >= buyThr ? "ЛОНГ ▲" : score <= sellThr ? "ШОРТ ▼" : "НЕЙТРАЛ"
-    biasCol = score >= buyThr ? color.green : score <= sellThr ? color.red : color.gray
-    table.cell(p, 0, 0, "SMS PRO",    bgcolor=color.navy,       text_color=color.white, text_size=size.small)
-    table.cell(p, 1, 0, biasLbl,      bgcolor=biasCol,          text_color=color.white, text_size=size.small)
-    table.cell(p, 0, 1, "Счёт",       text_color=color.white,   text_size=size.small)
-    table.cell(p, 1, 1, str.tostring(math.round(score)) + "/100", bgcolor=sCol(score), text_color=color.white, text_size=size.small)
-    table.cell(p, 0, 2, "Тренд",      text_color=color.white,   text_size=size.small)
-    table.cell(p, 1, 2, sTxt(trendScore),  bgcolor=sCol(trendScore),  text_color=color.white, text_size=size.small)
-    table.cell(p, 0, 3, "Корреляция", text_color=color.white,   text_size=size.small)
-    table.cell(p, 1, 3, sTxt(corrScore),   bgcolor=sCol(corrScore),   text_color=color.white, text_size=size.small)
-    table.cell(p, 0, 4, "Макро",      text_color=color.white,   text_size=size.small)
-    table.cell(p, 1, 4, sTxt(macroScore),  bgcolor=sCol(macroScore),  text_color=color.white, text_size=size.small)
-    table.cell(p, 0, 5, "Smart Money",text_color=color.white,   text_size=size.small)
-    table.cell(p, 1, 5, sTxt(smcScore),    bgcolor=sCol(smcScore),    text_color=color.white, text_size=size.small)
-    table.cell(p, 0, 6, "Уверенность",text_color=color.white,   text_size=size.small)
-    table.cell(p, 1, 6, str.tostring(confidence) + "%", bgcolor=color.new(color.purple, 50), text_color=color.white, text_size=size.small)
+    var table p = table.new(position.top_right, 2, 7, border_width=1, frame_color=color.gray, frame_width=1, bgcolor=color.new(color.black, 30))
+    biasLbl = score >= buyThr ? "ЛОНГ  ▲" : score <= sellThr ? "ШОРТ  ▼" : "НЕЙТРАЛ"
+    biasCol = score >= buyThr ? color.new(color.green, 20) : score <= sellThr ? color.new(color.red, 20) : color.new(color.gray, 40)
+    table.cell(p, 0, 0, "SMS PRO",     bgcolor=color.navy,   text_color=color.white, text_size=size.normal)
+    table.cell(p, 1, 0, biasLbl,       bgcolor=biasCol,      text_color=color.white, text_size=size.normal)
+    table.cell(p, 0, 1, "Счёт",        text_color=color.white, text_size=size.normal)
+    table.cell(p, 1, 1, str.tostring(math.round(score)) + " / 100", bgcolor=sCol(score), text_color=color.white, text_size=size.normal)
+    table.cell(p, 0, 2, "Тренд",       text_color=color.white, text_size=size.normal)
+    table.cell(p, 1, 2, sTxt(trendScore),  bgcolor=sCol(trendScore),  text_color=color.white, text_size=size.normal)
+    table.cell(p, 0, 3, "Корреляция",  text_color=color.white, text_size=size.normal)
+    table.cell(p, 1, 3, sTxt(corrScore),   bgcolor=sCol(corrScore),   text_color=color.white, text_size=size.normal)
+    table.cell(p, 0, 4, "Макро",       text_color=color.white, text_size=size.normal)
+    table.cell(p, 1, 4, sTxt(macroScore),  bgcolor=sCol(macroScore),  text_color=color.white, text_size=size.normal)
+    table.cell(p, 0, 5, "Smart Money", text_color=color.white, text_size=size.normal)
+    table.cell(p, 1, 5, sTxt(smcScore),    bgcolor=sCol(smcScore),    text_color=color.white, text_size=size.normal)
+    table.cell(p, 0, 6, "Уверенность", text_color=color.white, text_size=size.normal)
+    table.cell(p, 1, 6, str.tostring(confidence) + "%", bgcolor=color.new(color.purple, 30), text_color=color.white, text_size=size.normal)
 
 // ── МУЛЬТИТАЙМФРЕЙМ ──────────────────────────────────────────────────────────
 simpleBias() =>
@@ -201,21 +205,21 @@ b2 = request.security(syminfo.tickerid, tf2, simpleBias(), lookahead=barmerge.lo
 b3 = request.security(syminfo.tickerid, tf3, simpleBias(), lookahead=barmerge.lookahead_off)
 b4 = request.security(syminfo.tickerid, tf4, simpleBias(), lookahead=barmerge.lookahead_off)
 
-mtfTxt(b) => nz0(b) > 20 ? "BUY ▲" : nz0(b) < -20 ? "SELL ▼" : "—"
+mtfTxt(b) => nz0(b) > 20 ? "BUY  ▲" : nz0(b) < -20 ? "SELL ▼" : "  —"
 mtfCol(b) => nz0(b) > 20 ? color.new(color.green, 30) : nz0(b) < -20 ? color.new(color.red, 30) : color.new(color.gray, 50)
 
 if showMTF and barstate.islast
-    var table m = table.new(position.bottom_right, 2, 5, border_width=1, frame_color=color.gray, frame_width=1)
-    table.cell(m, 0, 0, "ТФ",     bgcolor=color.navy, text_color=color.white, text_size=size.small)
-    table.cell(m, 1, 0, "Сигнал", bgcolor=color.navy, text_color=color.white, text_size=size.small)
-    table.cell(m, 0, 1, tf1, text_color=color.white, text_size=size.small)
-    table.cell(m, 1, 1, mtfTxt(b1), bgcolor=mtfCol(b1), text_color=color.white, text_size=size.small)
-    table.cell(m, 0, 2, tf2, text_color=color.white, text_size=size.small)
-    table.cell(m, 1, 2, mtfTxt(b2), bgcolor=mtfCol(b2), text_color=color.white, text_size=size.small)
-    table.cell(m, 0, 3, tf3, text_color=color.white, text_size=size.small)
-    table.cell(m, 1, 3, mtfTxt(b3), bgcolor=mtfCol(b3), text_color=color.white, text_size=size.small)
-    table.cell(m, 0, 4, tf4, text_color=color.white, text_size=size.small)
-    table.cell(m, 1, 4, mtfTxt(b4), bgcolor=mtfCol(b4), text_color=color.white, text_size=size.small)
+    var table m = table.new(position.bottom_right, 2, 5, border_width=1, frame_color=color.gray, frame_width=1, bgcolor=color.new(color.black, 30))
+    table.cell(m, 0, 0, "Тайм.",  bgcolor=color.navy, text_color=color.white, text_size=size.normal)
+    table.cell(m, 1, 0, "Сигнал", bgcolor=color.navy, text_color=color.white, text_size=size.normal)
+    table.cell(m, 0, 1, tf1, text_color=color.white, text_size=size.normal)
+    table.cell(m, 1, 1, mtfTxt(b1), bgcolor=mtfCol(b1), text_color=color.white, text_size=size.normal)
+    table.cell(m, 0, 2, tf2, text_color=color.white, text_size=size.normal)
+    table.cell(m, 1, 2, mtfTxt(b2), bgcolor=mtfCol(b2), text_color=color.white, text_size=size.normal)
+    table.cell(m, 0, 3, tf3, text_color=color.white, text_size=size.normal)
+    table.cell(m, 1, 3, mtfTxt(b3), bgcolor=mtfCol(b3), text_color=color.white, text_size=size.normal)
+    table.cell(m, 0, 4, tf4, text_color=color.white, text_size=size.normal)
+    table.cell(m, 1, 4, mtfTxt(b4), bgcolor=mtfCol(b4), text_color=color.white, text_size=size.normal)
 
 // ── АЛЕРТЫ ───────────────────────────────────────────────────────────────────
 alertcondition(buy,  "BUY",  "SMS PRO: BUY {{ticker}} ({{interval}})")
