@@ -1,11 +1,14 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Star, MapPin, ShoppingCart, Eye, Zap, ArrowUpRight } from 'lucide-react'
+import { Star, MapPin, ShoppingCart, Eye, Zap, ArrowUpRight, Heart, GitCompare } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Equipment } from '../types'
 import { Badge, statusLabels } from './ui/Badge'
 import { Button } from './ui/Button'
 import { useCartStore } from '../store/cartStore'
+import { useFavoritesStore } from '../store/favoritesStore'
+import { useCompareStore } from '../store/compareStore'
+import { useQuickViewStore } from '../store/quickViewStore'
 
 interface EquipmentCardProps {
   equipment: Equipment
@@ -21,6 +24,15 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment, index =
   const isInCart = items.some((i) => i.equipment.id === equipment.id)
   const [imgError, setImgError] = useState(false)
 
+  const { toggle: toggleFavorite, isFavorite } = useFavoritesStore()
+  const favorited = isFavorite(equipment.id)
+
+  const { toggle: toggleCompare, isInCompare, ids: compareIds } = useCompareStore()
+  const inCompare = isInCompare(equipment.id)
+  const compareDisabled = !inCompare && compareIds.length >= 3
+
+  const { open: openQuickView } = useQuickViewStore()
+
   const today = new Date()
   const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
   const startDate = today.toISOString().split('T')[0]
@@ -30,6 +42,23 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment, index =
     e.preventDefault()
     if (!isInCart && equipment.availability === 'available') {
       addItem(equipment, startDate, endDate)
+    }
+  }
+
+  const handleToggleFavorite = (e: React.MouseEvent) => {
+    e.preventDefault()
+    toggleFavorite(equipment.id)
+  }
+
+  const handleOpenQuickView = (e: React.MouseEvent) => {
+    e.preventDefault()
+    openQuickView(equipment.id)
+  }
+
+  const handleToggleCompare = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (!compareDisabled) {
+      toggleCompare(equipment.id)
     }
   }
 
@@ -64,12 +93,23 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment, index =
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-        {/* Hover overlay */}
+        {/* Hover overlay with eye + arrow buttons */}
         <motion.div
-          className="absolute inset-0 bg-amber-500/0 flex items-center justify-center"
+          className="absolute inset-0 bg-amber-500/0 flex items-center justify-center gap-3"
           whileHover={{ backgroundColor: 'rgba(245,158,11,0.08)' }}
           transition={{ duration: 0.2 }}
         >
+          {/* Quick view button */}
+          <motion.button
+            onClick={handleOpenQuickView}
+            className="bg-black/60 backdrop-blur-sm border border-white/20 rounded-full p-3 opacity-0 group-hover:opacity-100 transition-opacity"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+            title="Быстрый просмотр"
+          >
+            <Eye size={20} className="text-amber-400" />
+          </motion.button>
+
           <Link to={`/catalog/${equipment.id}`}>
             <motion.div
               className="bg-black/60 backdrop-blur-sm border border-white/20 rounded-full p-3 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -88,11 +128,21 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment, index =
           </span>
         </div>
 
-        {/* Availability */}
-        <div className="absolute top-3 right-3">
+        {/* Availability + Favorite */}
+        <div className="absolute top-3 right-3 flex items-center gap-1.5">
           <Badge variant={equipment.availability as 'available' | 'rented' | 'maintenance'}>
             {statusLabels[equipment.availability]}
           </Badge>
+          <button
+            onClick={handleToggleFavorite}
+            className="bg-black/70 backdrop-blur-sm rounded-full p-1.5 border border-white/10 hover:border-amber-500/50 transition-all"
+            title={favorited ? 'Убрать из избранного' : 'В избранное'}
+          >
+            <Heart
+              size={13}
+              className={favorited ? 'text-amber-400 fill-amber-400' : 'text-gray-400'}
+            />
+          </button>
         </div>
 
         {/* Power on hover */}
@@ -158,7 +208,7 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment, index =
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 mb-3">
           <Link to={`/catalog/${equipment.id}`} className="flex-1">
             <motion.div whileTap={{ scale: 0.97 }}>
               <Button variant="secondary" size="sm" className="w-full gap-1.5 text-xs">
@@ -180,6 +230,20 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({ equipment, index =
             </Button>
           </motion.div>
         </div>
+
+        {/* Compare button */}
+        <button
+          onClick={handleToggleCompare}
+          disabled={compareDisabled}
+          className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+            inCompare
+              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/40'
+              : 'text-gray-600 hover:text-gray-400 border border-white/6 hover:border-white/15'
+          }`}
+        >
+          <GitCompare size={12} />
+          {inCompare ? 'В сравнении' : compareDisabled ? 'Максимум 3' : 'Сравнить'}
+        </button>
       </div>
     </motion.div>
   )

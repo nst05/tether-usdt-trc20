@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Settings, ShoppingCart, Menu, X, Cog, Phone } from 'lucide-react'
+import { Settings, ShoppingCart, Menu, X, Cog, Phone, Heart } from 'lucide-react'
 import { useCartStore } from '../../store/cartStore'
+import { useFavoritesStore } from '../../store/favoritesStore'
 
 export const Header: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -9,6 +10,8 @@ export const Header: React.FC = () => {
   const location = useLocation()
   const { getTotalItems } = useCartStore()
   const cartCount = getTotalItems()
+  const { ids: favoriteIds } = useFavoritesStore()
+  const favCount = favoriteIds.length
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
@@ -83,6 +86,20 @@ export const Header: React.FC = () => {
               +7 (495) 123-45-67
             </a>
 
+            {/* Favorites */}
+            <Link
+              to="/favorites"
+              className="relative flex items-center gap-2 px-3 py-2 rounded-md text-gray-400 hover:text-white hover:bg-white/5 transition-all"
+            >
+              <Heart size={18} className={isActive('/favorites') ? 'text-amber-400' : ''} />
+              {favCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 text-black text-xs font-bold rounded-full flex items-center justify-center">
+                  {favCount}
+                </span>
+              )}
+              <span className="hidden sm:block text-sm">Избранное</span>
+            </Link>
+
             {/* Cart */}
             <Link
               to="/booking"
@@ -132,6 +149,18 @@ export const Header: React.FC = () => {
                 {link.label}
               </Link>
             ))}
+            <Link
+              to="/favorites"
+              className="flex items-center gap-2 px-4 py-3 rounded-md text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-all"
+            >
+              <Heart size={14} className="text-amber-400" />
+              Избранное
+              {favCount > 0 && (
+                <span className="ml-auto w-5 h-5 bg-amber-500 text-black text-xs font-bold rounded-full flex items-center justify-center">
+                  {favCount}
+                </span>
+              )}
+            </Link>
             <a
               href="tel:+74951234567"
               className="flex items-center gap-2 px-4 py-3 rounded-md text-sm font-medium text-amber-400"
