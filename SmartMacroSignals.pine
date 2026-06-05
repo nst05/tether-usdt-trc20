@@ -123,12 +123,16 @@ pl = ta.pivotlow(low,  swingLen, swingLen)
 
 var float swHigh = na
 var float swLow  = na
-if not na(ph) then swHigh := ph
-if not na(pl) then swLow  := pl
+if not na(ph)
+    swHigh := ph
+if not na(pl)
+    swLow := pl
 
 var int structBias = 0
-if not na(swHigh) and close > swHigh then structBias := 1
-if not na(swLow)  and close < swLow  then structBias := -1
+if not na(swHigh) and close > swHigh
+    structBias := 1
+if not na(swLow) and close < swLow
+    structBias := -1
 
 bullSweep  = not na(swLow)  and low  < swLow  and close > swLow
 bearSweep  = not na(swHigh) and high > swHigh and close < swHigh
@@ -155,8 +159,10 @@ confidence = math.round(math.min(100, math.abs(score)*0.6 + agree*10))
 var int state = 0
 buy  = ta.crossover(score,  buyThr)  and confidence >= confMin and state <= 0
 sell = ta.crossunder(score, sellThr) and confidence >= confMin and state >= 0
-if buy  then state := 1
-if sell then state := -1
+if buy
+    state := 1
+if sell
+    state := -1
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  ВИЗУАЛИЗАЦИЯ В ОТДЕЛЬНОЙ ПАНЕЛИ (overlay=false — score всегда виден!)
