@@ -155,8 +155,8 @@ trendScore = f_clamp1((emaAlign + emaSlope + rsiScore + macdScore + rocScore + a
 //  МОДУЛЬ 2 — КОРРЕЛЯЦИЯ
 // =============================================================================
 f_assetContribution(sym) =>
-    aClose = request.security(sym, timeframe.period, close, lookahead=barmerge.lookahead_off)
-    aEma   = request.security(sym, timeframe.period, ta.ema(close, 50), lookahead=barmerge.lookahead_off)
+    aClose = request.security(sym, timeframe.period, close, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+    aEma   = request.security(sym, timeframe.period, ta.ema(close, 50), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
     corr   = ta.correlation(close, aClose, corrLen)
     corr   := na(corr) ? 0.0 : corr
     aTrend = aClose > aEma ? 1.0 : -1.0
@@ -183,8 +183,8 @@ corrScore = array.size(corrArr) > 0 ? f_clamp1(array.avg(corrArr)) : 0.0
 //  dir = -1 : рост показателя → негатив (ставка, инфляция, безработица, yield, VIX)
 // =============================================================================
 f_macroTrend(sym, dir) =>
-    v = request.security(sym, "D", close,            lookahead=barmerge.lookahead_off)
-    m = request.security(sym, "D", ta.sma(close, 20), lookahead=barmerge.lookahead_off)
+    v = request.security(sym, "D", close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+    m = request.security(sym, "D", ta.sma(close, 20), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
     na(v) or na(m) ? na : dir * f_softsign(v - m, math.max(math.abs(m) * 0.05, 0.0001))
 
 mRate  = f_macroTrend(symRate,  -1)
@@ -351,10 +351,10 @@ f_simpleBias() =>
     s  = (close > ef ? 0.34 : -0.34) + (ef > es ? 0.33 : -0.33) + f_clamp1((r - 50) / 25) * 0.33
     f_clamp1(s) * 100
 
-b1 = request.security(syminfo.tickerid, tf1, f_simpleBias(), lookahead=barmerge.lookahead_off)
-b2 = request.security(syminfo.tickerid, tf2, f_simpleBias(), lookahead=barmerge.lookahead_off)
-b3 = request.security(syminfo.tickerid, tf3, f_simpleBias(), lookahead=barmerge.lookahead_off)
-b4 = request.security(syminfo.tickerid, tf4, f_simpleBias(), lookahead=barmerge.lookahead_off)
+b1 = request.security(syminfo.tickerid, tf1, f_simpleBias(), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+b2 = request.security(syminfo.tickerid, tf2, f_simpleBias(), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+b3 = request.security(syminfo.tickerid, tf3, f_simpleBias(), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+b4 = request.security(syminfo.tickerid, tf4, f_simpleBias(), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
 
 f_mtfTxt(b) => b > 20 ? "BUY" : b < -20 ? "SELL" : "—"
 f_mtfCol(b) => b > 20 ? color.green : b < -20 ? color.red : color.gray
