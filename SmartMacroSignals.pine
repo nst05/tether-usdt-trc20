@@ -40,10 +40,13 @@ indicator("Smart Macro Signals PRO", shorttitle="SMS PRO", overlay=true, max_lab
 //  ИНТЕРАКТИВНЫЕ ВХОДЫ (клик по графику)
 // =============================================================================
 grpI = "🖱️  Интерактив (кликните по графику)"
-useKeyLevel = input.bool(true, "Учитывать ключевой уровень", group=grpI)
-keyLevel    = input.price(0.0, "🖱 Ключевой уровень (клик на цене)", confirm=true, group=grpI)
-useAnchor   = input.bool(true, "Учитывать якорь истории", group=grpI)
-anchorTime  = input.time(timestamp("01 Jan 2024 00:00"), "🖱 Якорь истории (клик на баре)", confirm=true, group=grpI)
+// confirm=false → индикатор добавляется сразу, БЕЗ режима «кликни по графику»
+// (именно блокирующий клик мешал ему появиться). Уровень/якорь задаются в настройках.
+// Хотите ставить их кликом мыши — поменяйте confirm на true у нужного поля.
+useKeyLevel = input.bool(false, "Учитывать ключевой уровень", group=grpI)
+keyLevel    = input.price(0.0, "Ключевой уровень (можно вписать вручную)", confirm=false, group=grpI)
+useAnchor   = input.bool(false, "Учитывать якорь истории", group=grpI)
+anchorTime  = input.time(timestamp("01 Jan 2024 00:00"), "Якорь истории (дата)", confirm=false, group=grpI)
 
 // =============================================================================
 //  ВЕСА МОДУЛЕЙ
@@ -58,9 +61,9 @@ wSMC   = input.float(1.0, "Вес: Smart Money (SMC)", minval=0, maxval=3, step=
 //  СИГНАЛЫ
 // =============================================================================
 grpS = "🎯  Сигналы и пороги"
-buyThr  = input.float(35.0, "Порог BUY (счёт ≥)",  minval=5, maxval=95, step=1, group=grpS)
-sellThr = input.float(-35.0,"Порог SELL (счёт ≤)", minval=-95, maxval=-5, step=1, group=grpS)
-confMin = input.float(50.0, "Мин. уверенность для метки, %", minval=0, maxval=100, step=5, group=grpS)
+buyThr  = input.float(25.0, "Порог BUY (счёт ≥)",  minval=5, maxval=95, step=1, group=grpS)
+sellThr = input.float(-25.0,"Порог SELL (счёт ≤)", minval=-95, maxval=-5, step=1, group=grpS)
+confMin = input.float(30.0, "Мин. уверенность для метки, %", minval=0, maxval=100, step=5, group=grpS)
 
 // =============================================================================
 //  МОДУЛЬ 1 — ИСТОРИЯ / ТРЕНД
@@ -313,7 +316,12 @@ if sellSignal
 
 bgcolor(score >= buyThr ? color.new(color.green, 92) : score <= sellThr ? color.new(color.red, 92) : na)
 
-// Линия ключевого уровня (интерактив)
+// Гарантированно видимые элементы: окраска баров по биасу + стрелки сигналов
+barcolor(score >= buyThr ? color.lime : score <= sellThr ? color.red : color.gray)
+plotshape(buySignal,  title="BUY",  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.small)
+plotshape(sellSignal, title="SELL", style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.small)
+
+// Линия ключевого уровня (если задан)
 plot(useKeyLevel and keyLevel > 0 ? keyLevel : na, "Ключевой уровень", color=color.new(color.orange, 0), linewidth=2, style=plot.style_linebr)
 
 // =============================================================================
