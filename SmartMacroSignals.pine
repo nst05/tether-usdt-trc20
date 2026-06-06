@@ -320,43 +320,49 @@ if buy or sell
 sc(s) => s > 0 ? color.new(color.teal,30) : s < 0 ? color.new(color.red,30) : color.new(color.gray,50)
 st(s) => (s > 0 ? "+" : "") + str.tostring(math.round(s*100))
 
-if barstate.islast
-    var table inf = table.new(position.top_left, 2, 16, border_width=1, frame_color=color.new(color.gray,30), frame_width=1, bgcolor=color.new(color.black,40))
+// Живые признаки разворота — очищаем лишний перенос строки в конце
+liveReasons = revReasons == "" ? "Нет сигналов" : str.replace_all(revReasons, "\n\n", "\n")
 
+if barstate.islast
+    var table inf = table.new(position.top_left, 2, 15, border_width=1, frame_color=color.new(color.gray,30), frame_width=1, bgcolor=color.new(color.black,40))
+
+    // ── Блок 1: сигнал ──
     table.cell(inf, 0, 0,  "СИГНАЛ",    text_color=color.new(color.gray,10), text_size=size.small,  bgcolor=color.new(color.black,30))
     table.cell(inf, 1, 0,  sigDir,       text_color=color.white, text_size=size.normal, bgcolor=sigClr)
-    table.cell(inf, 0, 1,  "Уверен.",    text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 1,  sigConf,      text_color=color.white, text_size=size.normal, bgcolor=color.new(color.purple,20))
-    table.cell(inf, 0, 2,  "Вход",       text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 2,  sigEntry,     text_color=color.white, text_size=size.normal, bgcolor=color.new(color.black,20))
-    table.cell(inf, 0, 3,  "Stop Loss",  text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 3,  sigSL,        text_color=color.white, text_size=size.normal, bgcolor=color.new(color.red,60))
-    table.cell(inf, 0, 4,  "TP 1",       text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 4,  sigTP1,       text_color=color.white, text_size=size.normal, bgcolor=color.new(color.teal,50))
-    table.cell(inf, 0, 5,  "TP 2",       text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 5,  sigTP2,       text_color=color.white, text_size=size.normal, bgcolor=color.new(color.teal,30))
-    table.cell(inf, 0, 6,  "⏱ Время",    text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 6,  sigTime,      text_color=color.white, text_size=size.normal, bgcolor=color.new(color.black,20))
 
-    table.cell(inf, 0, 7,  "─ РАЗВОРОТ", text_color=color.new(color.gray,40), text_size=size.tiny,  bgcolor=color.new(color.black,60))
-    table.cell(inf, 1, 7,  "",           bgcolor=color.new(color.black,60))
-    table.cell(inf, 0, 8,  "Признаки",   text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 8,  sigWhy,       text_color=color.white, text_size=size.small, bgcolor=sc(revScore))
+    // ── Блок 2: признаки разворота (ЖИВЫЕ, текущий бар) — сразу после сигнала ──
+    table.cell(inf, 0, 1,  "Разворот",   text_color=color.new(color.gray,10), text_size=size.small,  bgcolor=color.new(color.black,30))
+    table.cell(inf, 1, 1,  liveReasons,  text_color=color.white, text_size=size.small, bgcolor=sc(revScore))
 
-    table.cell(inf, 0, 9,  "─── СЧЁТ",  text_color=color.new(color.gray,40), text_size=size.tiny,  bgcolor=color.new(color.black,60))
-    table.cell(inf, 1, 9,  "",           bgcolor=color.new(color.black,60))
-    table.cell(inf, 0, 10, "Итог",       text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 10, str.tostring(math.round(score)) + " / 100", text_color=color.white, text_size=size.normal, bgcolor=sc(score))
-    table.cell(inf, 0, 11, "Тренд",      text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 11, st(trendScore), text_color=color.white, text_size=size.normal, bgcolor=sc(trendScore))
-    table.cell(inf, 0, 12, "Коррел.",    text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 12, st(corrScore),  text_color=color.white, text_size=size.normal, bgcolor=sc(corrScore))
-    table.cell(inf, 0, 13, "Макро",      text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 13, st(macroScore), text_color=color.white, text_size=size.normal, bgcolor=sc(macroScore))
-    table.cell(inf, 0, 14, "SMC",        text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 14, st(smcScore),   text_color=color.white, text_size=size.normal, bgcolor=sc(smcScore))
-    table.cell(inf, 0, 15, "Разворот",   text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
-    table.cell(inf, 1, 15, st(revScore),   text_color=color.white, text_size=size.normal, bgcolor=sc(revScore))
+    // ── Блок 3: уровни последнего сигнала ──
+    table.cell(inf, 0, 2,  "Уверен.",    text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 2,  sigConf,      text_color=color.white, text_size=size.normal, bgcolor=color.new(color.purple,20))
+    table.cell(inf, 0, 3,  "Вход",       text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 3,  sigEntry,     text_color=color.white, text_size=size.normal, bgcolor=color.new(color.black,20))
+    table.cell(inf, 0, 4,  "Stop Loss",  text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 4,  sigSL,        text_color=color.white, text_size=size.normal, bgcolor=color.new(color.red,60))
+    table.cell(inf, 0, 5,  "TP 1",       text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 5,  sigTP1,       text_color=color.white, text_size=size.normal, bgcolor=color.new(color.teal,50))
+    table.cell(inf, 0, 6,  "TP 2",       text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 6,  sigTP2,       text_color=color.white, text_size=size.normal, bgcolor=color.new(color.teal,30))
+    table.cell(inf, 0, 7,  "⏱ Время",    text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 7,  sigTime,      text_color=color.white, text_size=size.normal, bgcolor=color.new(color.black,20))
+
+    // ── Блок 4: счёт по модулям ──
+    table.cell(inf, 0, 8,  "─ СЧЁТ ─",  text_color=color.new(color.gray,40), text_size=size.tiny,  bgcolor=color.new(color.black,60))
+    table.cell(inf, 1, 8,  "",           bgcolor=color.new(color.black,60))
+    table.cell(inf, 0, 9,  "Итог",       text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 9,  str.tostring(math.round(score)) + " / 100", text_color=color.white, text_size=size.normal, bgcolor=sc(score))
+    table.cell(inf, 0, 10, "Тренд",      text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 10, st(trendScore), text_color=color.white, text_size=size.normal, bgcolor=sc(trendScore))
+    table.cell(inf, 0, 11, "Коррел.",    text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 11, st(corrScore),  text_color=color.white, text_size=size.normal, bgcolor=sc(corrScore))
+    table.cell(inf, 0, 12, "Макро",      text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 12, st(macroScore), text_color=color.white, text_size=size.normal, bgcolor=sc(macroScore))
+    table.cell(inf, 0, 13, "SMC",        text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 13, st(smcScore),   text_color=color.white, text_size=size.normal, bgcolor=sc(smcScore))
+    table.cell(inf, 0, 14, "Разворот",   text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,50))
+    table.cell(inf, 1, 14, st(revScore),   text_color=color.white, text_size=size.normal, bgcolor=sc(revScore))
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  ТАЙМФРЕЙМЫ СПРАВА
