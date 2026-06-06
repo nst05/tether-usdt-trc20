@@ -1,0 +1,283 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+//  SMS PRO — Панель на графике (overlay)
+//  Добавьте ВМЕСТЕ с основным скриптом "SMS PRO".
+//  Этот скрипт рисует таблицу ПРЯМО НА СВЕЧАХ:
+//    • Текущий сигнал BUY/SELL
+//    • Признаки разворота (живые)
+//    • Уровни входа / SL / TP
+//    • Таймфреймы
+//  Гистограмма счёта — в основном скрипте SMS PRO.
+// ─────────────────────────────────────────────────────────────────────────────
+indicator("SMS PRO — График", "SMS Chart", overlay=true, max_labels_count=30, max_lines_count=50)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  НАСТРОЙКИ (должны совпадать с основным скриптом)
+// ══════════════════════════════════════════════════════════════════════════════
+wTrend  = input.float(1.0, "Вес Тренд",        minval=0, maxval=3, step=0.1, group="Веса")
+wCorr   = input.float(1.0, "Вес Корреляция",   minval=0, maxval=3, step=0.1, group="Веса")
+wMacro  = input.float(0.5, "Вес Макро",        minval=0, maxval=3, step=0.1, group="Веса")
+wSMC    = input.float(1.0, "Вес Smart Money",  minval=0, maxval=3, step=0.1, group="Веса")
+wRev    = input.float(1.5, "Вес Разворот",     minval=0, maxval=3, step=0.1, group="Веса")
+
+buyThr  = input.float( 25, "Порог BUY (≥)",      minval=5,   maxval=90, step=1, group="Сигналы")
+sellThr = input.float(-25, "Порог SELL (≤)",     minval=-90, maxval=-5, step=1, group="Сигналы")
+confMin = input.float( 30, "Мин. уверенность %", minval=0,  maxval=100, step=5, group="Сигналы")
+maxLbls = input.int(3,     "Макс. стрелок",      minval=1,  maxval=10,         group="Сигналы")
+
+emaFast  = input.int(50,   "EMA быстрая",   minval=2,  group="Тренд")
+emaSlow  = input.int(200,  "EMA медленная", minval=10, group="Тренд")
+rsiLen   = input.int(14,   "RSI период",    minval=2,  group="Тренд")
+corrLen  = input.int(50,   "Корреляция окно",minval=10,group="Корреляция")
+
+sym1     = input.symbol("TVC:DXY",         "DXY",  group="Корреляция")
+sym2     = input.symbol("SP:SPX",          "SPX",  group="Корреляция")
+sym3     = input.symbol("TVC:GOLD",        "Gold", group="Корреляция")
+sym4     = input.symbol("BINANCE:BTCUSDT", "BTC",  group="Корреляция")
+symYield = input.symbol("TVC:US10Y",       "US10Y",group="Макро")
+symVix   = input.symbol("CBOE:VIX",        "VIX",  group="Макро")
+
+swingLen = input.int(10,   "SMC свинг",    minval=2,   group="Smart Money")
+divLen   = input.int(14,   "RSI дивергенция окно", minval=5, group="Разворот")
+stochK   = input.int(14,   "Stoch %K",     minval=2,  group="Разворот")
+stochD   = input.int(3,    "Stoch %D",     minval=1,  group="Разворот")
+pinRatio = input.float(2.0,"Pin Bar фитиль/тело", minval=1.0, step=0.1, group="Разворот")
+
+atrLen   = input.int(14,   "ATR период",   minval=2,   group="Риск")
+slMul    = input.float(1.5,"SL = ATR ×",  minval=0.2, step=0.1, group="Риск")
+rr1      = input.float(1.5,"TP1 R:R",     minval=0.5, step=0.1, group="Риск")
+rr2      = input.float(3.0,"TP2 R:R",     minval=0.5, step=0.1, group="Риск")
+moveEff  = input.float(0.5,"Скорость хода",minval=0.1,maxval=1.0,step=0.05,group="Риск")
+
+showSLTP = input.bool(true, "Линии SL / TP на графике", group="Вид")
+showEMA  = input.bool(true, "EMA на графике",            group="Вид")
+tf1 = input.timeframe("15",  "TF1", group="Таймфреймы")
+tf2 = input.timeframe("60",  "TF2", group="Таймфреймы")
+tf3 = input.timeframe("240", "TF3", group="Таймфреймы")
+tf4 = input.timeframe("D",   "TF4", group="Таймфреймы")
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  РАСЧЁТЫ (те же что в основном скрипте)
+// ══════════════════════════════════════════════════════════════════════════════
+clamp1(x) => math.max(-1.0, math.min(1.0, x))
+soft(x, s) => clamp1(s == 0 ? math.sign(x) : x / s)
+nz0(x) => na(x) ? 0.0 : x
+
+_atr = ta.atr(atrLen)
+_ef  = ta.ema(close, emaFast)
+_es  = ta.ema(close, emaSlow)
+_rsi = ta.rsi(close, rsiLen)
+[_ml, _sl2, _hist] = ta.macd(close, 12, 26, 9)
+_roc = ta.roc(close, 20)
+
+trendScore = clamp1(((close > _ef ? 0.5 : -0.5) + (_ef > _es ? 0.5 : -0.5) + soft(_ef - _ef[3], _atr) + clamp1((_rsi - 50) / 25) + soft(_hist, _atr * 0.5) + soft(_roc, 5.0)) / 6.0)
+
+a1c = request.security(sym1, timeframe.period, close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a1e = request.security(sym1, timeframe.period, ta.ema(close,50), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a2c = request.security(sym2, timeframe.period, close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a2e = request.security(sym2, timeframe.period, ta.ema(close,50), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a3c = request.security(sym3, timeframe.period, close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a3e = request.security(sym3, timeframe.period, ta.ema(close,50), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a4c = request.security(sym4, timeframe.period, close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+a4e = request.security(sym4, timeframe.period, ta.ema(close,50), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+contrib(ac, ae) => na(ac) or na(ae) ? 0.0 : clamp1(nz0(ta.correlation(close, ac, corrLen)) * (ac > ae ? 1.0 : -1.0))
+corrScore = clamp1((contrib(a1c,a1e) + contrib(a2c,a2e) + contrib(a3c,a3e) + contrib(a4c,a4e)) / 4.0)
+
+yNow = request.security(symYield, "D", close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+yMa  = request.security(symYield, "D", ta.sma(close,20), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+vNow = request.security(symVix,   "D", close,            lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+vMa  = request.security(symVix,   "D", ta.sma(close,20), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+macroScore = clamp1(((na(yNow) or na(yMa) ? 0.0 : -soft(yNow - yMa, math.max(yMa*0.05,0.01))) + (na(vNow) or na(vMa) ? 0.0 : -soft(vNow - vMa, math.max(vMa*0.15,1.0)))) / 2.0)
+
+ph = ta.pivothigh(high, swingLen, swingLen)
+pl = ta.pivotlow(low,  swingLen, swingLen)
+var float swH = na
+var float swL = na
+if not na(ph)
+    swH := ph
+if not na(pl)
+    swL := pl
+var int structBias = 0
+if not na(swH) and close > swH
+    structBias := 1
+if not na(swL) and close < swL
+    structBias := -1
+bullSweep = not na(swL) and low  < swL and close > swL
+bearSweep = not na(swH) and high > swH and close < swH
+smcScore  = clamp1(structBias * 0.7 + (bullSweep ? 1.0 : bearSweep ? -1.0 : 0.0) * 0.3)
+
+// ── Признаки разворота ───────────────────────────────────────────────────────
+rsiHigh   = ta.highest(_rsi, divLen)
+rsiLow    = ta.lowest(_rsi,  divLen)
+priceHigh = ta.highest(high,  divLen)
+priceLow  = ta.lowest(low,   divLen)
+bearDiv   = high >= priceHigh and _rsi < rsiHigh and _rsi > 50
+bullDiv   = low  <= priceLow  and _rsi > rsiLow  and _rsi < 50
+
+bodySize   = math.abs(close - open)
+upperWick  = high - math.max(close, open)
+lowerWick  = math.min(close, open) - low
+bullPin    = bodySize > 0 and lowerWick >= bodySize * pinRatio and upperWick < bodySize
+bearPin    = bodySize > 0 and upperWick >= bodySize * pinRatio and lowerWick < bodySize
+
+prevBody   = math.abs(close[1] - open[1])
+currBody   = math.abs(close - open)
+bullEngulf = close > open and close[1] < open[1] and close > open[1] and open < close[1] and currBody > prevBody
+bearEngulf = close < open and close[1] > open[1] and close < open[1] and open > close[1] and currBody > prevBody
+
+obBullHigh = ta.valuewhen(close[1] < open[1] and close > open and (close - open) > _atr * 0.5, open[1],  0)
+obBullLow  = ta.valuewhen(close[1] < open[1] and close > open and (close - open) > _atr * 0.5, close[1], 0)
+obBearHigh = ta.valuewhen(close[1] > open[1] and close < open and (open - close) > _atr * 0.5, close[1], 0)
+obBearLow  = ta.valuewhen(close[1] > open[1] and close < open and (open - close) > _atr * 0.5, open[1],  0)
+inBullOB   = not na(obBullLow) and not na(obBullHigh) and close >= obBullLow and close <= obBullHigh
+inBearOB   = not na(obBearLow) and not na(obBearHigh) and close >= obBearLow and close <= obBearHigh
+
+_stochK   = ta.sma(ta.stoch(close, high, low, stochK), stochD)
+_stochD   = ta.sma(_stochK, stochD)
+stochBull = _stochK > 20 and _stochK[1] <= 20 and _stochD > 20
+stochBear = _stochK < 80 and _stochK[1] >= 80 and _stochD < 80
+stochBias = _stochK < 30 ? 0.5 : _stochK > 70 ? -0.5 : 0.0
+stochScore = stochBull ? 1.0 : stochBear ? -1.0 : stochBias
+
+revScore = clamp1((bullDiv?1.0:bearDiv?-1.0:0.0)*0.35 + (bullPin?1.0:bearPin?-1.0:0.0)*0.20 + (bullEngulf?1.0:bearEngulf?-1.0:0.0)*0.15 + (inBullOB?1.0:inBearOB?-1.0:0.0)*0.20 + stochScore*0.10)
+
+revNow = ""
+revNow := bullDiv    ? revNow + "↑ RSI дивергенция  " : revNow
+revNow := bearDiv    ? revNow + "↓ RSI дивергенция  " : revNow
+revNow := bullPin    ? revNow + "↑ Pin Bar  "          : revNow
+revNow := bearPin    ? revNow + "↓ Pin Bar  "          : revNow
+revNow := bullEngulf ? revNow + "↑ Поглощение  "       : revNow
+revNow := bearEngulf ? revNow + "↓ Поглощение  "       : revNow
+revNow := inBullOB   ? revNow + "↑ Order Block  "      : revNow
+revNow := inBearOB   ? revNow + "↓ Order Block  "      : revNow
+revNow := stochBull  ? revNow + "↑ Stoch  "            : revNow
+revNow := stochBear  ? revNow + "↓ Stoch  "            : revNow
+revNow := revNow == "" ? "Нет" : revNow
+
+// ── Итоговый счёт ────────────────────────────────────────────────────────────
+wSum  = math.max(wTrend + wCorr + wMacro + wSMC + wRev, 0.0001)
+raw   = (trendScore*wTrend + corrScore*wCorr + macroScore*wMacro + smcScore*wSMC + revScore*wRev) / wSum
+score = nz0(raw) * 100.0
+ag    = (math.sign(trendScore)==math.sign(raw) and trendScore!=0 ? 1:0) + (math.sign(corrScore)==math.sign(raw) and corrScore!=0 ? 1:0) + (math.sign(macroScore)==math.sign(raw) and macroScore!=0 ? 1:0) + (math.sign(smcScore)==math.sign(raw) and smcScore!=0 ? 1:0) + (math.sign(revScore)==math.sign(raw) and revScore!=0 ? 1:0)
+confidence = math.round(math.min(100, math.abs(score)*0.5 + ag*10))
+
+// ── Сигналы ──────────────────────────────────────────────────────────────────
+var int state = 0
+buy  = ta.crossover(score,  buyThr)  and confidence >= confMin and state <= 0
+sell = ta.crossunder(score, sellThr) and confidence >= confMin and state >= 0
+if buy
+    state := 1
+if sell
+    state := -1
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  EMA НА ГРАФИКЕ
+// ══════════════════════════════════════════════════════════════════════════════
+plot(showEMA ? _ef : na, "EMA 50",  color=color.new(color.orange,30), linewidth=1)
+plot(showEMA ? _es : na, "EMA 200", color=color.new(color.blue,30),   linewidth=2)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  СТРЕЛКИ BUY / SELL НА СВЕЧАХ
+// ══════════════════════════════════════════════════════════════════════════════
+plotshape(buy,  "BUY",  shape.labelup,   location.belowbar, color.new(color.green,0), text="BUY",  textcolor=color.white, size=size.normal)
+plotshape(sell, "SELL", shape.labeldown, location.abovebar, color.new(color.red,0),   text="SELL", textcolor=color.white, size=size.normal)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ЛИНИИ SL / TP ОТ ПОСЛЕДНЕГО СИГНАЛА НА ГРАФИКЕ
+// ══════════════════════════════════════════════════════════════════════════════
+var float lastEntry = na
+var float lastSL    = na
+var float lastTP1   = na
+var float lastTP2   = na
+var bool  lastIsBuy = true
+
+if buy or sell
+    lastIsBuy := buy
+    lastEntry := close
+    lastSL    := buy ? close - _atr*slMul : close + _atr*slMul
+    risk_v    = math.abs(lastEntry - lastSL)
+    lastTP1   := buy ? close + risk_v*rr1 : close - risk_v*rr1
+    lastTP2   := buy ? close + risk_v*rr2 : close - risk_v*rr2
+
+if showSLTP and barstate.islast and not na(lastEntry)
+    line.new(bar_index - 30, lastEntry, bar_index + 10, lastEntry, color=color.new(color.gray,40),  style=line.style_dotted, width=1, extend=extend.right)
+    line.new(bar_index - 30, lastSL,    bar_index + 10, lastSL,    color=color.new(color.red,20),   style=line.style_dashed, width=2, extend=extend.right)
+    line.new(bar_index - 30, lastTP1,   bar_index + 10, lastTP1,   color=color.new(color.teal,20),  style=line.style_dashed, width=2, extend=extend.right)
+    line.new(bar_index - 30, lastTP2,   bar_index + 10, lastTP2,   color=color.new(color.green,20), style=line.style_dashed, width=2, extend=extend.right)
+
+    label.new(bar_index + 11, lastSL,  "SL",  style=label.style_label_left, color=color.new(color.red,20),   textcolor=color.white, size=size.small)
+    label.new(bar_index + 11, lastTP1, "TP1", style=label.style_label_left, color=color.new(color.teal,20),  textcolor=color.white, size=size.small)
+    label.new(bar_index + 11, lastTP2, "TP2", style=label.style_label_left, color=color.new(color.green,20), textcolor=color.white, size=size.small)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ТАБЛИЦА НА ГРАФИКЕ (верхний левый угол)
+// ══════════════════════════════════════════════════════════════════════════════
+sc(s) => s > 0 ? color.new(color.teal,20) : s < 0 ? color.new(color.red,20) : color.new(color.gray,50)
+
+if barstate.islast
+    var table t = table.new(position.top_left, 2, 7, border_width=1, frame_color=color.new(color.gray,30), frame_width=1, bgcolor=color.new(color.black,20))
+
+    biasStr = score >= buyThr ? "▲ ПОКУПАТЬ" : score <= sellThr ? "▼ ПРОДАВАТЬ" : "● НЕЙТРАЛ"
+    biasClr = score >= buyThr ? color.new(color.green,10) : score <= sellThr ? color.new(color.red,10) : color.new(color.gray,40)
+
+    table.cell(t, 0, 0, "SMS PRO",  text_color=color.white, text_size=size.small, bgcolor=color.navy)
+    table.cell(t, 1, 0, biasStr,    text_color=color.white, text_size=size.normal, bgcolor=biasClr)
+
+    table.cell(t, 0, 1, "Разворот", text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 1, revNow,     text_color=color.white, text_size=size.small, bgcolor=sc(revScore))
+
+    table.cell(t, 0, 2, "Уверен.",  text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 2, str.tostring(confidence) + "%", text_color=color.white, text_size=size.normal, bgcolor=color.new(color.purple,20))
+
+    slStr  = na(lastSL)   ? "—" : str.tostring(lastSL,   format.mintick)
+    tp1Str = na(lastTP1)  ? "—" : str.tostring(lastTP1,  format.mintick)
+    tp2Str = na(lastTP2)  ? "—" : str.tostring(lastTP2,  format.mintick)
+    enStr  = na(lastEntry)? "—" : str.tostring(lastEntry, format.mintick)
+
+    table.cell(t, 0, 3, "Вход",     text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 3, enStr,      text_color=color.white, text_size=size.normal, bgcolor=color.new(color.black,20))
+    table.cell(t, 0, 4, "Stop Loss",text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 4, slStr,      text_color=color.white, text_size=size.normal, bgcolor=color.new(color.red,50))
+    table.cell(t, 0, 5, "TP 1",     text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 5, tp1Str,     text_color=color.white, text_size=size.normal, bgcolor=color.new(color.teal,40))
+    table.cell(t, 0, 6, "TP 2",     text_color=color.new(color.gray,20), text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 6, tp2Str,     text_color=color.white, text_size=size.normal, bgcolor=color.new(color.teal,20))
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ТАБЛИЦА ТАЙМФРЕЙМОВ (верхний правый угол)
+// ══════════════════════════════════════════════════════════════════════════════
+simpleBias() =>
+    ef = ta.ema(close, emaFast)
+    es = ta.ema(close, emaSlow)
+    r  = ta.rsi(close, rsiLen)
+    clamp1((close>ef?0.34:-0.34) + (ef>es?0.33:-0.33) + clamp1((r-50)/25)*0.33) * 100.0
+
+b1 = request.security(syminfo.tickerid, tf1, simpleBias(), lookahead=barmerge.lookahead_off)
+b2 = request.security(syminfo.tickerid, tf2, simpleBias(), lookahead=barmerge.lookahead_off)
+b3 = request.security(syminfo.tickerid, tf3, simpleBias(), lookahead=barmerge.lookahead_off)
+b4 = request.security(syminfo.tickerid, tf4, simpleBias(), lookahead=barmerge.lookahead_off)
+
+mt(b) => nz0(b) > 20 ? "BUY ▲" : nz0(b) < -20 ? "SELL▼" : " — "
+mc(b) => nz0(b) > 20 ? color.new(color.teal,20) : nz0(b) < -20 ? color.new(color.red,20) : color.new(color.gray,50)
+
+if barstate.islast
+    var table mtf = table.new(position.top_right, 2, 5, border_width=1, frame_color=color.new(color.gray,30), frame_width=1, bgcolor=color.new(color.black,20))
+    table.cell(mtf, 0, 0, "ТФ",    text_color=color.white, text_size=size.small, bgcolor=color.navy)
+    table.cell(mtf, 1, 0, "Сигнал",text_color=color.white, text_size=size.small, bgcolor=color.navy)
+    table.cell(mtf, 0, 1, tf1, text_color=color.white, text_size=size.normal, bgcolor=color.new(color.black,50))
+    table.cell(mtf, 1, 1, mt(b1), text_color=color.white, text_size=size.normal, bgcolor=mc(b1))
+    table.cell(mtf, 0, 2, tf2, text_color=color.white, text_size=size.normal, bgcolor=color.new(color.black,50))
+    table.cell(mtf, 1, 2, mt(b2), text_color=color.white, text_size=size.normal, bgcolor=mc(b2))
+    table.cell(mtf, 0, 3, tf3, text_color=color.white, text_size=size.normal, bgcolor=color.new(color.black,50))
+    table.cell(mtf, 1, 3, mt(b3), text_color=color.white, text_size=size.normal, bgcolor=mc(b3))
+    table.cell(mtf, 0, 4, tf4, text_color=color.white, text_size=size.normal, bgcolor=color.new(color.black,50))
+    table.cell(mtf, 1, 4, mt(b4), text_color=color.white, text_size=size.normal, bgcolor=mc(b4))
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  АЛЕРТЫ
+// ══════════════════════════════════════════════════════════════════════════════
+alertcondition(buy,      "BUY",          "SMS: BUY {{ticker}} ({{interval}})")
+alertcondition(sell,     "SELL",         "SMS: SELL {{ticker}} ({{interval}})")
+alertcondition(bullDiv,  "RSI бычья",   "SMS: Бычья RSI дивергенция {{ticker}}")
+alertcondition(bearDiv,  "RSI медвеж.", "SMS: Медвежья RSI дивергенция {{ticker}}")
