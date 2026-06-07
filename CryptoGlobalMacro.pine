@@ -1,0 +1,195 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+//  CRYPTO GLOBAL MACRO  ·  куда пойдёт крипторынок глобально
+//  BTC цикл (200W SMA) · TOTAL капитализация · Макро (DXY/SPX/VIX)
+//  BTC доминация · Альт сезон  —  всё с НЕДЕЛЬНОГО таймфрейма
+// ─────────────────────────────────────────────────────────────────────────────
+indicator("Crypto Global Macro", "CGM", overlay=false)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  НАСТРОЙКИ
+// ══════════════════════════════════════════════════════════════════════════════
+wBtc   = input.float(2.0, "Вес: BTC цикл",           minval=0, maxval=5, step=0.1, group="Веса")
+wTotal = input.float(1.5, "Вес: TOTAL капитализация", minval=0, maxval=5, step=0.1, group="Веса")
+wMacro = input.float(1.0, "Вес: Макросреда",          minval=0, maxval=5, step=0.1, group="Веса")
+wDom   = input.float(0.5, "Вес: BTC доминация",       minval=0, maxval=5, step=0.1, group="Веса")
+
+symBtc    = input.symbol("BINANCE:BTCUSDT", "BTC",    group="Тикеры")
+symTotal  = input.symbol("CRYPTOCAP:TOTAL", "TOTAL",  group="Тикеры")
+symTotal2 = input.symbol("CRYPTOCAP:TOTAL2","TOTAL2", group="Тикеры")
+symDom    = input.symbol("CRYPTOCAP:BTC.D", "BTC.D",  group="Тикеры")
+symDxy    = input.symbol("TVC:DXY",         "DXY",    group="Тикеры")
+symSpx    = input.symbol("SP:SPX",          "SPX",    group="Тикеры")
+symVix    = input.symbol("CBOE:VIX",        "VIX",    group="Тикеры")
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  УТИЛИТЫ
+// ══════════════════════════════════════════════════════════════════════════════
+nz0(x)    => na(x) ? 0.0 : x
+clamp1(x) => math.max(-1.0, math.min(1.0, x))
+sc(v)     => v > 0.1 ? color.new(color.teal, 20) : v < -0.1 ? color.new(color.red, 30) : color.new(color.gray, 50)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ДАННЫЕ  (все — недельный ТФ)
+// ══════════════════════════════════════════════════════════════════════════════
+btcC   = request.security(symBtc,    "W", close,              lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+btc200 = request.security(symBtc,    "W", ta.sma(close, 200), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+btc50  = request.security(symBtc,    "W", ta.sma(close, 50),  lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+totC   = request.security(symTotal,  "W", close,              lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+totE13 = request.security(symTotal,  "W", ta.ema(close, 13),  lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+totE34 = request.security(symTotal,  "W", ta.ema(close, 34),  lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+tot2C  = request.security(symTotal2, "W", close,              lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+tot2E  = request.security(symTotal2, "W", ta.ema(close, 13),  lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+domC   = request.security(symDom,    "W", close,              lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+domE20 = request.security(symDom,    "W", ta.ema(close, 20),  lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+dxyC   = request.security(symDxy,    "W", close,              lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+dxyE20 = request.security(symDxy,    "W", ta.ema(close, 20),  lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+spxC   = request.security(symSpx,    "W", close,              lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+spxE20 = request.security(symSpx,    "W", ta.ema(close, 20),  lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+vixC   = request.security(symVix,    "W", close,              lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+vixS20 = request.security(symVix,    "W", ta.sma(close, 20),  lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  МОДУЛЬ 1 — BTC ЦИКЛ  (главный индикатор направления всего рынка)
+//  Логика: BTC выше 200W SMA = бычий цикл, ниже = медвежий.
+//  200W SMA — исторически непробиваемая поддержка дна медвежьего рынка.
+// ══════════════════════════════════════════════════════════════════════════════
+btcOk   = not na(btcC) and not na(btc200) and not na(btc50) and btc200 > 0
+btcA200 = btcOk and btcC > btc200
+btcA50  = btcOk and btcC > btc50
+btcGold = btcOk and btc50 > btc200
+btcDist = btcOk ? (btcC - btc200) / btc200 : 0.0
+btcScore = btcOk ? clamp1((btcA200 ? 0.35 : -0.35) + (btcA50 ? 0.25 : -0.25) + (btcGold ? 0.25 : -0.25) + clamp1(btcDist * 2.0) * 0.15) : 0.0
+
+btcPhase  = btcGold and btcA200 and btcDist > 0.5 ? "ПИКОВЫЙ БЫК" : btcGold and btcA200 ? "БЫЧИЙ РЫНОК" : btcA200 and not btcGold ? "РАННЕЕ РАЛЛИ" : not btcA200 and btcDist > -0.25 ? "СЛОМ ТРЕНДА" : "МЕДВЕЖИЙ РЫНОК"
+btcPhaseBg = btcGold and btcA200 and btcDist > 0.5 ? color.new(color.orange, 10) : btcGold and btcA200 ? color.new(color.green, 10) : btcA200 ? color.new(color.lime, 20) : not btcA200 and btcDist > -0.25 ? color.new(color.orange, 20) : color.new(color.red, 10)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  МОДУЛЬ 2 — TOTAL КАПИТАЛИЗАЦИЯ  (общий тренд всего крипторынка)
+// ══════════════════════════════════════════════════════════════════════════════
+totOk      = not na(totC) and not na(totE13) and not na(totE34)
+totAE13    = totOk and totC > totE13
+totBull    = totOk and totE13 > totE34
+totalScore = totOk ? clamp1((totAE13 ? 0.5 : -0.5) + (totBull ? 0.5 : -0.5)) : 0.0
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  МОДУЛЬ 3 — МАКРОСРЕДА  (risk-on / risk-off для крипто)
+//  DXY↑ = доллар крепкий = плохо для крипто
+//  SPX↑ = риск включён = хорошо для крипто
+//  VIX↑ = страх рынка = плохо для крипто
+// ══════════════════════════════════════════════════════════════════════════════
+dxyBull    = not na(dxyC) and not na(dxyE20) and dxyC > dxyE20
+spxBull    = not na(spxC) and not na(spxE20) and spxC > spxE20
+vixHigh    = not na(vixC) and not na(vixS20) and vixC > vixS20
+macroScore = clamp1((dxyBull ? -0.4 : 0.4) + (spxBull ? 0.4 : -0.4) + (vixHigh ? -0.2 : 0.2))
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  МОДУЛЬ 4 — BTC ДОМИНАЦИЯ / АЛТ СЕЗОН
+//  Доминация падает + TOTAL2 растёт = альт сезон
+// ══════════════════════════════════════════════════════════════════════════════
+domOk     = not na(domC) and not na(domE20)
+tot2Ok    = not na(tot2C) and not na(tot2E)
+domRise   = domOk and domC > domE20
+tot2Bull  = tot2Ok and tot2C > tot2E
+altSeason = domOk and not domRise and tot2Bull
+domScore  = domOk ? clamp1(domRise ? -0.2 : tot2Bull ? 0.5 : 0.0) : 0.0
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ИТОГОВЫЙ ГЛОБАЛЬНЫЙ СЧЁТ  (−100 = медвежий, +100 = бычий)
+// ══════════════════════════════════════════════════════════════════════════════
+wSum   = math.max(wBtc + wTotal + wMacro + wDom, 0.0001)
+rawG   = (btcScore * wBtc + totalScore * wTotal + macroScore * wMacro + domScore * wDom) / wSum
+gScore = nz0(rawG) * 100.0
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ВИЗУАЛИЗАЦИЯ
+// ══════════════════════════════════════════════════════════════════════════════
+gColor = gScore > 50 ? color.new(color.green, 0) : gScore > 20 ? color.new(color.teal, 0) : gScore > 0 ? color.new(color.lime, 30) : gScore > -20 ? color.new(color.orange, 0) : gScore > -50 ? color.new(color.red, 10) : color.new(color.maroon, 0)
+
+plot(gScore,           "Global Score", color=gColor,                      linewidth=3)
+plot(btcScore   * 100, "BTC цикл",    color=color.new(color.orange, 55),  linewidth=1)
+plot(totalScore * 100, "TOTAL",       color=color.new(color.teal,   55),  linewidth=1)
+plot(macroScore * 100, "Макро",       color=color.new(color.purple, 55),  linewidth=1)
+plot(domScore   * 100, "Доминация",   color=color.new(color.yellow, 65),  linewidth=1)
+
+hline( 50, "Сильный бычий",    color=color.new(color.green,  50), linestyle=hline.style_dashed)
+hline( 20, "Рост",             color=color.new(color.teal,   60), linestyle=hline.style_dotted)
+hline(  0, "Нейтраль",         color=color.new(color.gray,   40), linestyle=hline.style_solid)
+hline(-20, "Снижение",         color=color.new(color.orange, 60), linestyle=hline.style_dotted)
+hline(-50, "Сильный медвежий", color=color.new(color.red,    50), linestyle=hline.style_dashed)
+
+bgcolor(gScore > 20 ? color.new(color.green, 93) : gScore < -20 ? color.new(color.red, 93) : na)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ТАБЛИЦА
+// ══════════════════════════════════════════════════════════════════════════════
+dirStr = gScore > 50 ? "СИЛЬНЫЙ РОСТ" : gScore > 20 ? "РОСТ" : gScore > -20 ? "БОКОВИК" : gScore > -50 ? "СНИЖЕНИЕ" : "СИЛЬНОЕ ПАДЕНИЕ"
+dirClr = gScore > 20 ? color.new(color.green, 10) : gScore < -20 ? color.new(color.red, 10) : color.new(color.gray, 40)
+
+if barstate.islast
+    var table t = table.new(position.top_left, 2, 10, border_width=1, frame_color=color.new(color.gray, 30), frame_width=1, bgcolor=color.new(color.black, 15))
+
+    table.cell(t, 0, 0, "GLOBAL MACRO",    text_color=color.white,  text_size=size.small,  bgcolor=color.new(color.navy, 0))
+    table.cell(t, 1, 0, dirStr,            text_color=color.white,  text_size=size.normal, bgcolor=dirClr)
+
+    gRnd     = math.round(gScore)
+    gSign    = gRnd >= 0 ? "+" : ""
+    scoreStr = gSign + str.tostring(gRnd) + " / 100"
+    table.cell(t, 0, 1, "Счёт",           text_color=color.silver, text_size=size.small,  bgcolor=color.new(color.black, 40))
+    table.cell(t, 1, 1, scoreStr,         text_color=color.white,  text_size=size.normal, bgcolor=sc(gScore / 100))
+
+    table.cell(t, 0, 2, "BTC цикл",       text_color=color.silver, text_size=size.small,  bgcolor=color.new(color.black, 40))
+    table.cell(t, 1, 2, btcPhase,         text_color=color.white,  text_size=size.small,  bgcolor=btcPhaseBg)
+
+    distRnd  = math.round(btcDist * 100)
+    distSign = distRnd >= 0 ? "+" : ""
+    b200Str  = btcOk ? distSign + str.tostring(distRnd) + "% от 200W SMA" : "—"
+    table.cell(t, 0, 3, "BTC / 200W SMA", text_color=color.silver, text_size=size.small,  bgcolor=color.new(color.black, 40))
+    table.cell(t, 1, 3, b200Str,          text_color=color.white,  text_size=size.small,  bgcolor=sc(btcDist))
+
+    totTrStr = not totOk ? "—" : totAE13 and totBull ? "Бычий тренд" : totAE13 ? "Выше EMA13" : "Медвежий"
+    table.cell(t, 0, 4, "TOTAL капитал.", text_color=color.silver, text_size=size.small,  bgcolor=color.new(color.black, 40))
+    table.cell(t, 1, 4, totTrStr,         text_color=color.white,  text_size=size.small,  bgcolor=sc(totalScore))
+
+    macStr = macroScore > 0.3 ? "Risk-ON" : macroScore < -0.3 ? "Risk-OFF" : "Нейтрально"
+    mDxy   = not na(dxyC) ? (dxyBull ? "DXY▲ " : "DXY▼ ") : ""
+    mSpx   = not na(spxC) ? (spxBull ? "SPX▲ " : "SPX▼ ") : ""
+    mVix   = not na(vixC) ? (vixHigh ? "VIX▲"  : "VIX▼")  : ""
+    table.cell(t, 0, 5, "Макросреда",     text_color=color.silver, text_size=size.small,  bgcolor=color.new(color.black, 40))
+    table.cell(t, 1, 5, macStr + " " + mDxy + mSpx + mVix, text_color=color.white, text_size=size.small, bgcolor=sc(macroScore))
+
+    domValStr = domOk ? str.tostring(math.round(nz0(domC))) + "%" : "—"
+    domDirStr = domOk ? (domRise ? " ▲ BTC сезон" : " ▼ Альт сезон") : ""
+    table.cell(t, 0, 6, "BTC Dominance",  text_color=color.silver, text_size=size.small,  bgcolor=color.new(color.black, 40))
+    table.cell(t, 1, 6, domValStr + domDirStr, text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 30))
+
+    altStr = altSeason ? "ДА — Альты растут" : domRise ? "НЕТ — BTC лидер" : "Нейтрально"
+    altBg  = altSeason ? color.new(color.teal, 20) : domRise ? color.new(color.orange, 30) : color.new(color.gray, 50)
+    table.cell(t, 0, 7, "Альт сезон",     text_color=color.silver, text_size=size.small,  bgcolor=color.new(color.black, 40))
+    table.cell(t, 1, 7, altStr,           text_color=color.white,  text_size=size.small,  bgcolor=altBg)
+
+    bStr   = str.tostring(math.round(btcScore   * 100))
+    tStr   = str.tostring(math.round(totalScore * 100))
+    mStr   = str.tostring(math.round(macroScore * 100))
+    dStr   = str.tostring(math.round(domScore   * 100))
+    modStr = "BTC:" + bStr + " TOT:" + tStr + " MAC:" + mStr + " DOM:" + dStr
+    table.cell(t, 0, 8, "Модули (-100/+100)", text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black, 40))
+    table.cell(t, 1, 8, modStr,           text_color=color.white,  text_size=size.tiny,   bgcolor=color.new(color.black, 30))
+
+    table.cell(t, 0, 9, "Данные",         text_color=color.new(color.gray, 40), text_size=size.tiny, bgcolor=color.new(color.black, 60))
+    table.cell(t, 1, 9, "Недельный ТФ",  text_color=color.new(color.gray, 40), text_size=size.tiny, bgcolor=color.new(color.black, 60))
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  АЛЕРТЫ
+// ══════════════════════════════════════════════════════════════════════════════
+alertcondition(ta.crossover(gScore,    20), "CGM: Рост",             "Crypto Global Macro: Рынок переходит в РОСТ")
+alertcondition(ta.crossunder(gScore,  -20), "CGM: Падение",          "Crypto Global Macro: Рынок переходит в СНИЖЕНИЕ")
+alertcondition(ta.crossover(gScore,    50), "CGM: Сильный бычий",    "Crypto Global Macro: СИЛЬНЫЙ бычий сигнал!")
+alertcondition(ta.crossunder(gScore,  -50), "CGM: Сильный медвежий", "Crypto Global Macro: СИЛЬНЫЙ медвежий сигнал!")
+alertcondition(altSeason and not altSeason[1], "CGM: Альт сезон",    "Crypto Global Macro: Начало АЛЬТ СЕЗОНА!")
