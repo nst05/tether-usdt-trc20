@@ -1,0 +1,396 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+//  A P E X  ·  Adaptive Phase Entry & Exit Strategy
+//  5 фаз рынка (Вайкофф) · фазо-адаптивный вход (0–8 условий)
+//  Структурный SL · 3 уровня TP · автоматический трейлинг
+//  Перевод в безубыток на TP1 · размер позиции · живой R-мультипликатор
+// ─────────────────────────────────────────────────────────────────────────────
+indicator("APEX — Adaptive Phase Strategy", "APEX", overlay=true, max_labels_count=30, max_lines_count=20)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  НАСТРОЙКИ
+// ══════════════════════════════════════════════════════════════════════════════
+balance  = input.float(10000, "Баланс счёта ($)",      minval=1,   group="Позиция")
+riskPct  = input.float(1.0,   "Риск на сделку (%)",   minval=0.1, maxval=10, step=0.1, group="Позиция")
+slBuf    = input.float(0.1,   "SL буфер (× ATR)",     minval=0,   maxval=1,  step=0.01, group="Позиция")
+emaF     = input.int(21,      "EMA быстрая",           minval=2,   group="EMA")
+emaS     = input.int(89,      "EMA медленная",         minval=10,  group="EMA")
+atrLen   = input.int(14,      "ATR период",            minval=2,   group="ATR")
+swLen    = input.int(5,       "Свинг-окно (TP структ.)",minval=2,  group="Структура")
+maxLvl   = input.int(10,      "Уровней в памяти",      minval=5,   group="Структура")
+coolBars = input.int(4,       "Пауза между сигналами", minval=1,   group="Сигналы")
+showPre  = input.bool(true,   "Пред-сигнал (точки)",   group="Вид")
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  БАЗОВЫЕ ИНДИКАТОРЫ
+// ══════════════════════════════════════════════════════════════════════════════
+_atr  = ta.atr(atrLen)
+atrMa = ta.sma(_atr, 50)
+_ef   = ta.ema(close, emaF)
+_es   = ta.ema(close, emaS)
+_rsi  = ta.rsi(close, 14)
+[_ml, _sl2, _hist] = ta.macd(close, 12, 26, 9)
+[diP, diM, adxV]   = ta.dmi(14, 14)
+_stK  = ta.sma(ta.stoch(close, high, low, 14), 3)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ФАЗА РЫНКА  (Вайкофф: 5 фаз)
+//  РАЗГОН    — сильный бычий тренд (ADX>25, EMA выровнены, норм. волатильность)
+//  СНИЖЕНИЕ  — сильный медвежий тренд
+//  НАКОПЛЕНИЕ — боковик/сжатие после даунтренда (подготовка к росту)
+//  РАСПРЕДЕЛЕНИЕ — боковик/расширение после аптренда (умные деньги выходят)
+//  ФЛЕТ      — всё остальное
+// ══════════════════════════════════════════════════════════════════════════════
+bullAlign = _ef > _es and close > _ef
+bearAlign = _ef < _es and close < _ef
+strongTrnd = adxV > 25
+atrHot    = _atr > atrMa * 1.35
+atrCold   = _atr < atrMa * 0.72
+
+phase = strongTrnd and bullAlign and not atrHot ? "РАЗГОН ▲" : strongTrnd and bearAlign and not atrHot ? "СНИЖЕНИЕ ▼" : bearAlign and atrCold ? "НАКОПЛЕНИЕ" : bullAlign and atrHot ? "РАСПРЕДЕЛЕНИЕ" : "ФЛЕТ"
+
+isMarkup   = phase == "РАЗГОН ▲"
+isMarkdown = phase == "СНИЖЕНИЕ ▼"
+
+phBg = phase == "РАЗГОН ▲"      ? color.new(color.teal,   95) : phase == "СНИЖЕНИЕ ▼"    ? color.new(color.red,    93) : phase == "НАКОПЛЕНИЕ"    ? color.new(color.green,  95) : phase == "РАСПРЕДЕЛЕНИЕ" ? color.new(color.orange, 93) : color.new(color.gray,   97)
+bgcolor(phBg)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  СТРУКТУРНЫЕ УРОВНИ
+// ══════════════════════════════════════════════════════════════════════════════
+ph = ta.pivothigh(high, swLen, swLen)
+pl = ta.pivotlow(low,  swLen, swLen)
+
+var float[] sH = array.new_float(0)
+var float[] sL = array.new_float(0)
+var float lastSH = na
+var float lastSL = na
+
+if not na(ph)
+    array.unshift(sH, ph)
+    if array.size(sH) > maxLvl
+        array.pop(sH)
+    lastSH := ph
+
+if not na(pl)
+    array.unshift(sL, pl)
+    if array.size(sL) > maxLvl
+        array.pop(sL)
+    lastSL := pl
+
+nearRes(above) =>
+    r = float(na)
+    sz = array.size(sH)
+    if sz > 0
+        for i = 0 to sz - 1
+            v = array.get(sH, i)
+            if v > above
+                r := na(r) ? v : math.min(r, v)
+    r
+
+nearSup(below) =>
+    r = float(na)
+    sz = array.size(sL)
+    if sz > 0
+        for i = 0 to sz - 1
+            v = array.get(sL, i)
+            if v < below
+                r := na(r) ? v : math.max(r, v)
+    r
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  УСЛОВИЯ ВХОДА  (фазо-адаптивный скоринг)
+//  В фазе РАЗГОН/СНИЖЕНИЕ трендовые условия весят 2 (макс. счёт = 8)
+//  В остальных фазах всё по 1 (макс. счёт = 7)
+//  Порог входа: 4 в тренде, 3 в остальных
+// ══════════════════════════════════════════════════════════════════════════════
+bBody  = math.abs(close - open)
+bUpW   = high - math.max(close, open)
+bDwW   = math.min(close, open) - low
+bpBody = math.abs(close[1] - open[1])
+bcBody = math.abs(close - open)
+
+// ── BULL условия ──────────────────────────────────────────────────────────────
+bTrend = bullAlign                                                               // EMA выровнены вверх
+bMacd  = _hist > 0 and _hist > _hist[1]                                         // MACD импульс вверх
+bRsi   = _rsi > 50 and _rsi < 75                                                // RSI в зоне силы
+bDiv   = low < ta.lowest(low, 14)[1] and _rsi > ta.lowest(_rsi, 14)[1] and _rsi < 50  // RSI дивергенция
+bPin   = bBody > 0 and bDwW >= bBody * 2.0 and bUpW < bBody                    // Pin Bar бычий
+bEng   = close > open and close[1] < open[1] and close > open[1] and open < close[1] and bcBody > bpBody  // Поглощение
+bZone  = not na(lastSL) and low <= lastSL * 1.012 and low >= lastSL * 0.985     // У зоны поддержки
+
+bScore = (bTrend ? (isMarkup ? 2 : 1) : 0) + (bMacd ? 1 : 0) + (bRsi ? 1 : 0) + (bDiv ? 2 : 0) + ((bPin or bEng) ? 1 : 0) + (bZone ? 1 : 0)
+
+// ── BEAR условия ──────────────────────────────────────────────────────────────
+brTrend = bearAlign
+brMacd  = _hist < 0 and _hist < _hist[1]
+brRsi   = _rsi < 50 and _rsi > 25
+brDiv   = high > ta.highest(high, 14)[1] and _rsi < ta.highest(_rsi, 14)[1] and _rsi > 50
+brPin   = bBody > 0 and bUpW >= bBody * 2.0 and bDwW < bBody
+brEng   = close < open and close[1] > open[1] and close < open[1] and open > close[1] and bcBody > bpBody
+brZone  = not na(lastSH) and high >= lastSH * 0.988 and high <= lastSH * 1.012
+
+brScore = (brTrend ? (isMarkdown ? 2 : 1) : 0) + (brMacd ? 1 : 0) + (brRsi ? 1 : 0) + (brDiv ? 2 : 0) + ((brPin or brEng) ? 1 : 0) + (brZone ? 1 : 0)
+
+minScore = isMarkup or isMarkdown ? 4 : 3
+
+bullTrig = close > open and bcBody >= _atr * 0.15
+bearTrig = close < open and bcBody >= _atr * 0.15
+
+var int coolTimer = 999
+coolTimer := coolTimer + 1
+canFire = coolTimer >= coolBars
+
+bullEntry = bScore >= minScore and bullTrig and canFire
+bearEntry = brScore >= minScore and bearTrig and canFire
+
+if bullEntry or bearEntry
+    coolTimer := 0
+
+bullPre = bScore  >= math.max(minScore - 1, 1) and not bullEntry
+bearPre = brScore >= math.max(minScore - 1, 1) and not bearEntry
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  МАШИНА СОСТОЯНИЙ СДЕЛКИ
+//  0 = НЕЙТРАЛ → 1 = ОТКРЫТА → 2 = TP1 достигнут → 3 = TP2 достигнут → 0
+// ══════════════════════════════════════════════════════════════════════════════
+var float sigEntry = na
+var float sigSL    = na
+var float sigTP1   = na
+var float sigTP2   = na
+var float sigTP3   = na
+var int   sigDir   = 0
+var int   tradeState = 0
+var float trailSL  = na
+var float riskDolr = na
+var float posSize  = na
+
+if bullEntry or bearEntry
+    tradeState := 1
+    sigDir     := bullEntry ? 1 : -1
+    sigEntry   := close
+    sigSL      := bullEntry ? low  - _atr * slBuf : high + _atr * slBuf
+    riskV      = math.abs(sigEntry - sigSL)
+    sigTP1     := bullEntry ? sigEntry + riskV * 1.5 : sigEntry - riskV * 1.5
+    tp2s       = bullEntry ? nearRes(sigEntry) : nearSup(sigEntry)
+    sigTP2     := na(tp2s) ? (bullEntry ? sigEntry + riskV * 2.5 : sigEntry - riskV * 2.5) : tp2s
+    sigTP3     := bullEntry ? sigEntry + riskV * 4.0 : sigEntry - riskV * 4.0
+    trailSL    := sigSL
+    riskDolr   := balance * riskPct / 100.0
+    posSize    := riskV > 0 ? riskDolr / riskV : 0.0
+
+// TP1 достигнут → сдвигаем SL в безубыток, начинаем трейлинг
+if tradeState == 1 and not na(sigTP1)
+    if sigDir == 1 and close >= sigTP1
+        tradeState := 2
+        trailSL    := sigEntry
+    if sigDir == -1 and close <= sigTP1
+        tradeState := 2
+        trailSL    := sigEntry
+
+// TP2 достигнут → TP3 последний кусок, трейлинг тighter
+if tradeState == 2 and not na(sigTP2)
+    if sigDir == 1 and close >= sigTP2
+        tradeState := 3
+    if sigDir == -1 and close <= sigTP2
+        tradeState := 3
+
+// Трейлинг стоп (после TP1)
+if tradeState == 2 and not na(trailSL)
+    if sigDir == 1
+        trailSL := math.max(trailSL, close - _atr * 1.0)
+    if sigDir == -1
+        trailSL := math.min(trailSL, close + _atr * 1.0)
+
+if tradeState == 3 and not na(trailSL)
+    if sigDir == 1
+        trailSL := math.max(trailSL, close - _atr * 0.7)
+    if sigDir == -1
+        trailSL := math.min(trailSL, close + _atr * 0.7)
+
+// Эффективный SL (для проверки и отображения)
+effSL = tradeState >= 2 and not na(trailSL) ? trailSL : sigSL
+
+// SL пробит → закрываем сделку
+if tradeState >= 1 and not na(effSL)
+    if (sigDir == 1 and close <= effSL) or (sigDir == -1 and close >= effSL)
+        tradeState := 0
+        sigDir     := 0
+        trailSL    := na
+
+// Живой R-мультипликатор
+rUnit = not na(sigEntry) and not na(sigSL) ? math.abs(sigEntry - sigSL) : float(na)
+currR = not na(rUnit) and rUnit > 0 and sigDir != 0 ? (close - sigEntry) * sigDir / rUnit : float(na)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  EMA ОБЛАКО
+// ══════════════════════════════════════════════════════════════════════════════
+p21 = plot(_ef, "EMA 21", color=color.new(color.orange, 40), linewidth=1)
+p89 = plot(_es, "EMA 89", color=color.new(color.blue,   40), linewidth=2)
+fill(p21, p89, color=_ef > _es ? color.new(color.teal, 88) : color.new(color.red, 88))
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ВИЗУАЛЬНЫЕ СИГНАЛЫ
+// ══════════════════════════════════════════════════════════════════════════════
+plotshape(showPre and bullPre and not bullEntry, "Пред BUY",  shape.circle, location.belowbar, color.new(color.lime, 35), size=size.tiny)
+plotshape(showPre and bearPre and not bearEntry, "Пред SELL", shape.circle, location.abovebar, color.new(color.red,  35), size=size.tiny)
+
+// ── Сигнальные метки ─────────────────────────────────────────────────────────
+var label[] sigLbls = array.new_label()
+
+if bullEntry or bearEntry
+    rv    = math.abs(sigEntry - sigSL)
+    t1r   = rv > 0 ? str.tostring(math.round(math.abs(sigTP1-sigEntry)/rv*10)/10.0, "#.#") + ":1" : "─"
+    t2r   = rv > 0 ? str.tostring(math.round(math.abs(sigTP2-sigEntry)/rv*10)/10.0, "#.#") + ":1" : "─"
+    szStr = str.tostring(math.round(nz(posSize)*100)/100.0, "#.##")
+    riStr = "$" + str.tostring(math.round(nz(riskDolr)*10)/10.0, "#.#")
+    scStr = str.tostring(bullEntry ? bScore : brScore) + " усл."
+
+    l1 = (bullEntry ? "▲ APEX LONG" : "▼ APEX SHORT") + "  " + scStr + "  " + phase
+    l2 = "Вход   " + str.tostring(sigEntry, format.mintick)
+    l3 = "SL     " + str.tostring(sigSL, format.mintick)
+    l4 = "TP1    " + str.tostring(sigTP1, format.mintick) + "  (" + t1r + ")"
+    l5 = "TP2    " + str.tostring(sigTP2, format.mintick) + "  (" + t2r + ")"
+    l6 = "Размер " + szStr + " ед.  Риск " + riStr
+    txt = l1 + "\n" + l2 + "\n" + l3 + "\n" + l4 + "\n" + l5 + "\n" + l6
+
+    lStl = bullEntry ? label.style_label_up : label.style_label_down
+    lClr = bullEntry ? color.new(color.green, 5) : color.new(color.red, 5)
+    yPos = bullEntry ? low  - _atr * 0.7 : high + _atr * 0.7
+
+    lbl = label.new(bar_index, yPos, txt, style=lStl, color=lClr, textcolor=color.white, size=size.small)
+    array.push(sigLbls, lbl)
+    if array.size(sigLbls) > 10
+        label.delete(array.shift(sigLbls))
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ЛИНИИ SL / TP  (создаются при сигнале, SL обновляется при трейлинге)
+// ══════════════════════════════════════════════════════════════════════════════
+var line _lnSL  = na
+var line _lnTP1 = na
+var line _lnTP2 = na
+var line _lnTP3 = na
+
+if bullEntry or bearEntry
+    line.delete(_lnSL)
+    line.delete(_lnTP1)
+    line.delete(_lnTP2)
+    line.delete(_lnTP3)
+    _lnSL  := line.new(bar_index, sigSL,  bar_index+1, sigSL,  color=color.new(color.red,   15), width=2, style=line.style_dashed, extend=extend.right)
+    _lnTP1 := line.new(bar_index, sigTP1, bar_index+1, sigTP1, color=color.new(color.teal,  20), width=1, style=line.style_dashed, extend=extend.right)
+    _lnTP2 := line.new(bar_index, sigTP2, bar_index+1, sigTP2, color=color.new(color.lime,  20), width=2, style=line.style_dashed, extend=extend.right)
+    _lnTP3 := line.new(bar_index, sigTP3, bar_index+1, sigTP3, color=color.new(color.green, 35), width=1, style=line.style_dotted, extend=extend.right)
+
+// Обновляем SL линию при трейлинге
+if not na(_lnSL) and not na(effSL)
+    line.set_y1(_lnSL, effSL)
+    line.set_y2(_lnSL, effSL)
+    if tradeState >= 2
+        line.set_color(_lnSL, color.new(color.orange, 15))  // оранжевый = трейлинг/безубыток
+
+// Подписи уровней у правого края
+var label _lbSL  = na
+var label _lbTP1 = na
+var label _lbTP2 = na
+var label _lbTP3 = na
+
+if barstate.islast and not na(sigSL)
+    label.delete(_lbSL)
+    label.delete(_lbTP1)
+    label.delete(_lbTP2)
+    label.delete(_lbTP3)
+    slTxt = tradeState == 0 ? "SL" : tradeState == 1 ? "SL" : "SL→Трейл"
+    t1Txt = tradeState >= 2 ? "TP1 ✓" : "TP1"
+    t2Txt = tradeState >= 3 ? "TP2 ✓" : "TP2"
+    slClr = tradeState >= 2 ? color.new(color.orange,15) : color.new(color.red,15)
+    _lbSL  := label.new(bar_index+2, nz(effSL, sigSL), slTxt, style=label.style_label_left, color=slClr,                   textcolor=color.white, size=size.small)
+    _lbTP1 := label.new(bar_index+2, sigTP1,            t1Txt, style=label.style_label_left, color=color.new(color.teal,20), textcolor=color.white, size=size.small)
+    _lbTP2 := label.new(bar_index+2, sigTP2,            t2Txt, style=label.style_label_left, color=color.new(color.lime,20), textcolor=color.white, size=size.small)
+    _lbTP3 := label.new(bar_index+2, sigTP3,            "TP3", style=label.style_label_left, color=color.new(color.green,35),textcolor=color.white, size=size.small)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ДАШБОРД  (левый верхний угол)
+// ══════════════════════════════════════════════════════════════════════════════
+if barstate.islast
+    var table t = table.new(position.top_left, 2, 14, border_width=1, frame_color=color.new(color.gray,30), frame_width=1, bgcolor=color.new(color.black,10))
+
+    // Фаза
+    phClr = phase == "РАЗГОН ▲" ? color.new(color.teal,15) : phase == "СНИЖЕНИЕ ▼" ? color.new(color.red,15) : phase == "НАКОПЛЕНИЕ" ? color.new(color.green,20) : phase == "РАСПРЕДЕЛЕНИЕ" ? color.new(color.orange,20) : color.new(color.gray,50)
+    table.cell(t, 0, 0, "APEX",   text_color=color.white,  text_size=size.small,  bgcolor=color.new(color.navy,0))
+    table.cell(t, 1, 0, phase,    text_color=color.white,  text_size=size.normal, bgcolor=phClr)
+
+    // Сигнал
+    dirStr = tradeState == 0 ? "ОЖИДАНИЕ" : sigDir == 1 ? "▲ ЛОНГ" : "▼ ШОРТ"
+    dirClr = tradeState == 0 ? color.new(color.gray,45) : sigDir == 1 ? color.new(color.green,10) : color.new(color.red,10)
+    table.cell(t, 0, 1, "Сигнал",  text_color=color.silver, text_size=size.small,  bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 1, dirStr,    text_color=color.white,  text_size=size.normal, bgcolor=dirClr)
+
+    // R мультипликатор
+    rStr = na(currR) ? "─" : (currR >= 0 ? "+" : "") + str.tostring(math.round(currR*100)/100.0, "#.##") + "R"
+    rClr = na(currR) ? color.new(color.gray,55) : currR >= 2.0 ? color.new(color.green,10) : currR >= 1.0 ? color.new(color.teal,25) : currR >= 0 ? color.new(color.blue,30) : color.new(color.red,25)
+    table.cell(t, 0, 2, "R текущий", text_color=color.silver, text_size=size.small,  bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 2, rStr,        text_color=color.white,  text_size=size.normal, bgcolor=rClr)
+
+    // Статус сделки
+    stStr = tradeState == 0 ? "─" : tradeState == 1 ? "ОТКРЫТА" : tradeState == 2 ? "TP1 ✓  Трейлинг" : "TP1+TP2 ✓  К TP3"
+    stClr = tradeState == 0 ? color.new(color.gray,55) : tradeState == 1 ? color.new(color.blue,30) : color.new(color.teal,20)
+    table.cell(t, 0, 3, "Статус",   text_color=color.silver, text_size=size.small,  bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 3, stStr,      text_color=color.white,  text_size=size.small,  bgcolor=stClr)
+
+    // Уровни
+    enS  = na(sigEntry) ? "─" : str.tostring(sigEntry, format.mintick)
+    slS  = na(effSL)    ? "─" : str.tostring(effSL,    format.mintick) + (tradeState >= 2 ? " (трейл)" : "")
+    t1S  = na(sigTP1)   ? "─" : str.tostring(sigTP1, format.mintick) + (tradeState >= 2 ? " ✓" : "")
+    t2S  = na(sigTP2)   ? "─" : str.tostring(sigTP2, format.mintick) + (tradeState >= 3 ? " ✓" : "")
+    t3S  = na(sigTP3)   ? "─" : str.tostring(sigTP3, format.mintick)
+
+    table.cell(t, 0, 4, "Вход",     text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 4, enS,         text_color=color.white,  text_size=size.small, bgcolor=color.new(color.black,25))
+
+    slRowName = tradeState >= 2 ? "Трейлинг SL" : "Stop Loss"
+    slRowClr  = tradeState >= 2 ? color.new(color.orange,50) : color.new(color.red,50)
+    table.cell(t, 0, 5, slRowName,  text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 5, slS,         text_color=color.white,  text_size=size.small, bgcolor=slRowClr)
+
+    table.cell(t, 0, 6, "TP1 40%",  text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 6, t1S,         text_color=color.white,  text_size=size.small, bgcolor=tradeState >= 2 ? color.new(color.teal,15) : color.new(color.teal,50))
+
+    table.cell(t, 0, 7, "TP2 40%",  text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 7, t2S,         text_color=color.white,  text_size=size.small, bgcolor=tradeState >= 3 ? color.new(color.lime,15) : color.new(color.lime,50))
+
+    table.cell(t, 0, 8, "TP3 20%",  text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 8, t3S,         text_color=color.white,  text_size=size.small, bgcolor=color.new(color.green,55))
+
+    // Позиция
+    szStr = na(posSize) ? "─" : str.tostring(math.round(nz(posSize)*100)/100.0, "#.##") + " ед."
+    riStr = na(riskDolr) ? "─" : "$" + str.tostring(math.round(nz(riskDolr)*10)/10.0, "#.#") + " (" + str.tostring(riskPct, "#.#") + "%)"
+    table.cell(t, 0, 9,  "Размер",  text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 9,  szStr,      text_color=color.white,  text_size=size.normal, bgcolor=color.new(color.purple,30))
+    table.cell(t, 0, 10, "Риск $",  text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 10, riStr,      text_color=color.white,  text_size=size.small, bgcolor=color.new(color.black,30))
+
+    // Скоринг текущего бара (живые условия)
+    bLine  = str.tostring(bScore)  + "/" + str.tostring(minScore) + "  " + (bTrend?"Tr·":"") + (bMacd?"MACD·":"") + (bRsi?"RSI·":"") + (bDiv?"Div·":"") + ((bPin or bEng)?"Свч·":"") + (bZone?"Sup":"")
+    brLine = str.tostring(brScore) + "/" + str.tostring(minScore) + "  " + (brTrend?"Tr·":"") + (brMacd?"MACD·":"") + (brRsi?"RSI·":"") + (brDiv?"Div·":"") + ((brPin or brEng)?"Свч·":"") + (brZone?"Res":"")
+
+    table.cell(t, 0, 11, "↑ Условий",  text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 11, bLine,          text_color=color.white,  text_size=size.tiny,  bgcolor=bScore >= minScore ? color.new(color.teal,25) : color.new(color.black,30))
+
+    table.cell(t, 0, 12, "↓ Условий",  text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 12, brLine,         text_color=color.white,  text_size=size.tiny,  bgcolor=brScore >= minScore ? color.new(color.red,30) : color.new(color.black,30))
+
+    coolStr = coolTimer < coolBars ? "Пауза " + str.tostring(coolBars - coolTimer) + " баров" : "Готов"
+    coolClr = coolTimer < coolBars ? color.new(color.orange,35) : color.new(color.gray,55)
+    table.cell(t, 0, 13, "Статус",     text_color=color.silver, text_size=size.small, bgcolor=color.new(color.black,40))
+    table.cell(t, 1, 13, coolStr,       text_color=color.white,  text_size=size.tiny,  bgcolor=coolClr)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  АЛЕРТЫ
+// ══════════════════════════════════════════════════════════════════════════════
+alertcondition(bullEntry,                                 "APEX LONG",         "⚡ APEX LONG {{ticker}} ({{interval}}) вход {{close}}")
+alertcondition(bearEntry,                                 "APEX SHORT",        "⚡ APEX SHORT {{ticker}} ({{interval}}) вход {{close}}")
+alertcondition(tradeState == 2 and tradeState[1] == 1,    "APEX: TP1 — безубыток","APEX: TP1 ✓ {{ticker}} — SL сдвинут в безубыток, трейлинг включён")
+alertcondition(tradeState == 3 and tradeState[1] == 2,    "APEX: TP2 — ведём к TP3","APEX: TP2 ✓ {{ticker}} — ведём 20% позиции к TP3")
+alertcondition(tradeState == 0 and tradeState[1] >= 1,    "APEX: Сделка закрыта","APEX: Сделка закрыта {{ticker}}")
+alertcondition(bullPre and not bullPre[1],                "APEX: Готов BUY",   "APEX: BUY сигнал формируется {{ticker}} — следи за свечой")
+alertcondition(bearPre and not bearPre[1],                "APEX: Готов SELL",  "APEX: SELL сигнал формируется {{ticker}} — следи за свечой")
