@@ -1,0 +1,6 @@
+# Никогда не коммитим реальные конфиги/ключи
+server.conf
+client.conf
+*.key
+__pycache__/
+*.pyc

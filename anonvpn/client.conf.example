@@ -1,0 +1,12 @@
+{
+  "private_key": "<base64 приватный ключ клиента — сгенерируйте через setup_configs>",
+  "server_public_key": "<base64 публичный ключ сервера>",
+  "server_host": "vpn.example.com",
+  "server_port": 51820,
+  "client_vpn_ip": "10.9.0.2",
+  "server_vpn_ip": "10.9.0.1",
+  "obfs_password": "<длинный-общий-секретный-пароль>",
+  "tun_name": "anon0",
+  "mtu": 1380,
+  "redirect_gateway": true
+}

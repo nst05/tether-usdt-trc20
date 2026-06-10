@@ -1,0 +1,17 @@
+{
+  "private_key": "<base64 приватный ключ сервера — сгенерируйте через setup_configs>",
+  "allowed_clients": [
+    "<base64 публичный ключ клиента>"
+  ],
+  "ip_assignments": {
+    "<base64 публичный ключ клиента>": "10.9.0.2"
+  },
+  "listen_addr": "0.0.0.0",
+  "listen_port": 51820,
+  "server_vpn_ip": "10.9.0.1",
+  "vpn_subnet": "10.9.0.0/24",
+  "out_interface": "eth0",
+  "obfs_password": "<длинный-общий-секретный-пароль>",
+  "tun_name": "anon0",
+  "mtu": 1380
+}
