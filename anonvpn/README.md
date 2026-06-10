@@ -93,6 +93,7 @@ VPN — это **один хоп**. Будьте честны с моделью 
 | `firewall.py` | kill-switch и защита от утечек DNS (iptables) |
 | `server.py` | VPN-сервер |
 | `client.py` | VPN-клиент |
+| `gui.py` | графический интерфейс клиента (tkinter): кнопки и лог |
 | `keygen.py` | генерация ключей |
 | `setup_configs.py` | генерация готовых конфигов сервер/клиент |
 | `selftest.py` | проверка криптоядра (без root) |
@@ -148,6 +149,19 @@ sudo python -m anonvpn.client --config client.conf -v
 ```bash
 curl https://api.ipify.org
 ```
+
+### 4. Графический интерфейс (вместо консольного клиента)
+
+GUI на tkinter: поле выбора конфига и кнопка «Обзор», индикатор статуса
+(красный/оранжевый/зелёный), кнопки **Подключить / Отключить**, кнопка очистки и
+живой цветной лог. GUI сам запускает клиент как отдельный процесс и аккуратно
+гасит его при отключении (что откатывает kill-switch и DNS).
+
+```bash
+sudo apt install python3-tk      # Debian/Ubuntu (Fedora: python3-tkinter)
+sudo python -m anonvpn.gui
+```
+Если запустить без root, GUI попробует поднять клиент через `pkexec`/`sudo`.
 
 ---
 
