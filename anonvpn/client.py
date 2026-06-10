@@ -11,14 +11,16 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import base64
 import logging
 import select
+import signal
 import socket
 import sys
 import time
 
-from . import obfs, protocol, tun
+from . import firewall, obfs, protocol, tun
 
 log = logging.getLogger("anonvpn.client")
 
@@ -60,10 +62,30 @@ def run_client(cfg: dict) -> None:
     log.info("Сессия установлена с %s", server_addr)
 
     # --- Поднимаем TUN ---
-    tun_if = tun.TunInterface(name=cfg.get("tun_name", "anon0"),
-                              mtu=cfg.get("mtu", 1380))
+    tun_name = cfg.get("tun_name", "anon0")
+    tun_if = tun.TunInterface(name=tun_name, mtu=cfg.get("mtu", 1380))
     tun_if.configure(cfg["client_vpn_ip"], cfg["server_vpn_ip"])
     _setup_routes(cfg, server_addr[0])
+
+    # --- Защита от утечек: DNS внутрь туннеля + kill-switch ---
+    _cleaned = {"done": False}
+
+    def _cleanup() -> None:
+        if _cleaned["done"]:
+            return
+        _cleaned["done"] = True
+        firewall.cleanup()
+        log.info("Очистка завершена (DNS и kill-switch откатаны)")
+
+    atexit.register(_cleanup)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: (_cleanup(), sys.exit(0)))
+
+    dns = cfg.get("dns_servers")
+    if dns:
+        firewall.set_dns(dns)
+    if cfg.get("kill_switch"):
+        firewall.enable_killswitch(server_addr[0], server_addr[1], tun_name)
 
     sock.settimeout(None)
     last_keepalive = time.time()

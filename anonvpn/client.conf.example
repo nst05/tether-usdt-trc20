@@ -8,5 +8,7 @@
   "obfs_password": "<длинный-общий-секретный-пароль>",
   "tun_name": "anon0",
   "mtu": 1380,
-  "redirect_gateway": true
+  "redirect_gateway": true,
+  "dns_servers": ["1.1.1.1", "1.0.0.1"],
+  "kill_switch": true
 }

@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from . import crypto, obfs, protocol
+from . import crypto, firewall, obfs, protocol
 
 
 def _ok(cond: bool, msg: str) -> None:
@@ -81,6 +81,16 @@ def main() -> int:
     ob_wrong = obfs.Obfuscator("wrong-password")
     res = ob_wrong.unwrap(wire)
     _ok(res != payload, "чужой пароль обфускации не даёт исходный payload")
+
+    # 9. Kill-switch: правила формируются корректно
+    rules = firewall.build_killswitch_rules("203.0.113.5", 51820, "anon0")
+    flat = [" ".join(r) for r in rules]
+    _ok(any("-o anon0 -j ACCEPT" in r for r in flat),
+        "kill-switch разрешает трафик в туннель")
+    _ok(any("203.0.113.5" in r and "51820" in r for r in flat),
+        "kill-switch разрешает трафик до VPN-сервера")
+    _ok(flat[-2].endswith("-j DROP"),
+        "kill-switch блокирует всё остальное")
 
     print("\nВсе проверки пройдены ✔")
     return 0
