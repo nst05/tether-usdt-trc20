@@ -1,0 +1,45 @@
+name: WebScan
+
+# Example CI/CD integration. Runs WebScan against a target and uploads the
+# results to GitHub Code Scanning (Security tab) as SARIF.
+#
+# Set the TARGET below to a system you are authorized to scan, or wire it to a
+# staging URL via a repository variable / secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target URL to scan (must be authorized)"
+        required: true
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webscan
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install WebScan
+        run: python -m pip install -e .
+
+      - name: Run scan (SARIF)
+        run: |
+          webscan -m cicd -o sarif --out-file results.sarif \
+            --fail-on high -y "${{ github.event.inputs.target }}"
+        continue-on-error: true   # let SARIF upload even when findings gate the build
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: webscan/results.sarif
