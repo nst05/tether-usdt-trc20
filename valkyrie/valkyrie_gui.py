@@ -71,6 +71,9 @@ class Session:
             max_pages=int(cfg.get("max_pages", 80)),
             fuzz=cfg.get("fuzz", True),
             active=cfg.get("active", True),
+            test_forms=cfg.get("forms", True),
+            idor=cfg.get("idor", True),
+            allow_destructive=cfg.get("allow_destructive", False),
         )
         self.started = time.time()
         self.finished = 0.0
@@ -304,6 +307,12 @@ INDEX_HTML = r"""<!doctype html>
       <span>Behavioral fuzzing (mutations + anomaly deltas)</span></div>
     <div class="check"><input type="checkbox" id="active" checked>
       <span>Active confirmation (SSTI / SQLi / LFI / cmdi / redirect)</span></div>
+    <div class="check"><input type="checkbox" id="forms" checked>
+      <span>Form testing (POST/GET, CSRF passthrough)</span></div>
+    <div class="check"><input type="checkbox" id="idor" checked>
+      <span>IDOR / object enumeration (numeric ids)</span></div>
+    <div class="check"><input type="checkbox" id="allow_destructive">
+      <span>Submit state-changing forms (disposable data only)</span></div>
     <div class="check"><input type="checkbox" id="insecure">
       <span>Skip TLS verification</span></div>
     <div class="check"><input type="checkbox" id="authorized">
@@ -351,6 +360,8 @@ function cfg(){return{
   max_requests:+$("#max_requests").value, delay:+$("#delay").value,
   timeout:+$("#timeout").value, cookie:$("#cookie").value,
   fuzz:$("#fuzz").checked, active:$("#active").checked,
+  forms:$("#forms").checked, idor:$("#idor").checked,
+  allow_destructive:$("#allow_destructive").checked,
   insecure:$("#insecure").checked, authorized:$("#authorized").checked};}
 
 async function start(){

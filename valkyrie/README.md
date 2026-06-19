@@ -39,13 +39,27 @@ a vulnerability class and attach the request + response as evidence.
 - Anomaly detection: unhandled 5xx, time-delay, response-size variance
 - Reflected-input detection (encoded vs unencoded → XSS-capable)
 
-**Active confirmation** (proves exploitability)
+**Active confirmation** (proves exploitability) — on GET parameters *and* form fields
 - **SSTI** — `{{7*8}}`/`${7*8}`/`<%=7*8%>` evaluated to `56`
 - **Path traversal / LFI** — `/etc/passwd` / `win.ini` content returned
 - **SQL injection** — error-based (DB error on a quote) and boolean-based
   (TRUE vs FALSE divergence)
 - **OS command injection** — time-based, reproduced on retry
 - **Open redirect** — external host reflected into `Location`
+- **Reflected XSS** — unique markup probe returned unencoded
+
+**Form testing**
+- Parses `<form>`s found while crawling and submits them (POST or GET),
+  carrying hidden fields through — including the **CSRF token** — so the same
+  injection battery runs against each editable field.
+- State-changing forms (action contains `delete`, `restore`, `logout`, …) are
+  **skipped by default**; enable `--allow-destructive` only on disposable data.
+
+**IDOR / object enumeration**
+- Detects endpoints keyed by a numeric path segment (`/item/5`) or numeric
+  query value (`?id=5`) and walks neighbouring ids. **Confirmed** when several
+  sequential ids each return a distinct 200 object with no access-control
+  boundary — i.e. objects are directly addressable by id.
 
 Every finding is tagged **confirmed** (proven / deterministic) or **potential**
 (a lead to validate manually) and carries a `proof` block with the exact request
@@ -75,15 +89,17 @@ python3 valkyrie.py http://localhost:5000 --cookie "session=…" # authenticated
 ```
 
 Key flags: `--max-pages`, `--max-requests` (request budget), `--delay`,
-`--timeout`, `--no-fuzz`, `--no-active`, `--insecure` (skip TLS verify),
+`--timeout`, `--no-fuzz`, `--no-active`, `--no-forms`, `--no-idor`,
+`--allow-destructive`, `--insecure` (skip TLS verify),
 `--i-am-authorized` (required for non-local targets).
 
 ## Safety defaults
 
 - Loopback/private targets only unless authorization is explicitly confirmed.
-- GET-only probing — never submits destructive POST actions (delete/restore).
+- Form submission is on by default, but **state-changing forms are skipped**
+  unless `--allow-destructive` is set — run that only against disposable data.
 - Rate-limited (`--delay`) and bounded by a request budget (`--max-requests`).
-- Bodies are read up to a cap; nothing is written to the target.
+- Bodies are read up to a cap; no detection-evasion or brute-forcing.
 
 ## Interpreting results
 

@@ -118,20 +118,31 @@ class Client:
         return headers
 
     def get(self, url, extra_headers=None) -> Response:
+        return self._request("GET", url, None, extra_headers)
+
+    def post(self, url, data, extra_headers=None) -> Response:
+        body = urlencode(data).encode("utf-8")
+        hdrs = {"Content-Type": "application/x-www-form-urlencoded"}
+        if extra_headers:
+            hdrs.update(extra_headers)
+        return self._request("POST", url, body, hdrs)
+
+    def _request(self, method, url, body, extra_headers) -> Response:
         if self.count >= self.max_requests or self.stop_check():
-            return Response(url, 0, 0.0, 0, {}, "", error="stopped-or-budget-exhausted")
+            return Response(url, 0, 0.0, 0, {}, "", error="stopped-or-budget-exhausted",
+                            method=method)
         self.count += 1
         headers = self._req_headers(extra_headers)
-        req = Request(url, headers=headers, method="GET")
+        req = Request(url, data=body, headers=headers, method=method)
         t0 = time.perf_counter()
         try:
             with urlopen(req, timeout=self.timeout, context=self.ctx) as resp:
                 raw = resp.read(self.max_body)
                 elapsed = time.perf_counter() - t0
-                body = raw.decode(resp.headers.get_content_charset() or "utf-8",
-                                  errors="replace")
+                rbody = raw.decode(resp.headers.get_content_charset() or "utf-8",
+                                   errors="replace")
                 hdrs = {k.lower(): v for k, v in resp.headers.items()}
-                r = Response(url, resp.status, elapsed, len(raw), hdrs, body)
+                r = Response(url, resp.status, elapsed, len(raw), hdrs, rbody, method=method)
         except HTTPError as e:
             elapsed = time.perf_counter() - t0
             raw = b""
@@ -139,15 +150,15 @@ class Client:
                 raw = e.read(self.max_body)
             except Exception:
                 pass
-            body = raw.decode("utf-8", errors="replace")
+            rbody = raw.decode("utf-8", errors="replace")
             hdrs = {k.lower(): v for k, v in (e.headers or {}).items()}
-            r = Response(url, e.code, elapsed, len(raw), hdrs, body)
+            r = Response(url, e.code, elapsed, len(raw), hdrs, rbody, method=method)
         except (URLError, socket.timeout, TimeoutError) as e:
             elapsed = time.perf_counter() - t0
-            r = Response(url, 0, elapsed, 0, {}, "", error=str(e))
+            r = Response(url, 0, elapsed, 0, {}, "", error=str(e), method=method)
         except Exception as e:  # noqa: BLE001 - never let a probe crash the scan
             elapsed = time.perf_counter() - t0
-            r = Response(url, 0, elapsed, 0, {}, "", error=repr(e))
+            r = Response(url, 0, elapsed, 0, {}, "", error=repr(e), method=method)
         r.request_headers = headers
         if self.delay and not self.stop_check():
             time.sleep(self.delay)
@@ -164,6 +175,7 @@ class Response:
     body: str
     error: str = ""
     request_headers: dict = field(default_factory=dict)
+    method: str = "GET"
 
 
 # ── HTML parsing: links, forms, parameters ──────────────────────────────────
@@ -189,7 +201,12 @@ class _LinkFormParser(HTMLParser):
                          "inputs": []}
         elif tag in ("input", "textarea", "select") and self._cur is not None:
             if a.get("name"):
-                self._cur["inputs"].append(a["name"])
+                self._cur["inputs"].append({
+                    "name": a["name"],
+                    "type": (a.get("type") or
+                             ("textarea" if tag == "textarea" else "text")).lower(),
+                    "value": a.get("value", ""),
+                })
 
     def handle_endtag(self, tag):
         if tag == "form" and self._cur is not None:
@@ -295,12 +312,16 @@ def _excerpt(text, n=600):
 
 class Scanner:
     def __init__(self, base_url, client: Client, max_pages=80, fuzz=True,
-                 active=True, on_finding=None, on_progress=None):
+                 active=True, test_forms=True, idor=True, allow_destructive=False,
+                 on_finding=None, on_progress=None):
         self.base = base_url.rstrip("/")
         self.client = client
         self.max_pages = max_pages
         self.fuzz = fuzz
         self.active = active
+        self.test_forms_enabled = test_forms
+        self.idor_enabled = idor
+        self.allow_destructive = allow_destructive
         self.on_finding = on_finding          # callback(Finding)
         self.on_progress = on_progress        # callback(phase, info dict)
         self.origin = urlparse(self.base)
@@ -343,7 +364,7 @@ class Scanner:
     @staticmethod
     def proof_from(r: Response) -> Proof:
         return Proof(
-            method="GET", url=r.url,
+            method=r.method, url=r.url,
             request_headers=dict(r.request_headers),
             status=r.status,
             response_headers=dict(list(r.headers.items())[:25]),
@@ -527,7 +548,6 @@ class Scanner:
             local_size = base_r.size
             local_lat = base_r.elapsed
             for idx, (name, val) in enumerate(params):
-                self._reflection_check(url, parsed, params, idx, name)
                 for mut_name, payload in MUTATIONS:
                     if self.client.budget_left() <= 0 or self.client.stop_check():
                         break
@@ -537,8 +557,9 @@ class Scanner:
                     self._analyze_delta(r, mutated, name, mut_name,
                                         local_size, local_lat)
                 if self.active and not self.client.stop_check():
-                    self._active_confirm(url, parsed, params, idx, name, val,
-                                         local_size)
+                    send = (lambda p, _i=idx:
+                            self.client.get(self._mutate(parsed, params, _i, p)))
+                    self._confirm_injections(url, name, val, local_size, send)
 
     def _mutate(self, parsed, params, idx, payload):
         new = list(params)
@@ -551,17 +572,34 @@ class Scanner:
         q = urlencode(new)
         return urlunparse(parsed._replace(query=q))
 
-    def _reflection_check(self, url, parsed, params, idx, name):
+    # -- active, confirming exploit checks (own/authorized targets only) --
+    # All checks are sender-based: `send(payload)` applies the payload to the
+    # single input under test (a GET parameter OR a form field) and returns the
+    # Response. This lets the same confirmation logic drive GET and POST probes.
+    def _confirm_injections(self, label, field, baseval, base_size, send,
+                            test_redirect=None):
+        """Run payloads that *prove* a vulnerability class with concrete output."""
+        if test_redirect is None:
+            test_redirect = field.lower() in REDIRECT_PARAM_HINTS
+        self._chk_reflection(label, field, send)
+        self._chk_ssti(label, field, send)
+        self._chk_traversal(label, field, send)
+        self._chk_sqli(label, field, baseval, base_size, send)
+        self._chk_cmdi(label, field, baseval, send)
+        if test_redirect:
+            self._chk_open_redirect(label, field, send)
+
+    def _chk_reflection(self, label, field, send):
+        if self.client.budget_left() <= 0 or self.client.stop_check():
+            return
         marker = "vzq" + uuid.uuid4().hex[:8] + "zqv"
         probe = "<%s>" % marker
-        mutated = self._mutate(parsed, params, idx, probe)
-        r = self.client.get(mutated)
+        r = send(probe)
         if r.error:
             return
         if probe in r.body:
-            # confirmed: unique payload returned verbatim, unencoded
-            self.add("high", "Reflected unencoded input (XSS-capable)", url,
-                     f"Parameter '{name}' is reflected with '<' and '>' intact, "
+            self.add("high", "Reflected unencoded input (XSS-capable)", label,
+                     f"Input '{field}' is reflected with '<' and '>' intact, "
                      "so injected markup is not output-encoded.",
                      evidence=f"reflected verbatim: {probe}", category="xss",
                      confirmed=True,
@@ -569,37 +607,24 @@ class Scanner:
                                   "returned byte-for-byte in the response body.",
                      proof=self.proof_from(r))
         elif marker in r.body:
-            self.add("info", "Input reflected (encoded)", url,
-                     f"Parameter '{name}' is reflected but angle brackets appear "
+            self.add("info", "Input reflected (encoded)", label,
+                     f"Input '{field}' is reflected but angle brackets appear "
                      "encoded. Confirm context-specific encoding.",
                      evidence=marker, category="xss", confirmed=False,
                      confirmation="Marker present but brackets not verbatim; "
                                   "needs manual context review.",
                      proof=self.proof_from(r))
 
-    # -- active, confirming exploit checks (own/authorized targets only) --
-    def _active_confirm(self, url, parsed, params, idx, name, val, base_size):
-        """Run payloads that *prove* a vulnerability class with concrete output."""
-        self._check_ssti(url, parsed, params, idx, name)
-        self._check_traversal(url, parsed, params, idx, name)
-        self._check_sqli(url, parsed, params, idx, name, val, base_size)
-        self._check_cmdi_time(url, parsed, params, idx, name, val)
-        if name.lower() in REDIRECT_PARAM_HINTS:
-            self._check_open_redirect(url, parsed, params, idx, name)
-
-    def _check_ssti(self, url, parsed, params, idx, name):
+    def _chk_ssti(self, label, field, send):
         for probe, expected in SSTI_PROBES:
             if self.client.budget_left() <= 0 or self.client.stop_check():
                 return
-            mutated = self._mutate(parsed, params, idx, probe)
-            r = self.client.get(mutated)
+            r = send(probe)
             if r.error:
                 continue
-            # confirmation: the arithmetic was evaluated server-side and the
-            # literal probe string is NOT what came back.
             if expected in r.body and probe not in r.body:
-                self.add("critical", "Server-Side Template Injection (confirmed)", url,
-                         f"Parameter '{name}': template expression '{probe}' was "
+                self.add("critical", "Server-Side Template Injection (confirmed)", label,
+                         f"Input '{field}': template expression '{probe}' was "
                          f"evaluated to '{expected}', proving server-side code "
                          "evaluation (SSTI → often RCE).",
                          evidence=f"{probe} -> {expected}", category="ssti",
@@ -609,20 +634,19 @@ class Scanner:
                          proof=self.proof_from(r))
                 return
 
-    def _check_traversal(self, url, parsed, params, idx, name):
+    def _chk_traversal(self, label, field, send):
         for payload in ("../../../../../../etc/passwd",
                         "....//....//....//....//etc/passwd",
                         "..\\..\\..\\..\\windows\\win.ini"):
             if self.client.budget_left() <= 0 or self.client.stop_check():
                 return
-            mutated = self._mutate(parsed, params, idx, payload)
-            r = self.client.get(mutated)
+            r = send(payload)
             if r.error:
                 continue
             sig = next((s for s in LFI_SIGNATURES if s in r.body), "")
             if sig:
                 self.add("critical", "Path traversal / Local File Inclusion (confirmed)",
-                         url, f"Parameter '{name}' returned host file contents using "
+                         label, f"Input '{field}' returned host file contents using "
                          f"'{payload}'.",
                          evidence=f"file signature: {sig}", category="lfi",
                          confirmed=True,
@@ -630,37 +654,35 @@ class Scanner:
                          proof=self.proof_from(r))
                 return
 
-    def _check_sqli(self, url, parsed, params, idx, name, val, base_size):
-        # 1) error-based: a lone quote often surfaces a DB error
+    def _chk_sqli(self, label, field, baseval, base_size, send):
         if self.client.budget_left() <= 0 or self.client.stop_check():
             return
-        err_r = self.client.get(self._mutate(parsed, params, idx, val + "'"))
+        err_r = send(baseval + "'")
         if not err_r.error:
             sig = next((s for s in ERROR_SIGNATURES
                         if s in err_r.body and ("SQL" in s or "ORA-" in s
                                                 or "psql" in s or "SQLSTATE" in s
                                                 or "quotation" in s or "ODBC" in s)), "")
             if sig:
-                self.add("high", "SQL injection — error-based (confirmed)", url,
-                         f"Parameter '{name}': a single quote triggered a database "
+                self.add("high", "SQL injection — error-based (confirmed)", label,
+                         f"Input '{field}': a single quote triggered a database "
                          "error, indicating input reaches a SQL statement unsanitized.",
                          evidence=sig, category="sqli", confirmed=True,
                          confirmation=f"DB error signature '{sig}' appeared after "
                                       "injecting a quote.",
                          proof=self.proof_from(err_r))
                 return
-        # 2) boolean-based: TRUE vs FALSE conditions should diverge
         if self.client.budget_left() < 2 or self.client.stop_check():
             return
-        t_r = self.client.get(self._mutate(parsed, params, idx, val + "' OR '1'='1"))
-        f_r = self.client.get(self._mutate(parsed, params, idx, val + "' AND '1'='2"))
+        t_r = send(baseval + "' OR '1'='1")
+        f_r = send(baseval + "' AND '1'='2")
         if t_r.error or f_r.error:
             return
         if (t_r.status == f_r.status == 200
                 and abs(t_r.size - f_r.size) > max(64, base_size * 0.25)
                 and t_r.size != base_size):
-            self.add("high", "SQL injection — boolean-based (potential)", url,
-                     f"Parameter '{name}': TRUE and FALSE SQL conditions produced "
+            self.add("high", "SQL injection — boolean-based (potential)", label,
+                     f"Input '{field}': TRUE and FALSE SQL conditions produced "
                      f"materially different responses ({t_r.size} vs {f_r.size} bytes), "
                      "suggesting the input alters query logic.",
                      evidence=f"true={t_r.size}B false={f_r.size}B", category="sqli",
@@ -669,23 +691,20 @@ class Scanner:
                                   "verify with a manual payload.",
                      proof=self.proof_from(t_r))
 
-    def _check_cmdi_time(self, url, parsed, params, idx, name, val):
-        # time-based OS command injection: only flag if the delay is reproducible
+    def _chk_cmdi(self, label, field, baseval, send):
         sleep_secs = 5
         for sep in (f"; sleep {sleep_secs}", f"| sleep {sleep_secs}",
                     f"`sleep {sleep_secs}`", f"$(sleep {sleep_secs})",
                     f"& timeout {sleep_secs}"):
             if self.client.budget_left() < 2 or self.client.stop_check():
                 return
-            payload = val + sep
-            mutated = self._mutate(parsed, params, idx, payload)
-            r = self.client.get(mutated)
+            payload = baseval + sep
+            r = send(payload)
             if not r.error and r.elapsed >= sleep_secs - 1:
-                # confirm reproducibility to rule out coincidental slowness
-                r2 = self.client.get(mutated)
+                r2 = send(payload)
                 if not r2.error and r2.elapsed >= sleep_secs - 1:
                     self.add("critical", "OS command injection — time-based (confirmed)",
-                             url, f"Parameter '{name}': injecting '{sep.strip()}' delayed "
+                             label, f"Input '{field}': injecting '{sep.strip()}' delayed "
                              f"the response by ~{r.elapsed:.1f}s twice, proving the input "
                              "reaches an OS command.",
                              evidence=f"{sep.strip()} -> {r.elapsed:.1f}s / {r2.elapsed:.1f}s",
@@ -695,23 +714,167 @@ class Scanner:
                              proof=self.proof_from(r))
                     return
 
-    def _check_open_redirect(self, url, parsed, params, idx, name):
+    def _chk_open_redirect(self, label, field, send):
         marker = "valkyrie-redirect.example"
         for payload in (f"https://{marker}/", f"//{marker}/"):
             if self.client.budget_left() <= 0 or self.client.stop_check():
                 return
-            mutated = self._mutate(parsed, params, idx, payload)
-            r = self.client.get(mutated)
+            r = send(payload)
             loc = r.headers.get("location", "")
             if marker in loc and (loc.startswith("http") or loc.startswith("//")):
-                self.add("medium", "Open redirect (confirmed)", url,
-                         f"Parameter '{name}' is reflected into the Location header, "
+                self.add("medium", "Open redirect (confirmed)", label,
+                         f"Input '{field}' is reflected into the Location header, "
                          "allowing redirection to an attacker-controlled host.",
                          evidence=f"Location: {loc}", category="redirect",
                          confirmed=True,
                          confirmation="External host appeared in the redirect Location.",
                          proof=self.proof_from(r))
                 return
+
+    # -- phase 6: form (POST/GET) testing with CSRF passthrough --
+    DESTRUCTIVE_HINTS = ("delete", "remove", "destroy", "drop", "logout",
+                         "cancel", "close", "restore", "reset", "wipe")
+    CSRF_FIELD_HINTS = ("csrf", "authenticity_token", "__requestverificationtoken",
+                        "_token", "nonce")
+    SKIP_INPUT_TYPES = {"hidden", "submit", "button", "image", "file",
+                        "checkbox", "radio", "reset"}
+
+    def _is_destructive(self, action):
+        path = urlparse(action).path.lower()
+        return any(h in path for h in self.DESTRUCTIVE_HINTS)
+
+    def _submit(self, action, method, data):
+        if method == "post":
+            return self.client.post(action, data)
+        parsed = urlparse(action)
+        merged = parse_qsl(parsed.query, keep_blank_values=True) + list(data.items())
+        return self.client.get(urlunparse(parsed._replace(query=urlencode(merged))))
+
+    def test_forms(self, forms):
+        if not (self.active and self.test_forms_enabled) or not forms:
+            return
+        self.set_phase("forms")
+        seen = set()
+        for fm in forms:
+            if self.client.budget_left() <= 0 or self.client.stop_check():
+                break
+            action = urljoin(fm.get("page", self.base), fm.get("action") or "")
+            action = action or fm.get("page", self.base)
+            if not self.same_origin(action):
+                continue
+            method = fm.get("method", "get")
+            inputs = fm.get("inputs", [])
+            names = tuple(sorted(i["name"] for i in inputs))
+            key = (action, method, names)
+            if key in seen:
+                continue
+            seen.add(key)
+            if method == "post" and self._is_destructive(action) \
+                    and not self.allow_destructive:
+                self.add("info", "Skipped potentially destructive form", action,
+                         "A POST form whose action looks state-changing "
+                         f"({action}) was not submitted to avoid data loss. "
+                         "Enable destructive testing to include it.",
+                         category="forms", confirmed=False,
+                         confirmation="Skipped by safety policy.")
+                continue
+            # baseline submission values (carry hidden values incl. CSRF token)
+            data = {}
+            for i in inputs:
+                data[i["name"]] = i.get("value") or "valkyrie"
+            base = self._submit(action, method, data)
+            self.set_phase("forms")
+            if base.error:
+                continue
+            bsize = base.size
+            for i in inputs:
+                if self.client.budget_left() <= 0 or self.client.stop_check():
+                    break
+                name = i["name"]
+                itype = (i.get("type") or "text").lower()
+                if itype in self.SKIP_INPUT_TYPES:
+                    continue
+                if any(h in name.lower() for h in self.CSRF_FIELD_HINTS):
+                    continue
+                baseval = data.get(name, "") or ""
+                label = f"{method.upper()} {action} [{name}]"
+                send = (lambda p, _n=name:
+                        self._submit(action, method, {**data, _n: p}))
+                self._confirm_injections(label, name, baseval, bsize, send,
+                                         test_redirect=name.lower() in REDIRECT_PARAM_HINTS)
+
+    # -- phase 7: IDOR / object enumeration on numeric identifiers --
+    def idor_scan(self, candidate_urls):
+        if not (self.active and self.idor_enabled):
+            return
+        self.set_phase("idor")
+        targets = self._idor_candidates(candidate_urls)
+        for (kind, sig), info in list(targets.items()):
+            if self.client.budget_left() <= 4 or self.client.stop_check():
+                break
+            self._probe_idor(kind, info)
+
+    def _idor_candidates(self, urls):
+        """Find endpoints keyed by a numeric path segment or numeric query value."""
+        cands = {}
+        for url in urls:
+            u = urlparse(url)
+            segs = u.path.split("/")
+            for i, s in enumerate(segs):
+                if s.isdigit() and len(s) <= 9:
+                    tmpl = "/".join(segs[:i] + ["{}"] + segs[i + 1:])
+                    cands.setdefault(("path", tmpl + "?" + u.query),
+                                     {"url": url, "base": int(s), "seg": i,
+                                      "segs": segs, "query": u.query})
+            for k, v in parse_qsl(u.query, keep_blank_values=True):
+                if v.isdigit() and len(v) <= 9:
+                    cands.setdefault(("query", u.path + "|" + k),
+                                     {"url": url, "base": int(v), "param": k})
+        return cands
+
+    def _build_idor_url(self, info, new_id, kind):
+        if kind == "path":
+            segs = list(info["segs"])
+            segs[info["seg"]] = str(new_id)
+            parsed = urlparse(info["url"])
+            return urlunparse(parsed._replace(path="/".join(segs)))
+        parsed = urlparse(info["url"])
+        params = parse_qsl(parsed.query, keep_blank_values=True)
+        params = [(k, str(new_id) if k == info["param"] else v) for k, v in params]
+        return urlunparse(parsed._replace(query=urlencode(params)))
+
+    def _probe_idor(self, kind, info):
+        base_id = info["base"]
+        ids = []
+        for cand in (1, 2, 3, base_id, base_id + 1, base_id + 2):
+            if cand >= 1 and cand not in ids:
+                ids.append(cand)
+        accessible = []      # (id, response) returning 200 with content
+        bodies = {}
+        for tid in ids:
+            if self.client.budget_left() <= 0 or self.client.stop_check():
+                break
+            u = self._build_idor_url(info, tid, kind)
+            r = self.client.get(u)
+            if not r.error and r.status == 200 and r.size > 0:
+                accessible.append((tid, r))
+                bodies[tid] = r.body[:2000]
+        # distinct objects = different bodies among accessible ids
+        distinct = len({b for b in bodies.values()})
+        if len(accessible) >= 2 and distinct >= 2:
+            sample_id, sample_r = accessible[0]
+            ident = info.get("param", f"path segment #{info.get('seg')}")
+            self.add("high", "Insecure Direct Object Reference / object enumeration",
+                     sample_r.url,
+                     f"Identifier '{ident}' can be walked: {len(accessible)} ids "
+                     f"({', '.join(str(i) for i, _ in accessible)}) each return a "
+                     f"distinct 200 object with no access-control boundary observed. "
+                     "Objects are directly addressable by id.",
+                     evidence=f"{len(accessible)} accessible / {distinct} distinct bodies",
+                     category="idor", confirmed=True,
+                     confirmation="Multiple sequential ids returned different objects "
+                                  "with HTTP 200 in the same (unauthorized) context.",
+                     proof=self.proof_from(sample_r))
 
     def _analyze_delta(self, r, url, param, mut_name, base_size, base_lat):
         if r.error:
@@ -799,8 +962,10 @@ class Scanner:
     def run(self):
         self.calibrate()
         seeds = self.recon()
-        param_urls, _forms = self.crawl(seeds)
+        param_urls, forms = self.crawl(seeds)
         self.fuzz_params(param_urls)
+        self.test_forms(forms)
+        self.idor_scan(set(param_urls) | set(self.visited))
         self.set_phase("done")
         return self.findings
 
@@ -887,7 +1052,8 @@ def build_scanner_from_args(args):
                     max_requests=args.max_requests, verify_tls=not args.insecure,
                     cookie=args.cookie)
     return Scanner(target, client, max_pages=args.max_pages, fuzz=not args.no_fuzz,
-                   active=not args.no_active)
+                   active=not args.no_active, test_forms=not args.no_forms,
+                   idor=not args.no_idor, allow_destructive=args.allow_destructive)
 
 
 def main(argv=None):
@@ -901,6 +1067,13 @@ def main(argv=None):
     ap.add_argument("--no-fuzz", action="store_true", help="passive/crawl only")
     ap.add_argument("--no-active", action="store_true",
                     help="skip active exploit-confirmation payloads (SSTI/SQLi/LFI/cmdi)")
+    ap.add_argument("--no-forms", action="store_true",
+                    help="skip form (POST/GET) field testing")
+    ap.add_argument("--no-idor", action="store_true",
+                    help="skip IDOR / object-enumeration on numeric ids")
+    ap.add_argument("--allow-destructive", action="store_true",
+                    help="also submit forms whose action looks state-changing "
+                         "(delete/restore/...). Use only on disposable test data.")
     ap.add_argument("--cookie", default=None, help="Cookie header for authenticated scans")
     ap.add_argument("--insecure", action="store_true", help="skip TLS verification")
     ap.add_argument("--json", action="store_true", help="JSON output")
