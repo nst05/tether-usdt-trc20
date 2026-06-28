@@ -295,7 +295,7 @@ def safe_out_name_srt(in_path: str, readings: srtReadings, coef: int) -> str:
     base = os.path.basename(in_path)
     root, ext = os.path.splitext(base)
     tag = f"P{readings.tot_p:.2f}_Q{readings.tot_q:.2f}_coef{coef}"
-    return os.path.join(os.path.dirname(in_path), f"{root}__srt03__patched__{tag}{ext or '.bin'}")
+    return os.path.join(os.path.dirname(in_path), f"{root}__art03__patched__{tag}{ext or '.bin'}")
 
 class srt03Tab(QtWidgets.QWidget):
     def __init__(self):
@@ -311,7 +311,7 @@ class srt03Tab(QtWidgets.QWidget):
 
         header = QtWidgets.QHBoxLayout()
         titles = QtWidgets.QVBoxLayout()
-        self.h1 = QtWidgets.QLabel("srt03 — активная/реактивная (T1/T2 + общие)")
+        self.h1 = QtWidgets.QLabel("art03 — активная/реактивная (T1/T2 + общие)")
         self.h1.setObjectName("HeaderTitle")
         self.h2 = QtWidgets.QLabel("Вводишь общие P и T1 P → T2 P считается автоматически. Q считается по k.")
         self.h2.setObjectName("HeaderSub")
@@ -328,7 +328,7 @@ class srt03Tab(QtWidgets.QWidget):
         file_l.setHorizontalSpacing(10)
         file_l.setVerticalSpacing(10)
 
-        self.btn_open = QtWidgets.QPushButton("Открыть srt03 .bin")
+        self.btn_open = QtWidgets.QPushButton("Открыть art03 .bin")
         self.btn_open.clicked.connect(self.open_file)
         self.path_edit = QtWidgets.QLineEdit(); self.path_edit.setReadOnly(True)
 
@@ -341,7 +341,7 @@ class srt03Tab(QtWidgets.QWidget):
 
         self.k_mode = QtWidgets.QComboBox()
         self.k_mode.addItems([
-            "srt03 preset (4490.54/18987.70)",
+            "art03 preset (4490.54/18987.70)",
             "AR preset (1445.71/6384.36)",
             "Из файла Tot@0x0200 (TotQ/TotP)",
             "Из суммы (T1+T2)",
@@ -420,7 +420,7 @@ class srt03Tab(QtWidgets.QWidget):
         return int(self.coef_box.currentText())
 
     def open_file(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Выберите srt03 .bin", "", "BIN (*.bin *.BIN);;All files (*.*)")
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Выберите art03 .bin", "", "BIN (*.bin *.BIN);;All files (*.*)")
         if not path:
             return
         self._current_path = path
@@ -925,7 +925,7 @@ class srt29Tab(QtWidgets.QWidget):
 
         header = QtWidgets.QHBoxLayout()
         titles = QtWidgets.QVBoxLayout()
-        h1 = QtWidgets.QLabel("srt29 — T1/T2 + общая сумма (4 зеркала)")
+        h1 = QtWidgets.QLabel("231 at-01 — T1/T2 + общая сумма (4 зеркала)")
         h1.setObjectName("HeaderTitle")
         h2 = QtWidgets.QLabel("Вводишь T1 и T2 → сумма считается сама. Пишет во все 4 зеркала + итоговый блок.")
         h2.setObjectName("HeaderSub")
@@ -940,7 +940,7 @@ class srt29Tab(QtWidgets.QWidget):
         file_l.setHorizontalSpacing(10)
         file_l.setVerticalSpacing(10)
 
-        self.btn_open = QtWidgets.QPushButton("Открыть srt29 .bin")
+        self.btn_open = QtWidgets.QPushButton("Открыть 231 at-01 .bin")
         self.btn_open.clicked.connect(self.open_file)
         self.path_edit = QtWidgets.QLineEdit(); self.path_edit.setReadOnly(True)
         file_l.addWidget(self.btn_open, 0, 0)
@@ -998,7 +998,7 @@ class srt29Tab(QtWidgets.QWidget):
         self.out_sum.setText(f"{s:.2f}")
 
     def open_file(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Выберите srt29 .bin", "", "BIN (*.bin *.BIN);;All files (*.*)")
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Выберите 231 at-01 .bin", "", "BIN (*.bin *.BIN);;All files (*.*)")
         if not path:
             return
         self._current_path = path
@@ -1072,7 +1072,7 @@ class srt29Tab(QtWidgets.QWidget):
 
         base_dir = os.path.dirname(self._current_path)
         base_name = os.path.splitext(os.path.basename(self._current_path))[0]
-        out_name = f"{base_name}__srt29__T1_{t1:.2f}_T2_{t2:.2f}_summa_{s:.2f}_coef{coef}.bin"
+        out_name = f"{base_name}__231at-01__T1_{t1:.2f}_T2_{t2:.2f}_summa_{s:.2f}_coef{coef}.bin"
         out_path = os.path.join(base_dir, out_name)
         try:
             with open(out_path, "wb") as f:
@@ -1106,16 +1106,16 @@ class MainWindow(QtWidgets.QMainWindow):
         tab_srt29 = srt29Tab()
 
         if TAB_ICON_srt03:
-            tabs.addTab(tab_srt, QtGui.QIcon(resource_path(TAB_ICON_srt03)), "srt03")
+            tabs.addTab(tab_srt, QtGui.QIcon(resource_path(TAB_ICON_srt03)), "art03")
         else:
-            tabs.addTab(tab_srt, "srt03")
+            tabs.addTab(tab_srt, "art03")
 
         if TAB_ICON_AR:
             tabs.addTab(tab_ar, QtGui.QIcon(resource_path(TAB_ICON_AR)), "AR01/AR02")
         else:
             tabs.addTab(tab_ar, "AR01/AR02")
 
-        tabs.addTab(tab_srt29, "srt29")
+        tabs.addTab(tab_srt29, "231 at-01")
 
         central_l.addWidget(tabs)
         self.setCentralWidget(central)
