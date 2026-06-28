@@ -898,6 +898,22 @@ def srt29_all_offsets(rec_off: int) -> list:
     return [rec_off + m * MIRROR_STRIDE for m in range(MIRROR_COUNT)]
 
 
+def srt29_set_p_keep_q(data: bytearray, stsrt: int, p: float, coef: int) -> bool:
+    """Записать только P в запись, сохранив исходное Q. CRC пересчитывается.
+    Если показание (с точностью 0.01) не изменилось — байты не трогаются.
+    Возвращает True, если запись была изменена."""
+    p_old_raw, q_old_raw, _ = read_record_raw(data, stsrt)
+    # Сравниваем на точности отображения (0.01): прибор хранит P точнее (1/coef),
+    # чем показано в поле, поэтому сверяем округлённые значения, а не сырые raw.
+    if round(p_old_raw / coef, 2) == round(p, 2):
+        return False  # показание визуально не изменилось — байты не трогаем
+    p_new_raw = int(round(p * coef))
+    data[stsrt+OFF_P:stsrt+OFF_P+4] = encode_raw_u32_weird(p_new_raw)
+    data[stsrt+OFF_Q:stsrt+OFF_Q+4] = encode_raw_u32_weird(q_old_raw)  # Q сохраняем как было
+    data[stsrt+OFF_CRC] = crc_xor_16(bytes(data[stsrt:stsrt+16]))
+    return True
+
+
 class srt29Tab(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
@@ -1037,7 +1053,7 @@ class srt29Tab(QtWidgets.QWidget):
         t2 = float(self.in_t2.value())
         s  = t1 + t2
 
-        # Записи Q для этого прибора = 0
+        # Пишем только P, исходное Q сохраняем; неизменившиеся записи не трогаем.
         points = 0
         for m in range(MIRROR_COUNT):
             base = m * MIRROR_STRIDE
@@ -1045,14 +1061,14 @@ class srt29Tab(QtWidgets.QWidget):
                 continue
             # Раздельные T1/T2
             for off in SRT29_T1_OFFS:
-                write_record(data, base + off, t1, 0.0, coef); points += 1
+                points += srt29_set_p_keep_q(data, base + off, t1, coef)
             for off in SRT29_T2_OFFS:
-                write_record(data, base + off, t2, 0.0, coef); points += 1
+                points += srt29_set_p_keep_q(data, base + off, t2, coef)
             # Итоговый блок (SUM, T1, T2) и его дубль
             for blk in SRT29_SUM_OFFS:
-                write_record(data, base + blk,                s,  0.0, coef); points += 1
-                write_record(data, base + blk + SRT29_BLK_T1, t1, 0.0, coef); points += 1
-                write_record(data, base + blk + SRT29_BLK_T2, t2, 0.0, coef); points += 1
+                points += srt29_set_p_keep_q(data, base + blk,                s,  coef)
+                points += srt29_set_p_keep_q(data, base + blk + SRT29_BLK_T1, t1, coef)
+                points += srt29_set_p_keep_q(data, base + blk + SRT29_BLK_T2, t2, coef)
 
         base_dir = os.path.dirname(self._current_path)
         base_name = os.path.splitext(os.path.basename(self._current_path))[0]
