@@ -160,42 +160,68 @@ def _resolve_indices(bases, spec):
     return [int(spec)]
 
 
-def cmd_set(args):
-    buf = load(args.file)
-    bases = find_records(buf)
-    if args.field not in FIELDS:
-        sys.exit(f"unknown field '{args.field}'; choose from {list(FIELDS)}")
-    fmt, offsets = FIELDS[args.field]
-    packed = struct.pack("<" + fmt, args.value)
+def apply_field(original, field, value, records_spec="all"):
+    """Patch one field and guarantee nothing else changes.
 
-    indices = _resolve_indices(bases, args.records)
-    changed = 0
+    Returns dict(buf, indices, changed, ndiff, verify_ok). Raises ValueError on
+    bad input, or PatchError if any byte outside the field would change.
+    Used by both the CLI and the GUI so they behave identically.
+    """
+    if field not in FIELDS:
+        raise ValueError(f"unknown field '{field}'; choose from {list(FIELDS)}")
+    buf = bytearray(original)
+    bases = find_records(buf)
+    if not bases:
+        raise ValueError("no records found in this file")
+    fmt, offsets = FIELDS[field]
+    packed = struct.pack("<" + fmt, float(value))
+    indices = _resolve_indices(bases, records_spec)
+
+    allowed = set()
     for idx in indices:
         if idx < 0 or idx >= len(bases):
-            sys.exit(f"record index {idx} out of range (0..{len(bases)-1})")
-        for foff in offsets:  # reading is stored twice; write every copy
+            raise ValueError(f"record index {idx} out of range (0..{len(bases)-1})")
+        for foff in offsets:
+            allowed.update(range(bases[idx] + foff, bases[idx] + foff + len(packed)))
+
+    for idx in indices:
+        for foff in offsets:                 # reading is stored twice; write every copy
             pos = bases[idx] + foff
             buf[pos:pos + len(packed)] = packed
-        changed += 1
+
+    outside = [i for i in range(len(buf)) if buf[i] != original[i] and i not in allowed]
+    if outside:
+        raise PatchError(f"{len(outside)} byte(s) would change outside the "
+                         f"'{field}' field, e.g. {hex(outside[0])}")
+
+    tol = 1e-4 if fmt == "f" else 1e-9
+    verify_ok = all(
+        abs(struct.unpack_from("<" + fmt, buf, bases[idx] + foff)[0] - float(value)) <= tol
+        for idx in indices for foff in offsets)
+    ndiff = sum(1 for i in range(len(buf)) if buf[i] != original[i])
+    return dict(buf=buf, indices=indices, changed=len(indices),
+                ndiff=ndiff, verify_ok=verify_ok)
+
+
+class PatchError(Exception):
+    pass
+
+
+def cmd_set(args):
+    original = load(args.file)
+    try:
+        res = apply_field(original, args.field, args.value, args.records)
+    except (ValueError, PatchError) as e:
+        sys.exit(f"ABORTED: {e}. Nothing written.")
 
     out = args.out or args.file
     with open(out, "wb") as f:
-        f.write(buf)
-
-    # verify by re-reading
-    verify = load(out)
-    vbases = find_records(verify)
-    tol = 1e-4 if fmt == "f" else 1e-9
-    ok = True
-    for idx in indices:
-        for foff in offsets:
-            got = struct.unpack_from("<" + fmt, verify, vbases[idx] + foff)[0]
-            if abs(got - args.value) > tol:
-                ok = False
-                print(f"  !! verify failed at record {idx} +{foff:#x}: got {got}")
-    print(f"patched {changed} record(s): {args.field} = {args.value}")
+        f.write(res["buf"])
+    print(f"patched {res['changed']} record(s): {args.field} = {args.value}")
+    print(f"bytes changed  : {res['ndiff']} (all inside the {args.field} field)")
+    print(f"other data     : untouched (0 bytes changed elsewhere)")
     print(f"written : {out}")
-    print(f"verify  : {'OK' if ok else 'FAILED'}")
+    print(f"verify  : {'OK' if res['verify_ok'] else 'FAILED'}")
 
 
 def build_parser():
