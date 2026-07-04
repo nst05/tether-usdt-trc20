@@ -50,26 +50,32 @@ class App(ttk.Frame):
         box = ttk.LabelFrame(self, text="Патч показания (reading)", padding=8)
         box.grid(row=1, column=0, sticky="ew", pady=(0, 6))
 
-        ttk.Label(box, text="Новое значение:").grid(row=0, column=0, sticky="w")
+        # --- row 0: value + the Apply button (always visible next to the field) ---
+        top = ttk.Frame(box)
+        top.grid(row=0, column=0, sticky="ew")
+        ttk.Label(top, text="Новое значение:").pack(side="left")
         self.value_var = tk.StringVar(value="1.290275")
-        ttk.Entry(box, textvariable=self.value_var, width=16).grid(row=0, column=1, padx=6)
+        ttk.Entry(top, textvariable=self.value_var, width=16).pack(side="left", padx=6)
+        ttk.Button(top, text="Применить →", command=self.apply_patch).pack(
+            side="left", padx=(12, 0))
 
+        # --- row 1: scope selection ---
+        scope_row = ttk.Frame(box)
+        scope_row.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(scope_row, text="Куда:").pack(side="left")
         # default: change ONLY the value shown on screen (the newest record),
         # i.e. its two mirror copies at DATA+0x0C and +0x1C.
         self.scope = tk.StringVar(value="current")
-        ttk.Radiobutton(box, text="Текущее показание (экран)", variable=self.scope,
-                        value="current").grid(row=0, column=2, padx=(12, 4))
-        ttk.Radiobutton(box, text="Выделенная запись", variable=self.scope,
-                        value="sel").grid(row=0, column=3, padx=4)
-        ttk.Radiobutton(box, text="Все записи (вся история!)", variable=self.scope,
-                        value="all").grid(row=0, column=4, padx=(12, 4))
+        ttk.Radiobutton(scope_row, text="Текущее показание (экран)", variable=self.scope,
+                        value="current").pack(side="left", padx=(6, 4))
+        ttk.Radiobutton(scope_row, text="Выделенная запись", variable=self.scope,
+                        value="sel").pack(side="left", padx=4)
+        ttk.Radiobutton(scope_row, text="Все записи (вся история!)", variable=self.scope,
+                        value="all").pack(side="left", padx=(12, 0))
 
-        ttk.Button(box, text="Применить →", command=self.apply_patch).grid(
-            row=0, column=5, padx=12)
-
-        # shows the two file offsets that will actually be written
+        # --- row 2: the two file offsets that will actually be written ---
         self.addr_lbl = ttk.Label(box, text="два адреса: —", foreground="#0a7")
-        self.addr_lbl.grid(row=1, column=0, columnspan=6, sticky="w", pady=(6, 0))
+        self.addr_lbl.grid(row=2, column=0, sticky="w", pady=(6, 0))
         self.applied = False
         # keep the address label in sync with scope / selection
         self.scope.trace_add("write", self._update_addr_label)
@@ -277,7 +283,8 @@ class App(ttk.Frame):
 def main():
     root = tk.Tk()
     root.title("W25Q64V Reading Patcher")
-    root.geometry("760x520")
+    root.geometry("860x560")
+    root.minsize(820, 480)
     App(root)
     root.mainloop()
 
