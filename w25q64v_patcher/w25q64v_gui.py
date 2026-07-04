@@ -27,8 +27,10 @@ class App(ttk.Frame):
         self.rowconfigure(2, weight=1)
 
         self.path = None
-        self.original = None      # pristine bytes
+        self.original = None      # working buffer (mutated by patches)
+        self.loaded = None        # pristine bytes as loaded from disk
         self.bases = []
+        self.dirty = False        # True once a patch has actually changed bytes
 
         self._build_toolbar()
         self._build_controls()
@@ -112,6 +114,8 @@ class App(ttk.Frame):
             messagebox.showerror("Ошибка", str(e))
             return
         self.path, self.original, self.bases = path, data, bases
+        self.loaded = data
+        self.dirty = False
         self.applied = False
         self._reload_table()
         # auto-select the record shown on screen (newest timestamp) and reveal it
@@ -194,6 +198,9 @@ class App(ttk.Frame):
                     f"(вся история). Обычно нужно менять только текущее показание.\n\n"
                     "Точно менять все записи?"):
                 return
+        target_idx = self._target_index() if self.scope.get() != "all" else None
+        old_val = (core.decode(self.original, self.bases[target_idx])["reading"]
+                   if target_idx is not None else None)
         try:
             value = float(self.value_var.get().replace(",", "."))
             spec = self._current_spec()
@@ -201,22 +208,45 @@ class App(ttk.Frame):
         except (ValueError, core.PatchError) as e:
             messagebox.showerror("Патч отменён", str(e))
             return
+
+        if res["ndiff"] == 0:
+            messagebox.showinfo(
+                "Без изменений",
+                f"Показание уже равно {value} — менять нечего, ничего не изменено.")
+            return
+
         # accept the patched buffer as the new working image
         self.original = bytes(res["buf"])
+        self.dirty = True
         self._reload_table()
         self._select_current()
         self._update_addr_label()
         self.applied = True
         verify = "OK" if res["verify_ok"] else "ОШИБКА"
         self.status.set(
-            f"Показание = {value} в {res['changed']} зап.  |  "
-            f"изменено {res['ndiff']} байт (только показание +0x0C/+0x1C, прочее не тронуто)  |  "
-            f"verify: {verify}  |  не забудьте «Сохранить как…»")
+            f"✔ Показание → {value} в {res['changed']} зап.  |  "
+            f"изменено {res['ndiff']} байт (только +0x0C/+0x1C)  |  "
+            f"verify: {verify}  |  теперь нажмите «Сохранить как…»")
+        if target_idx is not None:
+            base = self.bases[target_idx]
+            messagebox.showinfo(
+                "Применено",
+                f"Запись #{target_idx}:  {old_val:.6g} → {value}\n"
+                f"адреса: {base + core.F_READING:#08x} и {base + core.F_READING2:#08x}\n\n"
+                "Изменения пока только в памяти — нажмите «Сохранить как…», "
+                "чтобы записать в файл.")
 
     def save_as(self):
         if self.original is None:
             messagebox.showwarning("Нет данных", "Нечего сохранять.")
             return
+        if not self.dirty:
+            if not messagebox.askyesno(
+                    "Изменений нет",
+                    "Вы ещё не применили ни одного изменения (кнопка «Применить →»), "
+                    "или значение совпало с текущим.\n\n"
+                    "Файл будет ИДЕНТИЧЕН исходному. Всё равно сохранить?"):
+                return
         default = "patched.bin"
         if self.path:
             root, ext = os.path.splitext(os.path.basename(self.path))
@@ -232,9 +262,16 @@ class App(ttk.Frame):
         except Exception as e:                       # noqa: BLE001
             messagebox.showerror("Ошибка", str(e))
             return
-        self.status.set(f"Сохранено: {out} ({len(self.original)} байт).")
-        messagebox.showinfo("Готово", f"Записан файл:\n{out}\n\n"
-                            "Залейте его обратно в W25Q64V программатором CH341.")
+        # confirm on disk: how many bytes really differ from the loaded file
+        ndiff = sum(1 for i in range(len(self.original)) if self.original[i] != self.loaded[i])
+        self.dirty = False
+        self.status.set(f"Сохранено: {out} — отличий от исходного: {ndiff} байт.")
+        messagebox.showinfo(
+            "Готово",
+            f"Записан файл:\n{out}\n\n"
+            f"Отличий от исходного дампа: {ndiff} байт "
+            f"({'изменения на месте' if ndiff else 'ВНИМАНИЕ: файл идентичен исходному!'}).\n\n"
+            "Залейте его обратно в W25Q64V программатором CH341.")
 
 
 def main():
