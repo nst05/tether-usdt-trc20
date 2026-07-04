@@ -10,6 +10,7 @@ Run:  python3 w25q64v_gui.py
 """
 
 import os
+import struct
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -51,19 +52,25 @@ class App(ttk.Frame):
         self.value_var = tk.StringVar(value="1.290275")
         ttk.Entry(box, textvariable=self.value_var, width=16).grid(row=0, column=1, padx=6)
 
-        self.scope = tk.StringVar(value="all")
-        ttk.Radiobutton(box, text="Все записи", variable=self.scope,
-                        value="all").grid(row=0, column=2, padx=(12, 4))
-        ttk.Radiobutton(box, text="Выделенная", variable=self.scope,
+        # default: change ONLY the value shown on screen (the newest record),
+        # i.e. its two mirror copies at DATA+0x0C and +0x1C.
+        self.scope = tk.StringVar(value="current")
+        ttk.Radiobutton(box, text="Текущее показание (экран)", variable=self.scope,
+                        value="current").grid(row=0, column=2, padx=(12, 4))
+        ttk.Radiobutton(box, text="Выделенная запись", variable=self.scope,
                         value="sel").grid(row=0, column=3, padx=4)
-        ttk.Radiobutton(box, text="Диапазон:", variable=self.scope,
-                        value="range").grid(row=0, column=4, padx=(12, 2))
-        self.range_var = tk.StringVar(value="0-10")
-        ttk.Entry(box, textvariable=self.range_var, width=12).grid(row=0, column=5)
+        ttk.Radiobutton(box, text="Все записи (вся история!)", variable=self.scope,
+                        value="all").grid(row=0, column=4, padx=(12, 4))
 
         ttk.Button(box, text="Применить →", command=self.apply_patch).grid(
-            row=0, column=6, padx=12)
+            row=0, column=5, padx=12)
+
+        # shows the two file offsets that will actually be written
+        self.addr_lbl = ttk.Label(box, text="два адреса: —", foreground="#0a7")
+        self.addr_lbl.grid(row=1, column=0, columnspan=6, sticky="w", pady=(6, 0))
         self.applied = False
+        # keep the address label in sync with scope / selection
+        self.scope.trace_add("write", self._update_addr_label)
 
     def _build_table(self):
         cols = ("idx", "time", "cnt", "reading", "temp1", "temp2")
@@ -79,6 +86,7 @@ class App(ttk.Frame):
         vs = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
         vs.grid(row=2, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=vs.set)
+        self.tree.bind("<<TreeviewSelect>>", self._update_addr_label)
 
     def _build_status(self):
         self.status = tk.StringVar(value="Откройте дамп .bin, считанный CH341.")
@@ -106,8 +114,49 @@ class App(ttk.Frame):
         self.path, self.original, self.bases = path, data, bases
         self.applied = False
         self._reload_table()
+        # auto-select the record shown on screen (newest timestamp) and reveal it
+        self._select_current()
+        self._update_addr_label()
         self.status.set(f"Загружено: {os.path.basename(path)} — "
-                        f"{len(bases)} записей.")
+                        f"{len(bases)} записей. Выбрано текущее показание (экран).")
+
+    def _newest_index(self):
+        """Index of the record shown on screen = the newest timestamp."""
+        newest = max(range(len(self.bases)),
+                     key=lambda i: struct.unpack_from("<I", self.original,
+                                                      self.bases[i])[0])
+        return newest
+
+    def _select_current(self):
+        idx = self._newest_index()
+        iid = str(idx)
+        self.tree.selection_set(iid)
+        self.tree.focus(iid)
+        self.tree.see(iid)
+
+    def _target_index(self):
+        """The record index the current scope will patch (for the addr label)."""
+        mode = self.scope.get()
+        if mode == "current":
+            return self._newest_index()
+        sel = self.tree.selection()
+        return int(sel[0]) if sel else self._newest_index()
+
+    def _update_addr_label(self, *_):
+        if self.original is None or not self.bases:
+            return
+        if self.scope.get() == "all":
+            self.addr_lbl.config(
+                text=f"ВСЕ {len(self.bases)} записей — перезапишет всю историю показаний!",
+                foreground="#c33")
+            return
+        idx = self._target_index()
+        base = self.bases[idx]
+        rd = core.decode(self.original, base)
+        self.addr_lbl.config(
+            text=f"запись #{idx} ({rd['when']}, сейчас {rd['reading']:.6g}) → "
+                 f"два адреса: {base + core.F_READING:#08x} и {base + core.F_READING2:#08x}",
+            foreground="#0a7")
 
     def _reload_table(self):
         self.tree.delete(*self.tree.get_children())
@@ -127,8 +176,8 @@ class App(ttk.Frame):
         mode = self.scope.get()
         if mode == "all":
             return "all"
-        if mode == "range":
-            return self.range_var.get().strip()
+        if mode == "current":
+            return str(self._newest_index())
         sel = self.tree.selection()
         if not sel:
             raise ValueError("Не выбрана запись в таблице.")
@@ -138,6 +187,13 @@ class App(ttk.Frame):
         if self.original is None:
             messagebox.showwarning("Нет файла", "Сначала откройте дамп.")
             return
+        if self.scope.get() == "all":
+            if not messagebox.askyesno(
+                    "Внимание",
+                    f"Будут перезаписаны показания во ВСЕХ {len(self.bases)} записях "
+                    f"(вся история). Обычно нужно менять только текущее показание.\n\n"
+                    "Точно менять все записи?"):
+                return
         try:
             value = float(self.value_var.get().replace(",", "."))
             spec = self._current_spec()
@@ -148,11 +204,13 @@ class App(ttk.Frame):
         # accept the patched buffer as the new working image
         self.original = bytes(res["buf"])
         self._reload_table()
+        self._select_current()
+        self._update_addr_label()
         self.applied = True
         verify = "OK" if res["verify_ok"] else "ОШИБКА"
         self.status.set(
             f"Показание = {value} в {res['changed']} зап.  |  "
-            f"изменено {res['ndiff']} байт (только показание, прочее не тронуто)  |  "
+            f"изменено {res['ndiff']} байт (только показание +0x0C/+0x1C, прочее не тронуто)  |  "
             f"verify: {verify}  |  не забудьте «Сохранить как…»")
 
     def save_as(self):
