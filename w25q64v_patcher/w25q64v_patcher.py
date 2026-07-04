@@ -16,19 +16,22 @@ Record format (128 bytes = one hourly super-record):
         +0x00        base+0x40    u32 LE   Unix timestamp
         +0x04        base+0x44    u32 LE   timestamp high word (always 0)
         +0x08        base+0x48    u32 LE   sample counter
-        +0x0C        base+0x4C    float64  channel-1 coefficient (== 1.280)
-        +0x14        base+0x54    float64  channel-1 offset      (== 0.0)
-        +0x1C        base+0x5C    float64  channel-2 coefficient (== 1.280)
-        +0x24        base+0x64    float32  channel-1 value  (shown on screen)
+        +0x0C        base+0x4C    float64  READING shown on screen (e.g. 1.280)
+        +0x14        base+0x54    float64  0.0 (unused)
+        +0x1C        base+0x5C    float64  READING, mirror copy (always == +0x0C)
+        +0x24        base+0x64    float32  temperature channel 1 (~ deg C)
         +0x28        base+0x68    float32  0.0 (unused)
-        +0x2C        base+0x6C    float32  channel-2 value  (shown on screen)
+        +0x2C        base+0x6C    float32  temperature channel 2 (~ deg C)
         +0x30        base+0x70    float32  -35.0 constant (anchor)
         +0x34        base+0x74    float32  -35.0 constant (anchor)
         +0x38        base+0x78    float32  -35.0 constant (anchor)
 
-The displayed value is  shown = raw * coeff + offset  (coeff = 1.280,
-offset = 0).  To make the device show an arbitrary value X on a channel you can
-either write X directly into the channel float, or change the coefficient.
+The main value on the display is stored *directly* as the float64 reading at
++0x0C, duplicated at +0x1C (the two copies are always identical -- redundant
+mirror).  There is no scaling: stored value == displayed value.  Over the dump
+the reading takes real measured values (1.280, 0.662944, ...), confirming it is
+the measurement and not a calibration constant.  To make the device show X,
+write float64(X) into both +0x0C and +0x1C.
 
 Records are 0x80 apart but the log phase drifts across the flash (ring buffer /
 page wrap), so records are located by the invariant -35.0 anchor, never by a
@@ -46,22 +49,20 @@ DATA_OFF = 0x40  # data block starts here inside a super-record
 # field offsets relative to the DATA block start
 F_TS = 0x00
 F_COUNTER = 0x08
-F_COEFF1 = 0x0C   # float64
-F_OFFSET1 = 0x14  # float64
-F_COEFF2 = 0x1C   # float64
-F_CH1 = 0x24      # float32  (displayed)
-F_CH2 = 0x2C      # float32  (displayed)
-F_ANCHOR = 0x30   # three -35.0 float32 in a row
+F_READING = 0x0C   # float64  displayed reading
+F_READING2 = 0x1C  # float64  mirror copy of the reading
+F_TEMP1 = 0x24     # float32  temperature channel 1
+F_TEMP2 = 0x2C     # float32  temperature channel 2
+F_ANCHOR = 0x30    # three -35.0 float32 in a row
 
 MINUS35 = struct.pack("<f", -35.0)
 ANCHOR = MINUS35 * 3  # 12 bytes, present in every record, never patched
 
+# name -> (format, [offsets to write])   the reading is stored twice (mirror)
 FIELDS = {
-    "ch1":    (F_CH1, "f"),
-    "ch2":    (F_CH2, "f"),
-    "coeff1": (F_COEFF1, "d"),
-    "coeff2": (F_COEFF2, "d"),
-    "offset1": (F_OFFSET1, "d"),
+    "reading": ("d", [F_READING, F_READING2]),  # the value shown on screen
+    "temp1":   ("f", [F_TEMP1]),
+    "temp2":   ("f", [F_TEMP2]),
 }
 
 
@@ -92,13 +93,12 @@ def find_records(buf):
 def decode(buf, base):
     ts = struct.unpack_from("<I", buf, base + F_TS)[0]
     counter = struct.unpack_from("<I", buf, base + F_COUNTER)[0]
-    coeff1 = struct.unpack_from("<d", buf, base + F_COEFF1)[0]
-    coeff2 = struct.unpack_from("<d", buf, base + F_COEFF2)[0]
-    ch1 = struct.unpack_from("<f", buf, base + F_CH1)[0]
-    ch2 = struct.unpack_from("<f", buf, base + F_CH2)[0]
+    reading = struct.unpack_from("<d", buf, base + F_READING)[0]
+    temp1 = struct.unpack_from("<f", buf, base + F_TEMP1)[0]
+    temp2 = struct.unpack_from("<f", buf, base + F_TEMP2)[0]
     when = datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     return dict(base=base, ts=ts, when=when, counter=counter,
-                coeff1=coeff1, coeff2=coeff2, ch1=ch1, ch2=ch2)
+                reading=reading, temp1=temp1, temp2=temp2)
 
 
 def load(path):
@@ -121,8 +121,13 @@ def cmd_info(args):
     counters = [struct.unpack_from('<I', buf, b + F_COUNTER)[0] for b in bases]
     print(f"time range  : {first['when']}  ->  {last['when']}")
     print(f"counter range: {min(counters)} .. {max(counters)}")
-    print(f"coeff (ch1) : {first['coeff1']}")
-    print(f"coeff (ch2) : {first['coeff2']}")
+    # distinct readings actually seen on screen
+    seen = {}
+    for b in bases:
+        r = round(struct.unpack_from("<d", buf, b + F_READING)[0], 6)
+        seen[r] = seen.get(r, 0) + 1
+    top = sorted(seen.items(), key=lambda kv: -kv[1])[:6]
+    print("readings    : " + ", ".join(f"{v}×{c}" for v, c in top))
 
 
 def cmd_list(args):
@@ -131,18 +136,18 @@ def cmd_list(args):
     lo = args.start or 0
     hi = args.end if args.end is not None else len(bases)
     if args.csv:
-        print("index,file_offset,timestamp,counter,coeff1,coeff2,ch1,ch2")
+        print("index,file_offset,timestamp,counter,reading,temp1,temp2")
     else:
         print(f"{'idx':>5} {'offset':>9} {'time':<19} {'cnt':>6} "
-              f"{'coeff1':>8} {'ch1':>8} {'ch2':>8}")
+              f"{'reading':>10} {'temp1':>7} {'temp2':>7}")
     for idx in range(lo, min(hi, len(bases))):
         r = decode(buf, bases[idx])
         if args.csv:
             print(f"{idx},{r['base']:#08x},{r['when']},{r['counter']},"
-                  f"{r['coeff1']:.6f},{r['coeff2']:.6f},{r['ch1']:.4f},{r['ch2']:.4f}")
+                  f"{r['reading']:.6f},{r['temp1']:.4f},{r['temp2']:.4f}")
         else:
             print(f"{idx:5d} {r['base']:#09x} {r['when']:<19} {r['counter']:6d} "
-                  f"{r['coeff1']:8.3f} {r['ch1']:8.3f} {r['ch2']:8.3f}")
+                  f"{r['reading']:10.6f} {r['temp1']:7.2f} {r['temp2']:7.2f}")
 
 
 def _resolve_indices(bases, spec):
@@ -160,7 +165,7 @@ def cmd_set(args):
     bases = find_records(buf)
     if args.field not in FIELDS:
         sys.exit(f"unknown field '{args.field}'; choose from {list(FIELDS)}")
-    foff, fmt = FIELDS[args.field]
+    fmt, offsets = FIELDS[args.field]
     packed = struct.pack("<" + fmt, args.value)
 
     indices = _resolve_indices(bases, args.records)
@@ -168,8 +173,9 @@ def cmd_set(args):
     for idx in indices:
         if idx < 0 or idx >= len(bases):
             sys.exit(f"record index {idx} out of range (0..{len(bases)-1})")
-        pos = bases[idx] + foff
-        buf[pos:pos + len(packed)] = packed
+        for foff in offsets:  # reading is stored twice; write every copy
+            pos = bases[idx] + foff
+            buf[pos:pos + len(packed)] = packed
         changed += 1
 
     out = args.out or args.file
@@ -179,12 +185,14 @@ def cmd_set(args):
     # verify by re-reading
     verify = load(out)
     vbases = find_records(verify)
+    tol = 1e-4 if fmt == "f" else 1e-9
     ok = True
     for idx in indices:
-        got = struct.unpack_from("<" + fmt, verify, vbases[idx] + foff)[0]
-        if abs(got - args.value) > (1e-4 if fmt == "f" else 1e-9):
-            ok = False
-            print(f"  !! verify failed at record {idx}: got {got}")
+        for foff in offsets:
+            got = struct.unpack_from("<" + fmt, verify, vbases[idx] + foff)[0]
+            if abs(got - args.value) > tol:
+                ok = False
+                print(f"  !! verify failed at record {idx} +{foff:#x}: got {got}")
     print(f"patched {changed} record(s): {args.field} = {args.value}")
     print(f"written : {out}")
     print(f"verify  : {'OK' if ok else 'FAILED'}")
