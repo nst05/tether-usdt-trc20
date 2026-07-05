@@ -43,6 +43,8 @@ class App(ttk.Frame):
         bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         ttk.Button(bar, text="Открыть дамп…", command=self.open_file).pack(side="left")
         ttk.Button(bar, text="Сохранить как…", command=self.save_as).pack(side="left", padx=6)
+        ttk.Button(bar, text="Экспорт изменённых…",
+                   command=self.export_changes).pack(side="left")
         self.info_lbl = ttk.Label(bar, text="файл не загружен")
         self.info_lbl.pack(side="left", padx=12)
 
@@ -278,6 +280,56 @@ class App(ttk.Frame):
             f"Отличий от исходного дампа: {ndiff} байт "
             f"({'изменения на месте' if ndiff else 'ВНИМАНИЕ: файл идентичен исходному!'}).\n\n"
             "Залейте его обратно в W25Q64V программатором CH341.")
+
+    def export_changes(self):
+        """Write only the changed bytes: Intel HEX + the touched 4 KiB sector(s)."""
+        if self.original is None or self.loaded is None:
+            messagebox.showwarning("Нет файла", "Сначала откройте дамп и примените патч.")
+            return
+        rep = core.export_changes(self.loaded, self.original)
+        if not rep["runs"]:
+            messagebox.showinfo("Нет изменений",
+                                "Изменённых байтов нет — сначала «Применить».")
+            return
+        base = filedialog.asksaveasfilename(
+            title="Экспорт изменённых байтов (базовое имя)",
+            defaultextension=".hex", initialfile="changes.hex",
+            filetypes=[("Intel HEX", "*.hex"), ("Все файлы", "*.*")])
+        if not base:
+            return
+        base = os.path.splitext(base)[0]
+        try:
+            with open(base + ".hex", "w") as f:
+                f.write(rep["ihex"])
+            sect_lines = []
+            for sbase, data in rep["sectors"].items():
+                name = f"{base}_sector_{sbase:#08x}.bin"
+                with open(name, "wb") as f:
+                    f.write(data)
+                sect_lines.append(f"{sbase:#08x} → {os.path.basename(name)}")
+            with open(base + ".txt", "w") as f:
+                f.write("изменённые байты (offset : bytes):\n")
+                for off, d in rep["runs"]:
+                    f.write(f"  {off:#08x} : {d.hex().upper()}\n")
+                f.write(f"\nвсего изменено байт: {rep['nbytes']}\n")
+                f.write("секторы для прошивки (4096 Б):\n")
+                for sbase in rep["sectors"]:
+                    f.write(f"  {sbase:#08x} .. {sbase + core.SECTOR_SIZE:#08x}\n")
+        except Exception as e:                       # noqa: BLE001
+            messagebox.showerror("Ошибка", str(e))
+            return
+        self.status.set(
+            f"Экспорт: {rep['nbytes']} байт в {len(rep['sectors'])} сектор(е) — "
+            f"{base}.hex + .bin сектор(ы)")
+        messagebox.showinfo(
+            "Экспорт готов",
+            f"Изменено {rep['nbytes']} байт в {len(rep['sectors'])} сектор(е):\n"
+            + "\n".join(sect_lines) +
+            f"\n\nФайлы:\n• {os.path.basename(base)}.hex — только изменённые байты\n"
+            f"• *_sector_0x….bin — сектор(ы) 4 КБ для записи\n"
+            f"• {os.path.basename(base)}.txt — список адресов\n\n"
+            "В программаторе прошивайте ТОЛЬКО этот сектор (стереть сектор → "
+            "записать .bin по его адресу), а не весь чип.")
 
 
 def main():

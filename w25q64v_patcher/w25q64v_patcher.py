@@ -39,6 +39,7 @@ fixed stride.
 """
 
 import argparse
+import os
 import struct
 import sys
 from datetime import datetime, timezone
@@ -104,6 +105,75 @@ def decode(buf, base):
 def load(path):
     with open(path, "rb") as f:
         return bytearray(f.read())
+
+
+# --------------------------------------------------------------------------- #
+# writing only the changed bytes (partial / per-sector flashing)
+# --------------------------------------------------------------------------- #
+SECTOR_SIZE = 4096   # W25Q64V erase granularity (4 KiB sector)
+
+
+def diff_runs(old, new):
+    """Contiguous runs of changed bytes: list of (offset, new_bytes)."""
+    runs = []
+    i, n = 0, min(len(old), len(new))
+    while i < n:
+        if old[i] != new[i]:
+            j = i
+            while j < n and old[j] != new[j]:
+                j += 1
+            runs.append((i, bytes(new[i:j])))
+            i = j
+        else:
+            i += 1
+    return runs
+
+
+def to_intel_hex(runs):
+    """Intel HEX text containing only the changed bytes at their addresses."""
+    out = []
+    upper = None
+
+    def rec(count, addr, typ, data):
+        body = bytes([count, (addr >> 8) & 0xFF, addr & 0xFF, typ]) + data
+        chk = (-sum(body)) & 0xFF
+        return ":" + body.hex().upper() + f"{chk:02X}"
+
+    for start, data in runs:
+        pos = 0
+        while pos < len(data):
+            addr = start + pos
+            hi = (addr >> 16) & 0xFFFF
+            if hi != upper:
+                out.append(rec(2, 0, 0x04, bytes([(hi >> 8) & 0xFF, hi & 0xFF])))
+                upper = hi
+            # keep chunk within the current 64 KiB page and <= 16 bytes
+            room = 0x10000 - (addr & 0xFFFF)
+            chunk = data[pos:pos + min(16, room)]
+            out.append(rec(len(chunk), addr & 0xFFFF, 0x00, chunk))
+            pos += len(chunk)
+    out.append(":00000001FF")
+    return "\n".join(out) + "\n"
+
+
+def changed_sectors(patched, runs, sector_size=SECTOR_SIZE):
+    """Map of {sector_base: sector_bytes} for every sector touched by runs."""
+    bases = set()
+    for start, data in runs:
+        first = (start // sector_size) * sector_size
+        last = ((start + len(data) - 1) // sector_size) * sector_size
+        for base in range(first, last + 1, sector_size):
+            bases.add(base)
+    return {b: bytes(patched[b:b + sector_size]) for b in sorted(bases)}
+
+
+def export_changes(loaded, patched, sector_size=SECTOR_SIZE):
+    """Everything needed to flash only the changes. Returns a summary dict."""
+    runs = diff_runs(loaded, patched)
+    nbytes = sum(len(d) for _, d in runs)
+    sectors = changed_sectors(patched, runs, sector_size)
+    return dict(runs=runs, nbytes=nbytes, sectors=sectors,
+                ihex=to_intel_hex(runs) if runs else "")
 
 
 # --------------------------------------------------------------------------- #
@@ -224,6 +294,49 @@ def cmd_set(args):
     print(f"verify  : {'OK' if res['verify_ok'] else 'FAILED'}")
 
 
+def cmd_export(args):
+    """Export ONLY the changed bytes between an original and a patched dump."""
+    old = load(args.original)
+    new = load(args.patched)
+    if len(old) != len(new):
+        sys.exit("files differ in size; expected two dumps of the same chip")
+    rep = export_changes(old, new, args.sector)
+    if not rep["runs"]:
+        sys.exit("no differences — nothing to export")
+
+    base = os.path.splitext(args.out)[0] if args.out else \
+        os.path.splitext(args.patched)[0] + "_changes"
+    # 1) Intel HEX of just the changed bytes
+    with open(base + ".hex", "w") as f:
+        f.write(rep["ihex"])
+    # 2) each changed 4 KiB sector as its own .bin (what a programmer actually writes)
+    sector_files = []
+    for sbase, data in rep["sectors"].items():
+        name = f"{base}_sector_{sbase:#08x}.bin"
+        with open(name, "wb") as f:
+            f.write(data)
+        sector_files.append((sbase, name))
+    # 3) human-readable summary
+    lines = ["changed byte runs (offset : bytes):"]
+    for off, data in rep["runs"]:
+        lines.append(f"  {off:#08x} : {data.hex().upper()}")
+    lines.append("")
+    lines.append(f"total changed bytes : {rep['nbytes']}")
+    lines.append(f"sectors to program  ({args.sector}-byte each):")
+    for sbase, name in sector_files:
+        lines.append(f"  {sbase:#08x} .. {sbase + args.sector:#08x}  ->  "
+                     f"{os.path.basename(name)}")
+    with open(base + ".txt", "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+    print(f"changed bytes : {rep['nbytes']}")
+    print(f"sectors       : {len(sector_files)} × {args.sector} B")
+    for sbase, name in sector_files:
+        print(f"  write {name} at address {sbase:#08x}")
+    print(f"Intel HEX     : {base}.hex")
+    print(f"summary       : {base}.txt")
+
+
 def build_parser():
     p = argparse.ArgumentParser(description="W25Q64V logger dump patcher")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -247,6 +360,15 @@ def build_parser():
                     help="'all', a single index '12', or a range '10-40'")
     ps.add_argument("--out", help="output file (default: overwrite in place)")
     ps.set_defaults(func=cmd_set)
+
+    pe = sub.add_parser("export",
+                        help="export only the changed bytes/sectors between two dumps")
+    pe.add_argument("original", help="original (pre-patch) dump")
+    pe.add_argument("patched", help="patched dump")
+    pe.add_argument("--out", help="output basename (default: <patched>_changes)")
+    pe.add_argument("--sector", type=int, default=SECTOR_SIZE,
+                    help=f"flash sector size in bytes (default {SECTOR_SIZE})")
+    pe.set_defaults(func=cmd_export)
     return p
 
 
