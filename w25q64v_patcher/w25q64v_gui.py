@@ -45,6 +45,11 @@ class App(ttk.Frame):
         ttk.Button(bar, text="Сохранить как…", command=self.save_as).pack(side="left", padx=6)
         ttk.Button(bar, text="Экспорт изменённых…",
                    command=self.export_changes).pack(side="left")
+        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=8)
+        ttk.Button(bar, text="Проверить связь (Read ID)",
+                   command=self.ch341_read_id).pack(side="left")
+        ttk.Button(bar, text="Записать в чип (CH341A)",
+                   command=self.ch341_write).pack(side="left", padx=6)
         self.info_lbl = ttk.Label(bar, text="файл не загружен")
         self.info_lbl.pack(side="left", padx=12)
 
@@ -280,6 +285,61 @@ class App(ttk.Frame):
             f"Отличий от исходного дампа: {ndiff} байт "
             f"({'изменения на месте' if ndiff else 'ВНИМАНИЕ: файл идентичен исходному!'}).\n\n"
             "Залейте его обратно в W25Q64V программатором CH341.")
+
+    def ch341_read_id(self):
+        """Link test: read the flash JEDEC ID through the CH341A."""
+        try:
+            import ch341a
+            jid = ch341a.read_id()
+        except Exception as e:                       # noqa: BLE001
+            messagebox.showerror("CH341A", str(e))
+            return
+        s = ":".join(f"{b:02X}" for b in jid)
+        ok = tuple(jid) == ch341a.W25Q64_ID
+        messagebox.showinfo(
+            "CH341A",
+            f"JEDEC ID: {s}\n"
+            + ("✔ Winbond W25Q64 — то, что нужно." if ok
+               else "⚠ Это НЕ W25Q64 (ожидался EF:40:17). Запись будет заблокирована."))
+        self.status.set(f"CH341A связь OK, JEDEC ID {s}")
+
+    def ch341_write(self):
+        """Erase+program ONLY the changed 4 KiB sectors straight into the chip."""
+        if self.original is None or self.loaded is None:
+            messagebox.showwarning("Нет файла", "Сначала откройте дамп и примените патч.")
+            return
+        try:
+            import ch341a
+        except Exception as e:                       # noqa: BLE001
+            messagebox.showerror("CH341A", str(e))
+            return
+        rep = core.export_changes(self.loaded, self.original)
+        if not rep["sectors"]:
+            messagebox.showinfo("Нет изменений", "Нечего писать — сначала «Применить».")
+            return
+        sect = ", ".join(f"{s:#08x}" for s in rep["sectors"])
+        if not messagebox.askyesno(
+                "Запись в физический чип",
+                f"Будет ЗАПИСАНО в реальный W25Q64V через CH341A:\n"
+                f"секторов: {len(rep['sectors'])} ({sect})\n"
+                f"изменённых байт: {rep['nbytes']}\n\n"
+                "Перед записью проверяется JEDEC ID, каждый сектор сверяется "
+                "чтением. Продолжить?"):
+            return
+        self.status.set("CH341A: запись…")
+        self.update_idletasks()
+        try:
+            written = ch341a.write_changes(self.loaded, self.original)
+        except Exception as e:                       # noqa: BLE001
+            messagebox.showerror("CH341A — запись НЕ выполнена", str(e))
+            self.status.set(f"CH341A: ошибка — {e}")
+            return
+        s = ", ".join(f"{b:#08x}" for b in written)
+        self.status.set(f"CH341A: записано и проверено {len(written)} сектор(ов): {s}")
+        messagebox.showinfo(
+            "Готово",
+            f"Записано и сверено чтением {len(written)} сектор(ов):\n{s}\n\n"
+            "Чип обновлён. Можно снять дамп для контроля.")
 
     def export_changes(self):
         """Write only the changed bytes: Intel HEX + the touched 4 KiB sector(s)."""
