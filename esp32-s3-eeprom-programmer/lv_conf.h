@@ -1,79 +1,65 @@
-/**
- * ГОТОВЫЙ lv_conf.h для проекта EEPROM-программатора на ESP32-S3-Touch-LCD-7.
- * LVGL 8.3.x. Ничего менять не нужно — просто положите этот файл рядом с
- * папкой библиотеки lvgl (см. README, раздел «Куда класть lv_conf.h»).
- *
- * Параметры, не заданные здесь явно, берут значения по умолчанию из
- * lv_conf_internal.h самой библиотеки — поэтому файл компактный.
- */
-
-/* Файл включён (в шаблоне LVGL тут стоит #if 0 — здесь уже 1). */
-#if 1
-
 #ifndef LV_CONF_H
 #define LV_CONF_H
 
 #include <stdint.h>
 
-/*====================
-   ЦВЕТ
- *====================*/
-#define LV_COLOR_DEPTH     16
-/* Для RGB-панели esp_lcd байты НЕ переставляем. Если цвета инвертированы — 1. */
-#define LV_COLOR_16_SWAP   0
+#define LV_COLOR_DEPTH 16
+#define LV_COLOR_16_SWAP 0
+#define LV_MEM_CUSTOM 0
+#define LV_MEM_SIZE (96U * 1024U)
+#define LV_TICK_CUSTOM 0
+#define LV_DPI_DEF 130
 
-/*=========================
-   ПАМЯТЬ LVGL
- *=========================*/
-/* Встроенный аллокатор LVGL. 48 КБ достаточно для этого интерфейса. */
-#define LV_MEM_CUSTOM      0
-#define LV_MEM_SIZE        (48U * 1024U)
-
-/*====================
-   HAL / ТИКИ
- *====================*/
-/* Тик задаём вручную через lv_tick_inc() (см. display_lvgl.cpp). */
-#define LV_TICK_CUSTOM     0
-/* Частота обновления/вх. устройств, мс. */
-#define LV_DISP_DEF_REFR_PERIOD  20
-#define LV_INDEV_DEF_READ_PERIOD 20
-
-/* DPI (условно, для размеров по умолчанию). */
-#define LV_DPI_DEF         130
-
-/*=======================
-   ОТЛАДКА / ЛОГ
- *=======================*/
-#define LV_USE_LOG         0
+#define LV_USE_LOG 0
 #define LV_USE_ASSERT_NULL 1
 #define LV_USE_ASSERT_MALLOC 1
 
-/*=======================
-   ШРИФТЫ
- *=======================*/
-/* montserrat_14 нужен как шрифт по умолчанию (символы клавиатуры и т.п.). */
-#define LV_FONT_MONTSERRAT_14  1
-#define LV_FONT_DEFAULT        &lv_font_montserrat_14
+#define LV_FONT_MONTSERRAT_12 1
+#define LV_FONT_MONTSERRAT_14 1
+#define LV_FONT_MONTSERRAT_16 1
+#define LV_FONT_MONTSERRAT_20 1
+#define LV_FONT_MONTSERRAT_24 1
+#define LV_FONT_DEFAULT &lv_font_montserrat_14
 
-/*=======================
-   ВИДЖЕТЫ (нужные проекту)
- *=======================*/
-#define LV_USE_LABEL       1
-#define LV_LABEL_TEXT_SELECTION 1
-#define LV_LABEL_LONG_TXT_HINT  1
-#define LV_USE_BTN         1
-#define LV_USE_BTNMATRIX   1
-#define LV_USE_BAR         1
-#define LV_USE_TEXTAREA    1
-#define LV_USE_KEYBOARD    1
-#define LV_USE_TABVIEW     1
+#define LV_USE_THEME_DEFAULT 1
+#define LV_THEME_DEFAULT_DARK 1
+#define LV_THEME_DEFAULT_GROW 1
+#define LV_THEME_DEFAULT_TRANSITION_TIME 80
 
-/*=======================
-   ТЕМА
- *=======================*/
-#define LV_USE_THEME_DEFAULT   1
-#define LV_THEME_DEFAULT_DARK  1
+#define LV_USE_ARC 1
+#define LV_USE_BAR 1
+#define LV_USE_BTN 1
+#define LV_USE_BTNMATRIX 1
+#define LV_USE_CANVAS 1
+#define LV_USE_CHECKBOX 1
+#define LV_USE_DROPDOWN 1
+#define LV_USE_IMG 1
+#define LV_USE_LABEL 1
+#define LV_USE_LINE 1
+#define LV_USE_ROLLER 1
+#define LV_USE_SLIDER 1
+#define LV_USE_SWITCH 1
+#define LV_USE_TABLE 1
+#define LV_USE_TEXTAREA 1
+#define LV_USE_ANIMIMG 0
+#define LV_USE_CALENDAR 0
+#define LV_USE_CHART 0
+#define LV_USE_COLORWHEEL 0
+#define LV_USE_IMGBTN 0
+#define LV_USE_KEYBOARD 1
+#define LV_USE_LED 0
+#define LV_USE_LIST 0
+#define LV_USE_MENU 0
+#define LV_USE_METER 0
+#define LV_USE_MSGBOX 0
+#define LV_USE_SPAN 0
+#define LV_USE_SPINBOX 0
+#define LV_USE_SPINNER 0
+#define LV_USE_TABVIEW 1
+#define LV_USE_TILEVIEW 0
+#define LV_USE_WIN 0
 
-#endif /* LV_CONF_H */
+#define LV_USE_FLEX 1
+#define LV_USE_GRID 1
 
-#endif /* Файл включён */
+#endif

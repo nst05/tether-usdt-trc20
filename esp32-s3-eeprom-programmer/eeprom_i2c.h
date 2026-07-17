@@ -8,8 +8,12 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <Wire.h>
 
 typedef void (*eeprom_progress_fn)(int percent);
+
+// Указать экземпляр I2C (по умолчанию — глобальный Wire). Вызывать до операций.
+void eeprom_i2c_set_wire(TwoWire *wire);
 
 // --- 24C16 (2048 байт) ---
 bool eeprom_read_24c16(uint8_t *out, int total, eeprom_progress_fn cb);

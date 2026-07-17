@@ -1,31 +1,37 @@
 // -*- coding: utf-8 -*-
 #include "eeprom_i2c.h"
 #include <Arduino.h>
-#include <Wire.h>
 
 #define EEPROM_WRITE_CYCLE_MS  6   // пауза на внутренний цикл записи страницы
+
+// Используемый экземпляр I2C (задаётся из скетча; по умолчанию — Wire).
+static TwoWire *s_wire = &Wire;
+
+void eeprom_i2c_set_wire(TwoWire *wire) {
+    if (wire) s_wire = wire;
+}
 
 // ---- низкоуровневые операции ----
 
 // addrsize: 8 или 16 бит внутреннего адреса
 static bool mem_write(uint8_t dev, uint16_t mem, uint8_t addrsize, const uint8_t *data, int len) {
-    Wire.beginTransmission(dev);
-    if (addrsize == 16) Wire.write((uint8_t)(mem >> 8));
-    Wire.write((uint8_t)(mem & 0xFF));
-    for (int i = 0; i < len; i++) Wire.write(data[i]);
-    bool ok = (Wire.endTransmission() == 0);
+    s_wire->beginTransmission(dev);
+    if (addrsize == 16) s_wire->write((uint8_t)(mem >> 8));
+    s_wire->write((uint8_t)(mem & 0xFF));
+    for (int i = 0; i < len; i++) s_wire->write(data[i]);
+    bool ok = (s_wire->endTransmission() == 0);
     delay(EEPROM_WRITE_CYCLE_MS);
     return ok;
 }
 
 static bool mem_read(uint8_t dev, uint16_t mem, uint8_t addrsize, uint8_t *data, int len) {
-    Wire.beginTransmission(dev);
-    if (addrsize == 16) Wire.write((uint8_t)(mem >> 8));
-    Wire.write((uint8_t)(mem & 0xFF));
-    if (Wire.endTransmission(false) != 0) return false;   // repeated start
-    int got = Wire.requestFrom((int)dev, len);
+    s_wire->beginTransmission(dev);
+    if (addrsize == 16) s_wire->write((uint8_t)(mem >> 8));
+    s_wire->write((uint8_t)(mem & 0xFF));
+    if (s_wire->endTransmission(false) != 0) return false;   // repeated start
+    int got = s_wire->requestFrom((int)dev, len);
     if (got != len) return false;
-    for (int i = 0; i < len; i++) data[i] = Wire.read();
+    for (int i = 0; i < len; i++) data[i] = s_wire->read();
     return true;
 }
 

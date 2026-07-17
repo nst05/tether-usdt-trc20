@@ -1,41 +1,70 @@
 // -*- coding: utf-8 -*-
 // EEPROM-программатор на ESP32-S3-Touch-LCD-7 (Waveshare, 800x480, тач GT911).
-// Порт настольной PyQt5+CH341 утилиты на автономный сенсорный интерфейс LVGL.
 //
-// 6 программаторов (вкладки):
-//   201_drob_random (24C16), c101 (24C04), new_1F (AT24C1024),
-//   new_3F (AT24C1024), ce6803b_p32 (24C04), 200_MT (24C16).
+// Дисплей и тач подняты через официальную библиотеку ESP32_Display_Panel
+// (esp_display_panel) с пресетом платы Waveshare — это гарантирует рабочий тач.
+// EEPROM подключается к внешнему I2C-разъёму (SDA=8, SCL=9) и обслуживается
+// отдельным I2C-контроллером (порт 1).
 //
-// EEPROM подключается к тому же I2C-разъёму, что и тач (SDA=8, SCL=9).
-// Вход в приложение — по паролю (см. app_config.h).
+// 6 программаторов (вкладки): 201, c101, new_1F, new_3F, ce6803b_p32, 200_MT.
+// Вся логика CRC/BCD/патчей проверена побайтово против оригинальной Python-версии.
 //
-// Требования к сборке: см. README.md (Arduino-ESP32 v3.x, LVGL 8.3, lv_conf.h).
+// Требования к сборке: см. README.md.
 
 #include <Arduino.h>
 #include <Wire.h>
 
-#include "board_pins.h"
-#include "display_lvgl.h"
+#include "esp_panel_drivers_conf.h"
+#include "esp_panel_board_supported_conf.h"
+#include <esp_display_panel.hpp>
+
+#include "app_config.h"
+#include "eeprom_i2c.h"
+#include "simple_lvgl_port.h"
+#include "security.h"
 #include "ui.h"
+
+using namespace esp_panel::drivers;
+using namespace esp_panel::board;
+
+static TwoWire eepromWire(EEPROM_I2C_PORT);
+static Board  *board = nullptr;
 
 void setup() {
     Serial.begin(115200);
-    delay(200);
-    Serial.println("[EEPROM-PROG] boot");
+    delay(300);
+    Serial.println("[EEPROM-PROG] starting");
 
-    // Общая I2C-шина: тач GT911 + расширитель CH422G + внешняя EEPROM.
-    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN, I2C_FREQ_HZ);
+    // 1) Дисплей + тач (библиотечный пресет платы).
+    board = new Board();
+    board->init();
+    if (!board->begin()) {
+        Serial.println("[EEPROM-PROG] ERROR: display board init failed");
+        while (true) delay(1000);
+    }
 
-    // Дисплей + LVGL + тач.
-    display_lvgl_init();
+    // 2) Внешний I2C для EEPROM (отдельный контроллер, порт 1).
+    eepromWire.begin(EEPROM_I2C_SDA, EEPROM_I2C_SCL, EEPROM_I2C_HZ);
+    eeprom_i2c_set_wire(&eepromWire);
 
-    // Интерфейс: экран входа + вкладки программаторов.
+    // 3) Хранилище пароля/счётчика попыток (NVS).
+    security_begin();
+
+    // 4) LVGL (отдельная задача с блокировкой).
+    if (!programmer_lvgl_init(board->getLCD(), board->getTouch())) {
+        Serial.println("[EEPROM-PROG] ERROR: LVGL init failed");
+        while (true) delay(1000);
+    }
+
+    // 5) Интерфейс — создаём под блокировкой LVGL.
+    programmer_lvgl_lock(-1);
     ui_build();
+    programmer_lvgl_unlock();
 
-    Serial.println("[EEPROM-PROG] ready");
+    Serial.println("[EEPROM-PROG] ready. I2C: 3V3/GND/SDA(GPIO8)/SCL(GPIO9)");
 }
 
 void loop() {
-    display_lvgl_pump();
-    delay(5);
+    // Вся отрисовка/тач — в задаче LVGL (см. simple_lvgl_port.cpp).
+    delay(1000);
 }

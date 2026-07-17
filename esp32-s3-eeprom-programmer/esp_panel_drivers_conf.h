@@ -1,0 +1,28 @@
+#pragma once
+
+// Driver configuration for ESP32_Display_Panel 1.0.5.
+// Enable all driver factories to make the custom Waveshare board configuration self-contained.
+#define ESP_PANEL_DRIVERS_BUS_USE_ALL                    (1)
+#define ESP_PANEL_DRIVERS_BUS_COMPILE_UNUSED_DRIVERS     (1)
+
+#define ESP_PANEL_DRIVERS_LCD_USE_ALL                    (1)
+#define ESP_PANEL_DRIVERS_LCD_COMPILE_UNUSED_DRIVERS     (1)
+
+#define ESP_PANEL_DRIVERS_TOUCH_MAX_POINTS               (5)
+#define ESP_PANEL_DRIVERS_TOUCH_MAX_BUTTONS              (1)
+#define ESP_PANEL_DRIVERS_TOUCH_USE_ALL                  (1)
+#define ESP_PANEL_DRIVERS_TOUCH_COMPILE_UNUSED_DRIVERS   (1)
+
+#define ESP_PANEL_DRIVERS_TOUCH_XPT2046_Z_THRESHOLD              (400)
+#define ESP_PANEL_DRIVERS_TOUCH_XPT2046_INTERRUPT_MODE           (0)
+#define ESP_PANEL_DRIVERS_TOUCH_XPT2046_VREF_ON_MODE             (0)
+#define ESP_PANEL_DRIVERS_TOUCH_XPT2046_CONVERT_ADC_TO_COORDS    (1)
+#define ESP_PANEL_DRIVERS_TOUCH_XPT2046_ENABLE_LOCKING           (0)
+
+#define ESP_PANEL_DRIVERS_EXPANDER_USE_ALL               (1)
+#define ESP_PANEL_DRIVERS_BACKLIGHT_USE_ALL              (1)
+#define ESP_PANEL_DRIVERS_BACKLIGHT_COMPILE_UNUSED_DRIVERS (1)
+
+#define ESP_PANEL_DRIVERS_CONF_FILE_VERSION_MAJOR 1
+#define ESP_PANEL_DRIVERS_CONF_FILE_VERSION_MINOR 2
+#define ESP_PANEL_DRIVERS_CONF_FILE_VERSION_PATCH 0
