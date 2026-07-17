@@ -5,6 +5,7 @@
 #include <lvgl.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 // Кастомные ASCII-шрифты (генерируются lv_font_conv из DejaVuSans).
 LV_FONT_DECLARE(ui_font_18);
