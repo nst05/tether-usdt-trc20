@@ -1,25 +1,15 @@
-// -*- coding: utf-8 -*-
-// Настройки приложения.
-#ifndef APP_CONFIG_H
-#define APP_CONFIG_H
+#pragma once
 
-// Заголовок в шапке.
-#define APP_TITLE      "EEPROM PROGRAMMER"
+// Внешний I2C-разъём Waveshare ESP32-S3-Touch-LCD-7 (общая шина с тачем GT911).
+#define EEPROM_I2C_SDA 8
+#define EEPROM_I2C_SCL 9
+#define EEPROM_I2C_HZ  100000UL
 
-// Пароль по умолчанию (можно сменить в интерфейсе; хранится в NVS).
-// Ввод цифровой — задавайте пароль из цифр.
-#define APP_DEFAULT_PASSWORD  "1234"
+// Второй контроллер I2C для EEPROM (тач обслуживается своим).
+#define EEPROM_I2C_PORT 1
+#define EEPROM_BASE_ADDR 0x50
 
-// Лимит неверных попыток. При достижении — прошивка стирается (защита от перебора).
-#define APP_MAX_ATTEMPTS      5
-
-// Внешний I2C-разъём платы (общая шина с тачем GT911).
-// EEPROM работает на втором контроллере I2C (порт 1), тач — на своём (порт 0).
-// Операции с EEPROM идут внутри обработчика события LVGL, поэтому обе шины
-// не активны на общих линиях одновременно.
-#define EEPROM_I2C_SDA   8
-#define EEPROM_I2C_SCL   9
-#define EEPROM_I2C_HZ    100000UL
-#define EEPROM_I2C_PORT  1
-
-#endif // APP_CONFIG_H
+// ---- Вход по PIN / защита от перебора ----
+#define APP_TITLE             "EEPROM PROGRAMMER"
+#define APP_DEFAULT_PASSWORD  "1234"   // можно сменить в интерфейсе (хранится в NVS)
+#define APP_MAX_ATTEMPTS      5        // при превышении — стирание прошивки
