@@ -5,8 +5,9 @@
 
 #define LV_COLOR_DEPTH 16
 #define LV_COLOR_16_SWAP 0
-#define LV_MEM_CUSTOM 0
-#define LV_MEM_SIZE (96U * 1024U)
+// Память LVGL берём из системной кучи (иначе фикс. пул переполняется на нашем UI).
+#define LV_MEM_CUSTOM 1
+#define LV_MEM_SIZE (96U * 1024U)   // не используется при LV_MEM_CUSTOM 1
 #define LV_TICK_CUSTOM 0
 #define LV_DPI_DEF 130
 
