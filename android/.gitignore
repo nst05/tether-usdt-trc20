@@ -1,0 +1,14 @@
+.gradle/
+build/
+*/build/
+local.properties
+keystore.properties
+*.keystore
+*.jks
+.idea/
+*.iml
+.DS_Store
+captures/
+# Нативное ядро (собирается в CI, не коммитим бинарники)
+app/libs/*.aar
+app/src/main/jniLibs/

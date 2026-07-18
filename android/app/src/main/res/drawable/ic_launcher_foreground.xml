@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Диагональ N -->
+    <path
+        android:strokeColor="#1BB49B"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M44.4,69.4 L63.6,38.6" />
+    <!-- Левый шеврон -->
+    <path
+        android:strokeColor="#24E5C6"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M39.6,37.2 L51.1,54 L39.6,70.8" />
+    <!-- Правый шеврон -->
+    <path
+        android:strokeColor="#24E5C6"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M68.4,37.2 L56.9,54 L68.4,70.8" />
+</vector>

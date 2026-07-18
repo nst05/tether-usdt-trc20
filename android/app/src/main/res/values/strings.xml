@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">NexonVPN</string>
+    <string name="tagline">Защита и свобода в сети</string>
+
+    <string name="connect">Подключиться</string>
+    <string name="disconnect">Отключить</string>
+    <string name="connecting">Подключение…</string>
+    <string name="connected">Подключено</string>
+    <string name="disconnected">Отключено</string>
+
+    <string name="preparing">Готовим доступ…</string>
+    <string name="registering">Активируем устройство…</string>
+    <string name="servers">Серверы</string>
+    <string name="auto_fastest">Авто (быстрейший)</string>
+    <string name="subscription">Подписка</string>
+    <string name="days_left">Осталось дней</string>
+    <string name="traffic">Трафик</string>
+    <string name="unlimited">Безлимит</string>
+
+    <string name="notif_channel_name">VPN-подключение</string>
+    <string name="notif_connected_title">NexonVPN активен</string>
+    <string name="notif_connecting_title">Подключение к NexonVPN…</string>
+
+    <string name="retry">Повторить</string>
+    <string name="error_no_network">Нет сети. Проверьте подключение к интернету.</string>
+    <string name="error_register">Не удалось активировать устройство. Попробуйте позже.</string>
+    <string name="status_blocked">Доступ заблокирован. Обратитесь в поддержку.</string>
+    <string name="status_expired">Подписка истекла. Продлите доступ.</string>
+    <string name="status_device_limit">Достигнут лимит устройств.</string>
+</resources>
