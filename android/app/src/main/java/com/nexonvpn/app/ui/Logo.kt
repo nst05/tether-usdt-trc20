@@ -1,6 +1,7 @@
 package com.nexonvpn.app.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -18,7 +19,7 @@ import com.nexonvpn.app.ui.theme.NexonPrimaryDim
  */
 @Composable
 fun NexonLogo(size: Dp = 72.dp, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier.then(androidx.compose.foundation.layout.size(size))) {
+    Canvas(modifier = modifier.size(size)) {
         val w = this.size.width
         val h = this.size.height
         val sw = w * 0.10f
@@ -51,7 +52,7 @@ fun NexonLogo(size: Dp = 72.dp, modifier: Modifier = Modifier) {
 /** Иконка питания в центре кнопки подключения. */
 @Composable
 fun NexonPowerGlyph(color: androidx.compose.ui.graphics.Color, size: Dp = 34.dp) {
-    Canvas(modifier = Modifier.then(androidx.compose.foundation.layout.size(size))) {
+    Canvas(modifier = Modifier.size(size)) {
         val w = this.size.width
         val sw = w * 0.11f
         // Дуга
