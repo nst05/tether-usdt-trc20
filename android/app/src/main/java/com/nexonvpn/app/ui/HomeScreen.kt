@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -55,8 +57,12 @@ fun HomeScreen(
                 .padding(top = 56.dp, bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            NexonLogo(size = 76.dp)
-            Spacer(Modifier.height(14.dp))
+            Image(
+                painter = painterResource(R.drawable.nexon_logo),
+                contentDescription = "NexonVPN",
+                modifier = Modifier.size(96.dp),
+            )
+            Spacer(Modifier.height(10.dp))
             Text("NEXONVPN", color = NexonOnBg, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp)
             Text(stringResource(R.string.tagline), color = NexonMuted, fontSize = 13.sp)
 
