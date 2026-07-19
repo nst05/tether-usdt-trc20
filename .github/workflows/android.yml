@@ -63,10 +63,13 @@ jobs:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
 
       - name: Build tun2socks (badvpn) for all ABIs
+        continue-on-error: true   # даже без tun2socks full-APK соберётся (ядро уже есть)
+        env:
+          GIT_TERMINAL_PROMPT: "0"
         run: |
           set -e
           NDK="$ANDROID_NDK_ROOT"
-          git clone --depth 1 https://github.com/heiher/badvpn /tmp/badvpn
+          git clone --depth 1 https://github.com/shadowsocks/badvpn /tmp/badvpn
           for ABI in arm64-v8a armeabi-v7a x86_64; do
             cmake -S /tmp/badvpn -B /tmp/badvpn/build-$ABI \
               -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
