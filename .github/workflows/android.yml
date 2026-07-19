@@ -62,24 +62,8 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
 
-      - name: Build tun2socks (badvpn) for all ABIs
-        continue-on-error: true   # даже без tun2socks full-APK соберётся (ядро уже есть)
-        env:
-          GIT_TERMINAL_PROMPT: "0"
-        run: |
-          set -e
-          NDK="$ANDROID_NDK_ROOT"
-          git clone --depth 1 https://github.com/shadowsocks/badvpn /tmp/badvpn
-          for ABI in arm64-v8a armeabi-v7a x86_64; do
-            cmake -S /tmp/badvpn -B /tmp/badvpn/build-$ABI \
-              -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
-              -DANDROID_ABI=$ABI -DANDROID_PLATFORM=android-24 \
-              -DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_TUN2SOCKS=1
-            cmake --build /tmp/badvpn/build-$ABI --target badvpn-tun2socks -j2
-            mkdir -p app/src/main/jniLibs/$ABI
-            cp /tmp/badvpn/build-$ABI/tun2socks/badvpn-tun2socks \
-               app/src/main/jniLibs/$ABI/libtun2socks.so
-          done
+      # tun2socks не нужен: актуальный libv2ray принимает TUN fd напрямую
+      # (CoreController.startLoop(config, tunFd)) и мостит трафик внутри ядра.
 
       - name: Build full release APK (unsigned)
         run: ./gradlew :app:assembleFullRelease --no-daemon

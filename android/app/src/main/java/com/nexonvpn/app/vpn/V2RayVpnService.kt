@@ -10,24 +10,21 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.nexonvpn.app.BuildConfig
 import com.nexonvpn.app.MainActivity
 import com.nexonvpn.app.R
-import com.nexonvpn.app.core.XrayConfig
+import libv2ray.CoreCallbackHandler
+import libv2ray.CoreController
 import libv2ray.Libv2ray
-import libv2ray.V2RayPoint
-import libv2ray.V2RayVPNServiceSupportsSet
 import java.io.File
 
 /**
- * VPN-сервис NexonVPN.
+ * VPN-сервис NexonVPN на актуальном API AndroidLibXrayLite.
  *
- * Пайплайн (как в v2rayNG):
- *   TUN (VpnService) ──► tun2socks (libtun2socks.so) ──► socks 127.0.0.1:10808 ──► Xray-core ──► сервер
- *
- * Xray-core запускается через libv2ray (gomobile AAR из AndroidLibXrayLite).
- * Нативные библиотеки (libv2ray.aar, libtun2socks.so) поставляются при сборке —
- * см. .github/workflows/android.yml.
+ * Пайплайн: VpnService (TUN) → CoreController.startLoop(config, tunFd) → Xray-core.
+ * Ядро принимает файловый дескриптор TUN напрямую и само мостит трафик
+ * (внешний tun2socks не нужен). Чтобы исходящие соединения самого ядра не
+ * заворачивались обратно в туннель, приложение исключается из VPN
+ * (addDisallowedApplication) — отдельный protect() в новом API отсутствует.
  */
 class V2RayVpnService : VpnService() {
 
@@ -37,64 +34,53 @@ class V2RayVpnService : VpnService() {
         private const val NOTIF_ID = 1
 
         private const val PRIVATE_VLAN4_CLIENT = "26.26.26.1"
-        private const val PRIVATE_VLAN4_ROUTER = "26.26.26.2"
         private const val VPN_MTU = 1500
-        private const val TUN2SOCKS = "libtun2socks.so"
     }
 
     private var tunFd: ParcelFileDescriptor? = null
-    private var process: Process? = null
-    private lateinit var v2rayPoint: V2RayPoint
-    private var domain: String = ""
+    private lateinit var coreController: CoreController
 
-    // Сигнатуры соответствуют реальному интерфейсу AndroidLibXrayLite
-    // (методы возвращают Long/Boolean, как в v2rayNG).
-    private val supportSet = object : V2RayVPNServiceSupportsSet {
-        override fun setup(s: String): Long =
-            try { startTunnel(); 0L } catch (e: Exception) { Log.e(TAG, "setup failed", e); -1L }
-        override fun shutdown(): Long { stopAll(); return 0L }
-        override fun protect(l: Long): Boolean = this@V2RayVpnService.protect(l.toInt())
+    private val callback = object : CoreCallbackHandler {
+        override fun startup(): Long = 0L
+        // Уведомление от ядра об остановке — саму очистку делает stopVpn().
+        override fun shutdown(): Long = 0L
         override fun onEmitStatus(l: Long, s: String?): Long = 0L
-        override fun prepare(): Long = 0L
-        override fun sendFd(): Long = sendTunFd()
     }
 
     override fun onCreate() {
         super.onCreate()
-        Libv2ray.initV2Env(userAssetPath(), "")
-        v2rayPoint = Libv2ray.newV2RayPoint(supportSet, false)
+        Libv2ray.initCoreEnv(userAssetPath(), "")
+        coreController = Libv2ray.newCoreController(callback)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            VpnController.ACTION_STOP -> { stopService(); return START_NOT_STICKY }
+            VpnController.ACTION_STOP -> { stopVpn(); return START_NOT_STICKY }
             VpnController.ACTION_START -> {
                 val config = intent.getStringExtra(VpnController.EXTRA_CONFIG)
-                domain = intent.getStringExtra(VpnController.EXTRA_DOMAIN).orEmpty()
                 val name = intent.getStringExtra(VpnController.EXTRA_NAME).orEmpty()
-                if (config.isNullOrBlank()) { stopService(); return START_NOT_STICKY }
+                if (config.isNullOrBlank()) { stopVpn(); return START_NOT_STICKY }
                 startForegroundNotif(name)
-                startV2Ray(config)
+                startCore(config)
             }
         }
         return START_STICKY
     }
 
-    private fun startV2Ray(config: String) {
+    private fun startCore(config: String) {
         try {
-            v2rayPoint.configureFileContent = config
-            v2rayPoint.domainName = domain
-            v2rayPoint.runLoop(false)   // false → предпочитать IPv4; вызовет supportSet.setup()
+            val fd = establishTun()
+            coreController.startLoop(config, fd)
             VpnController.updateStatus(VpnStatus.CONNECTED)
         } catch (e: Exception) {
-            Log.e(TAG, "runLoop failed", e)
+            Log.e(TAG, "startLoop failed", e)
             VpnController.updateStatus(VpnStatus.ERROR)
-            stopService()
+            stopVpn()
         }
     }
 
-    /** Устанавливает TUN и запускает tun2socks. Вызывается ядром из supportSet.setup(). */
-    private fun startTunnel() {
+    /** Поднимает TUN и возвращает его файловый дескриптор для ядра. */
+    private fun establishTun(): Int {
         val builder = Builder()
             .setSession("NexonVPN")
             .setMtu(VPN_MTU)
@@ -103,81 +89,33 @@ class V2RayVpnService : VpnService() {
             .addDnsServer("8.8.8.8")
             .addRoute("0.0.0.0", 0)
 
-        // Не заворачиваем сам себя в туннель
+        // Не заворачиваем трафик самого приложения (и ядра внутри него) в туннель.
         runCatching { builder.addDisallowedApplication(packageName) }
 
-        tunFd = builder.establish() ?: throw IllegalStateException("establish() returned null")
-        runTun2socks()
+        val pfd = builder.establish() ?: throw IllegalStateException("establish() returned null")
+        tunFd = pfd
+        return pfd.fd
     }
 
-    private fun runTun2socks() {
-        val socksPort = XrayConfig.SOCKS_PORT
-        val cmd = arrayListOf(
-            File(applicationInfo.nativeLibraryDir, TUN2SOCKS).absolutePath,
-            "--netif-ipaddr", PRIVATE_VLAN4_ROUTER,
-            "--netif-netmask", "255.255.255.252",
-            "--socks-server-addr", "127.0.0.1:$socksPort",
-            "--tunmtu", VPN_MTU.toString(),
-            "--sock-path", File(filesDir, "sock_path").absolutePath,
-            "--enable-udprelay",
-            "--loglevel", "notice",
-        )
-        process = ProcessBuilder(cmd).redirectErrorStream(true).start()
-        // Мониторим процесс: если упал — переподнимаем, пока туннель активен
-        Thread {
-            try {
-                process?.waitFor()
-                if (v2rayPoint.isRunning) runTun2socks()
-            } catch (_: InterruptedException) {}
-        }.apply { isDaemon = true }.start()
-    }
-
-    /** Передаёт TUN fd процессу tun2socks по доменному сокету. */
-    private fun sendTunFd(): Long {
-        val fd = tunFd?.fileDescriptor ?: return -1L
-        val path = File(filesDir, "sock_path").absolutePath
-        var tries = 0
-        while (tries < 6) {
-            try {
-                Thread.sleep(50L * (tries + 1))
-                android.net.LocalSocket().use { ls ->
-                    ls.connect(android.net.LocalSocketAddress(path, android.net.LocalSocketAddress.Namespace.FILESYSTEM))
-                    ls.setFileDescriptorsForSend(arrayOf(fd))
-                    ls.outputStream.write(42)
-                }
-                return 0L
-            } catch (e: Exception) {
-                Log.w(TAG, "sendFd retry ${tries + 1}: ${e.message}")
-                tries++
-            }
-        }
-        Log.e(TAG, "sendFd failed after retries")
-        return -1L
-    }
-
-    private fun stopService() {
+    private fun stopVpn() {
         VpnController.updateStatus(VpnStatus.DISCONNECTED)
         VpnController.updateActiveServer(null)
-        stopAll()
+        runCatching { if (coreController.isRunning) coreController.stopLoop() }
+        runCatching { tunFd?.close() }
+        tunFd = null
         stopForegroundCompat()
         stopSelf()
     }
 
-    private fun stopAll() {
-        runCatching { if (v2rayPoint.isRunning) v2rayPoint.stopLoop() }
-        runCatching { process?.destroy() }
-        process = null
+    override fun onDestroy() {
+        runCatching { if (coreController.isRunning) coreController.stopLoop() }
         runCatching { tunFd?.close() }
         tunFd = null
-    }
-
-    override fun onDestroy() {
-        stopAll()
         super.onDestroy()
     }
 
     override fun onRevoke() {
-        stopService()
+        stopVpn()
     }
 
     // ── Foreground-уведомление ───────────────────────────────────────────────

@@ -44,11 +44,11 @@ Xray-core). Приложение **автономно**: при первом з�
   ```bash
   cd android && ./gradlew assembleStubDebug
   ```
-- **full** — реальное ядро Xray. Нужны:
-  - `app/libs/libv2ray.aar` — из [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite) (`gomobile bind`);
-  - `app/src/main/jniLibs/<abi>/libtun2socks.so` — мост TUN↔SOCKS.
-
-  Оба артефакта собирает CI — см. `.github/workflows/android.yml`.
+- **full** — реальное ядро Xray. Нужен `app/libs/libv2ray.aar` из
+  [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite) (`gomobile bind`).
+  Актуальный core принимает TUN fd напрямую (`CoreController.startLoop(config, tunFd)`)
+  и мостит трафик внутри — отдельный tun2socks не нужен. AAR собирает CI
+  (`.github/workflows/android.yml`, job `build-full`).
 
 CI (`Android (NexonVPN)`) на каждый пуш собирает stub-APK и, best-effort, full-APK.
 
@@ -91,8 +91,8 @@ CI (`Android (NexonVPN)`) на каждый пуш собирает stub-APK и,
 ## Статус и что дальше
 
 Готово: автономная регистрация, загрузка подписки, парсинг серверов, UI, туннель
-(Xray-core + tun2socks по схеме v2rayNG), **экран тарифов и оплата** (yookassa/
-platega/yoomoney/wata через существующий бэкенд). **Требует проверки на реальном
-устройстве** после сборки `full` (ядро + tun2socks). Дальше: пуш об окончании
-подписки, авто-переподключение, split-tunneling (per-app), оплата криптой (USDT
-через cryptobot — нужен shared-creator в бэкенде).
+(Xray-core, актуальный `CoreController` API — TUN fd напрямую в ядро), **экран
+тарифов и оплата** (yookassa/platega/yoomoney/wata через существующий бэкенд).
+**Требует проверки на реальном устройстве** после сборки `full`. Дальше: пуш об
+окончании подписки, авто-переподключение, split-tunneling (per-app), оплата
+криптой (USDT через cryptobot — нужен shared-creator в бэкенде).

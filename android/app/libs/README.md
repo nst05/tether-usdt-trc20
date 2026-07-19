@@ -3,26 +3,25 @@
 Сюда кладётся **`libv2ray.aar`** — ядро Xray, собранное через `gomobile bind`
 из [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite).
 
-Плюс нативная библиотека **`libtun2socks.so`** (для каждой ABI) — мост TUN↔SOCKS,
-кладётся в `app/src/main/jniLibs/<abi>/libtun2socks.so`.
+Актуальный API ядра — `CoreController.startLoop(configContent, tunFd)`: ядро
+принимает файловый дескриптор TUN напрямую и мостит трафик внутри. **Отдельный
+tun2socks не нужен.**
 
 ## Как получить
 
-Оба артефакта автоматически собираются в CI — см.
-`.github/workflows/android.yml` (job `build-core`). Локально можно:
+AAR автоматически собирается в CI — см. `.github/workflows/android.yml`
+(job `build-full`, шаг «Build libv2ray.aar»). Ключевой момент — флаг сборки:
 
 ```bash
-# libv2ray.aar
 git clone https://github.com/2dust/AndroidLibXrayLite
 cd AndroidLibXrayLite
 go install golang.org/x/mobile/cmd/gomobile@latest
-gomobile init
-./gradlew :libv2ray... # либо gomobile bind -target=android -o libv2ray.aar ./
+go install golang.org/x/mobile/cmd/gobind@latest
+go mod tidy
+# -checklinkname=0 обходит ошибку wlynxg/anet на Go 1.23+
+gomobile bind -target=android -androidapi 24 -ldflags="-checklinkname=0" -o libv2ray.aar ./
 ```
 
-`libtun2socks.so` собирается из
-[badvpn/tun2socks](https://github.com/heiher/hev-socks5-tunnel) или берётся из
-сборки v2rayNG (`app/libs`), где он уже присутствует под каждую ABI.
+Положите готовый `libv2ray.aar` в этот каталог для флейвора `full`.
 
-> Без этих файлов проект компилируется, но туннель работать не будет.
-> Заглушка `stub/libv2ray-stub.jar` (см. ниже) позволяет собрать APK для проверки UI.
+> Без AAR флейвор `stub` компилируется на заглушке (UI работает, туннель — нет).
