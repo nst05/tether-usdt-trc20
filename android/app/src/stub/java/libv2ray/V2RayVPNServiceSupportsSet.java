@@ -2,13 +2,14 @@ package libv2ray;
 
 /**
  * ЗАГЛУШКА API AndroidLibXrayLite (только для флейвора stub).
- * В флейворе full этот интерфейс приходит из настоящего libv2ray.aar.
+ * Сигнатуры соответствуют реальному gomobile-интерфейсу: методы с Go error →
+ * Java void ... throws Exception.
  */
 public interface V2RayVPNServiceSupportsSet {
-    long setup(String conf);
-    long shutdown();
+    void setup(String conf) throws Exception;
+    void prepare() throws Exception;
+    void shutdown() throws Exception;
     boolean protect(long fd);
     long onEmitStatus(long code, String msg);
-    long prepare();
-    long sendFd();
+    void sendFd() throws Exception;
 }

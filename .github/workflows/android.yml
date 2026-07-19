@@ -44,7 +44,7 @@ jobs:
       - uses: android-actions/setup-android@v3
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Build libv2ray.aar (Xray core via gomobile)
         run: |
@@ -55,17 +55,28 @@ jobs:
           git clone --depth 1 https://github.com/2dust/AndroidLibXrayLite /tmp/xraycore
           cd /tmp/xraycore
           go mod tidy
-          gomobile init
-          gomobile bind -target=android -androidapi 24 -o "$GITHUB_WORKSPACE/android/app/libs/libv2ray.aar" ./
+          # -checklinkname=0 — обход ошибки link: wlynxg/anet invalid reference to net.zoneCache (Go 1.23+)
+          gomobile bind -target=android -androidapi 24 \
+            -ldflags="-checklinkname=0" \
+            -o "$GITHUB_WORKSPACE/android/app/libs/libv2ray.aar" ./
         env:
-          NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
 
-      - name: Fetch tun2socks native libs
+      - name: Build tun2socks (badvpn) for all ABIs
         run: |
-          # Берём готовые libtun2socks.so из релиза hev-socks5-tunnel / v2rayNG.
-          # Здесь — заглушка-плейсхолдер шага; замените на актуальный источник .so.
-          mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/jniLibs/armeabi-v7a app/src/main/jniLibs/x86_64
-          echo "TODO: положить libtun2socks.so под каждую ABI (см. app/libs/README.md)"
+          set -e
+          NDK="$ANDROID_NDK_ROOT"
+          git clone --depth 1 https://github.com/heiher/badvpn /tmp/badvpn
+          for ABI in arm64-v8a armeabi-v7a x86_64; do
+            cmake -S /tmp/badvpn -B /tmp/badvpn/build-$ABI \
+              -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+              -DANDROID_ABI=$ABI -DANDROID_PLATFORM=android-24 \
+              -DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_TUN2SOCKS=1
+            cmake --build /tmp/badvpn/build-$ABI --target badvpn-tun2socks -j2
+            mkdir -p app/src/main/jniLibs/$ABI
+            cp /tmp/badvpn/build-$ABI/tun2socks/badvpn-tun2socks \
+               app/src/main/jniLibs/$ABI/libtun2socks.so
+          done
 
       - name: Build full release APK (unsigned)
         run: ./gradlew :app:assembleFullRelease --no-daemon --stacktrace

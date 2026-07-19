@@ -47,17 +47,21 @@ class V2RayVpnService : VpnService() {
     private lateinit var v2rayPoint: V2RayPoint
     private var domain: String = ""
 
+    // Сигнатуры соответствуют реальному интерфейсу AndroidLibXrayLite
+    // (методы с Go error → Java void ... throws Exception).
     private val supportSet = object : V2RayVPNServiceSupportsSet {
-        override fun setup(s: String): Long {
-            return try { startTunnel(); 0L } catch (e: Exception) { Log.e(TAG, "setup failed", e); -1L }
+        override fun setup(conf: String) {
+            startTunnel()
         }
-        override fun shutdown(): Long {
-            stopAll(); return 0L
+        override fun shutdown() {
+            stopAll()
         }
-        override fun protect(l: Long): Boolean = this@V2RayVpnService.protect(l.toInt())
-        override fun onEmitStatus(l: Long, s: String?): Long = 0L
-        override fun prepare(): Long = 0L
-        override fun sendFd(): Long = sendTunFd()
+        override fun protect(fd: Long): Boolean = this@V2RayVpnService.protect(fd.toInt())
+        override fun onEmitStatus(code: Long, msg: String?): Long = 0L
+        override fun prepare() {}
+        override fun sendFd() {
+            sendTunFd()
+        }
     }
 
     override fun onCreate() {
@@ -134,11 +138,11 @@ class V2RayVpnService : VpnService() {
     }
 
     /** Передаёт TUN fd процессу tun2socks по доменному сокету. */
-    private fun sendTunFd(): Long {
-        val fd = tunFd?.fileDescriptor ?: return -1L
+    private fun sendTunFd() {
+        val fd = tunFd?.fileDescriptor ?: return
         val path = File(filesDir, "sock_path").absolutePath
         var tries = 0
-        while (tries < 5) {
+        while (tries < 6) {
             try {
                 Thread.sleep(50L * (tries + 1))
                 android.net.LocalSocket().use { ls ->
@@ -146,13 +150,13 @@ class V2RayVpnService : VpnService() {
                     ls.setFileDescriptorsForSend(arrayOf(fd))
                     ls.outputStream.write(42)
                 }
-                return 0L
+                return
             } catch (e: Exception) {
                 Log.w(TAG, "sendFd retry ${tries + 1}: ${e.message}")
                 tries++
             }
         }
-        return -1L
+        Log.e(TAG, "sendFd failed after retries")
     }
 
     private fun stopService() {

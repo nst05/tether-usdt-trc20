@@ -22,14 +22,22 @@ public class V2RayPoint {
     public void runLoop(boolean prefIpv6) {
         running = true;
         if (supportSet != null) {
-            supportSet.setup("");
-            supportSet.sendFd();
+            try {
+                supportSet.setup("");
+                supportSet.sendFd();
+            } catch (Exception ignored) {
+            }
         }
     }
 
     public void stopLoop() {
         running = false;
-        if (supportSet != null) supportSet.shutdown();
+        if (supportSet != null) {
+            try {
+                supportSet.shutdown();
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     public long measureDelay() { return -1L; }

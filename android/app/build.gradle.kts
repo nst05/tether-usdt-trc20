@@ -98,6 +98,8 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // tun2socks запускается как процесс из nativeLibraryDir — .so должен быть распакован
+        jniLibs.useLegacyPackaging = true
     }
 }
 
