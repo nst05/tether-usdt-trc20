@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -40,7 +41,10 @@ fun HomeScreen(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val status by vm.vpnStatus.collectAsStateWithLifecycle()
+    val tariffs by vm.tariffs.collectAsStateWithLifecycle()
     var showServers by remember { mutableStateOf(false) }
+    var showTariffs by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Box(
         Modifier
@@ -95,9 +99,33 @@ fun HomeScreen(
                         enabled = ui.sub!!.servers.isNotEmpty() && status != VpnStatus.CONNECTED,
                         onClick = { showServers = true },
                     )
+                    Spacer(Modifier.height(14.dp))
+                    TariffsButton { vm.loadTariffs(); showTariffs = true }
                 }
             }
         }
+    }
+
+    if (showTariffs) {
+        TariffsSheet(
+            tariffs = tariffs,
+            onBuy = { id, method ->
+                vm.purchase(
+                    id, method,
+                    onUrl = { url ->
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                        showTariffs = false
+                    },
+                    onError = { android.widget.Toast.makeText(context, "Оплата недоступна: $it", android.widget.Toast.LENGTH_LONG).show() },
+                )
+            },
+            onDismiss = { showTariffs = false },
+        )
     }
 
     if (showServers && ui.sub != null) {
@@ -164,6 +192,23 @@ private fun ConnectOrb(status: VpnStatus, onClick: () -> Unit) {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TariffsButton(onClick: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = NexonPrimary),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Продлить · Тарифы и оплата", color = Color(0xFF00201B), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

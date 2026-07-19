@@ -78,6 +78,31 @@ class ApiService(
         }
     }
 
+    /** Список активных тарифов. */
+    suspend fun tariffs(): List<Tariff> = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url("${base()}/api/app/tariffs").get().build()
+        client.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) return@withContext emptyList()
+            runCatching { json.decodeFromString(TariffsResponse.serializer(), text).tariffs }
+                .getOrDefault(emptyList())
+        }
+    }
+
+    /** Создать платёж за тариф. method: yookassa | platega | yoomoney | wata. */
+    suspend fun purchase(tariffId: Int, method: String): PurchaseResponse = withContext(Dispatchers.IO) {
+        val payload = buildString {
+            append("{\"tariff_id\":").append(tariffId)
+            append(",\"method\":\"").append(method).append("\"}")
+        }.toRequestBody("application/json".toMediaType())
+        val req = Request.Builder().url("${base()}/api/app/purchase").post(payload).build()
+        client.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            runCatching { json.decodeFromString(PurchaseResponse.serializer(), text) }
+                .getOrElse { PurchaseResponse(ok = false, error = "parse") }
+        }
+    }
+
     /**
      * Фолбэк: классическая base64-подписка /sub/{uuid} → список ссылок.
      * Используется, если /api/sub недоступен на конкретной инсталляции.

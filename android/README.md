@@ -60,15 +60,22 @@ CI (`Android (NexonVPN)`) на каждый пуш собирает stub-APK и,
    ```
    (или env `NEXON_BASE_URL` в CI). Это ваш `sub_page_url` из админки.
 
-2. **Бэкенд** — добавьте эндпоинт регистрации. В `xuiweb/run.py`:
+2. **Бэкенд** — добавьте два публичных роутера. В `xuiweb/run.py`:
    ```python
    from app_register import router as app_register_router
+   from app_payments import router as app_payments_router
    app.include_router(app_register_router)
+   app.include_router(app_payments_router)
    ```
-   Файл `backend/app_register.py` создаёт таблицу `app_devices` (idempotent
-   hwid→user) и выдаёт триал через вашу же `grant_subscription`. Параметры триала
-   берутся из настроек (`trial_days`, `trial_limit_ip`). Опционально — защита
-   заголовком `X-App-Token` (env `APP_REGISTER_TOKEN`).
+   - `backend/app_register.py` — регистрация: создаёт таблицу `app_devices`
+     (idempotent hwid→user) и выдаёт триал через вашу `grant_subscription`.
+     Параметры триала из настроек (`trial_days`, `trial_limit_ip`). Опционально —
+     защита заголовком `X-App-Token` (env `APP_REGISTER_TOKEN`).
+   - `backend/app_payments.py` — тарифы и оплата: `GET /api/app/tariffs` и
+     `POST /api/app/purchase` (методы yookassa/platega/yoomoney/wata). Повторяет
+     платёжный флоу сайта, зачисление делает штатный вебхук провайдера
+     (`process_successful_payment` по `user_id`). Требует, чтобы `db_helpers` и
+     `src.pay` были импортируемы, а провайдеры были настроены в админке.
 
 3. **Подпись** — `keystore.properties` (`storeFile/storePassword/keyAlias/keyPassword`)
    для release-сборки. В CI — через secrets.
@@ -83,7 +90,9 @@ CI (`Android (NexonVPN)`) на каждый пуш собирает stub-APK и,
 
 ## Статус и что дальше
 
-Готово: автономная регистрация, загрузка подписки, парсинг серверов, UI, каркас
-туннеля (по схеме v2rayNG). **Требует проверки на реальном устройстве** после
-сборки `full` (ядро + tun2socks). Следующие шаги (этап 2): экран тарифов и оплата,
-пуш об окончании подписки, авто-переподключение, split-tunneling (per-app).
+Готово: автономная регистрация, загрузка подписки, парсинг серверов, UI, туннель
+(Xray-core + tun2socks по схеме v2rayNG), **экран тарифов и оплата** (yookassa/
+platega/yoomoney/wata через существующий бэкенд). **Требует проверки на реальном
+устройстве** после сборки `full` (ядро + tun2socks). Дальше: пуш об окончании
+подписки, авто-переподключение, split-tunneling (per-app), оплата криптой (USDT
+через cryptobot — нужен shared-creator в бэкенде).

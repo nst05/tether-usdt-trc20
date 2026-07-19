@@ -31,6 +31,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
+    private val _tariffs = MutableStateFlow<List<com.nexonvpn.app.data.remote.Tariff>>(emptyList())
+    val tariffs: StateFlow<List<com.nexonvpn.app.data.remote.Tariff>> = _tariffs.asStateFlow()
+
     val vpnStatus: StateFlow<VpnStatus> = VpnController.status
     val activeServer: StateFlow<String?> = VpnController.activeServer
 
@@ -69,5 +72,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onConnectionRefused() {
         VpnController.updateStatus(VpnStatus.DISCONNECTED)
+    }
+
+    fun loadTariffs() {
+        viewModelScope.launch {
+            _tariffs.value = repo.loadTariffs()
+        }
+    }
+
+    /** Создаёт платёж и отдаёт URL для открытия в браузере (или ошибку). */
+    fun purchase(tariffId: Int, method: String, onUrl: (String) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            repo.purchase(tariffId, method)
+                .onSuccess { onUrl(it) }
+                .onFailure { onError(it.message ?: "error") }
+        }
     }
 }

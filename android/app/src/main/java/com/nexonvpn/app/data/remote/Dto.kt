@@ -45,3 +45,25 @@ data class RegisterResponse(
     @SerialName("expires_at") val expiresAt: String? = null,
     val error: String? = null,
 )
+
+@Serializable
+data class TariffsResponse(val tariffs: List<Tariff> = emptyList())
+
+@Serializable
+data class Tariff(
+    val id: Int,
+    val name: String = "",
+    val days: Int = 0,
+    val price: Double = 0.0,
+    val currency: String = "RUB",
+    @SerialName("traffic_gb") val trafficGb: Int = 0,
+    @SerialName("limit_ip") val limitIp: Int = 0,
+    val description: String = "",
+)
+
+@Serializable
+data class PurchaseResponse(
+    val ok: Boolean = false,
+    @SerialName("payment_url") val paymentUrl: String? = null,
+    val error: String? = null,
+)

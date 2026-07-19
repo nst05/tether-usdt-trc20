@@ -96,5 +96,21 @@ class SubscriptionRepository(context: Context) {
             }
         }
 
+    /** Список тарифов для экрана оплаты. */
+    suspend fun loadTariffs(): List<com.nexonvpn.app.data.remote.Tariff> =
+        runCatching { api().tariffs() }.getOrDefault(emptyList())
+
+    /** Создаёт платёж, возвращает URL для открытия в браузере. */
+    suspend fun purchase(tariffId: Int, method: String): Result<String> {
+        // Гарантируем, что устройство зарегистрировано (нужен uid на сервере)
+        ensureRegistered().getOrElse { return Result.failure(it) }
+        val resp = runCatching { api().purchase(tariffId, method) }.getOrElse {
+            return Result.failure(it)
+        }
+        val url = resp.paymentUrl
+        return if (resp.ok && !url.isNullOrBlank()) Result.success(url)
+        else Result.failure(IllegalStateException(resp.error ?: "payment_failed"))
+    }
+
     suspend fun setSelectedServer(name: String) = prefs.setSelectedServer(name)
 }
