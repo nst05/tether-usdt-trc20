@@ -18,7 +18,8 @@ val nexonBaseUrl: String = run {
         val p = Properties().apply { lp.inputStream().use { load(it) } }
         p.getProperty("nexon.baseUrl")?.takeIf { it.isNotBlank() }?.let { return@run it }
     }
-    "https://vpn.example.com"
+    // Домен сервера NexonVPN по умолчанию (можно переопределить в local.properties / env NEXON_BASE_URL)
+    "https://cabinet.nexonv.com"
 }
 
 android {
