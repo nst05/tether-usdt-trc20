@@ -65,10 +65,27 @@ jobs:
       # tun2socks не нужен: актуальный libv2ray принимает TUN fd напрямую
       # (CoreController.startLoop(config, tunFd)) и мостит трафик внутри ядра.
 
-      - name: Build full release APK (unsigned)
-        run: ./gradlew :app:assembleFullRelease --no-daemon
+      # Отдаём само ядро отдельным артефактом — чтобы можно было положить
+      # его в app/libs/ и собирать флейвор full в Android Studio без Go/NDK.
+      - name: Upload libv2ray.aar
+        uses: actions/upload-artifact@v4
+        with:
+          name: libv2ray-aar
+          path: android/app/libs/libv2ray.aar
 
-      - uses: actions/upload-artifact@v4
+      # Debug-APK автоматически подписывается debug-ключом и УСТАНАВЛИВАЕТСЯ на
+      # любой телефон. Release-APK без keystore не подписан (для стора/подписи).
+      - name: Build full APK (debug + release)
+        run: ./gradlew :app:assembleFullDebug :app:assembleFullRelease --no-daemon
+
+      - name: Upload full debug APK (installable)
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexonVPN-full-debug
+          path: android/app/build/outputs/apk/full/debug/*.apk
+
+      - name: Upload full release APK (unsigned)
+        uses: actions/upload-artifact@v4
         with:
           name: NexonVPN-full-release
           path: android/app/build/outputs/apk/full/release/*.apk
