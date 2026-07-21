@@ -49,11 +49,8 @@ import db_helpers  # noqa: E402
 import subscription_manager  # noqa: E402
 from app_config import app_conf  # noqa: E402
 
-# Путь к БД — тот же, что использует xuiweb.
-try:
-    from config import DB_PATH as _DB_PATH  # type: ignore
-except Exception:  # pragma: no cover
-    _DB_PATH = os.getenv("DB_PATH", "users.db")
+# Путь к БД — тот же, что использует бот/xuiweb (config.DATABASE_NAME = /root/bot/vpn_bot.db).
+from config import DATABASE_NAME as _DB_PATH  # noqa: E402
 
 
 def _synthetic_telegram_id(hwid: str) -> int:

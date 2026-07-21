@@ -40,7 +40,19 @@ android {
         buildConfigField("String", "CLIENT_UA", "\"NexonVPN/1.0.0 (Android)\"")
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            // x86_64 — только эмуляторы; убрали, чтобы APK был меньше и качался быстрее
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+    }
+
+    // Отдельный APK на каждую архитектуру процессора — так файл в ~3 раза меньше
+    // (для телефона нужен только arm64-v8a, ~30 МБ вместо ~95 МБ единого APK).
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
         }
     }
 

@@ -33,10 +33,7 @@ router = APIRouter()
 import db_helpers  # noqa: E402
 from app_config import app_conf  # noqa: E402
 
-try:
-    from config import DB_PATH as _DB_PATH  # type: ignore
-except Exception:  # pragma: no cover
-    _DB_PATH = os.getenv("DB_PATH", "users.db")
+from config import DATABASE_NAME as _DB_PATH  # noqa: E402
 
 
 # ── Настройки/креды (env → settings, как на сайте) ───────────────────────────
