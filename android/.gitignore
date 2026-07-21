@@ -5,6 +5,8 @@ local.properties
 keystore.properties
 *.keystore
 *.jks
+# кроме стабильного ключа подписи debug-сборок (нужен в CI для одинаковой подписи)
+!nexon-debug.jks
 .idea/
 *.iml
 .DS_Store

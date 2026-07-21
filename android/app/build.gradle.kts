@@ -61,6 +61,14 @@ android {
     }
 
     signingConfigs {
+        // Стабильный ключ, чтобы все debug-сборки имели одну подпись и
+        // обновления ставились поверх без «приложение не установлено».
+        create("stable") {
+            storeFile = rootProject.file("nexon-debug.jks")
+            storePassword = "nexonvpn"
+            keyAlias = "nexon"
+            keyPassword = "nexonvpn"
+        }
         create("release") {
             // Значения подставляются в CI из secrets, локально — из keystore.properties
             val ksProps = rootProject.file("keystore.properties")
@@ -80,11 +88,14 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             val ksProps = rootProject.file("keystore.properties")
-            if (ksProps.exists()) signingConfig = signingConfigs.getByName("release")
+            // Если keystore.properties задан — своим ключом, иначе стабильным (чтобы APK ставился)
+            signingConfig = if (ksProps.exists()) signingConfigs.getByName("release")
+                            else signingConfigs.getByName("stable")
         }
         debug {
             applicationIdSuffix = ".debug"
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("stable")
         }
     }
 
