@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}Отправления — veho{% endblock %}
+{% block page_title %}Отправления{% endblock %}
+{% block page_subtitle %}<span class="subtitle">{{ shipments|length }} записей</span>{% endblock %}
+
+{% block content %}
+<div class="card-modern p-3 mb-3">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-md-5">
+      <label class="form-label">Поиск</label>
+      <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Трек-номер, получатель, телефон…">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Статус</label>
+      <select name="status" class="form-select">
+        <option value="">Все статусы</option>
+        {% for key, label in STATUS_LABELS.items() %}
+        <option value="{{ key }}" {{ 'selected' if status == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3 d-flex gap-2">
+      <button class="btn btn-dark-veho flex-grow-1"><i class="bi bi-search"></i> Найти</button>
+      <a href="{{ url_for('shipments_list') }}" class="btn btn-outline-secondary">Сброс</a>
+    </div>
+  </form>
+</div>
+
+<div class="table-modern">
+  <table>
+    <thead>
+      <tr>
+        <th>Трек-номер</th><th>Отправитель → Получатель</th><th>Услуга</th>
+        <th>Курьер</th><th>Статус</th><th class="text-end">Стоимость</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in shipments %}
+      <tr>
+        <td>
+          <a href="{{ url_for('shipment_detail', shipment_id=s.id) }}" class="track-code text-decoration-none text-orange">{{ s.tracking_number }}</a>
+          <div class="text-muted" style="font-size:0.72rem;">{{ s.created_at.strftime('%d.%m.%Y') }}</div>
+        </td>
+        <td>
+          <div class="small">{{ s.sender_name }}</div>
+          <div class="fw-semibold"><i class="bi bi-arrow-down-short text-muted"></i> {{ s.recipient_name }}</div>
+        </td>
+        <td><span class="badge-soft bg-light text-dark border">{{ s.service_label }}</span></td>
+        <td>{% if s.courier %}{{ s.courier.full_name }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td><span class="badge-soft bg-{{ s.status_color }}-subtle text-{{ s.status_color }}-emphasis">{{ s.status_label }}</span></td>
+        <td class="text-end fw-semibold">{{ '%.0f'|format(s.price) }} ₽</td>
+        <td class="text-end">
+          <a href="{{ url_for('shipment_detail', shipment_id=s.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-center text-muted py-5">
+        <i class="bi bi-inbox fs-1 d-block mb-2 opacity-50"></i>Отправлений не найдено
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

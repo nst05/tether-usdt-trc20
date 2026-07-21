@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Отправление ' + shipment.tracking_number if shipment else 'Новое отправление' }} — veho{% endblock %}
+{% block page_title %}{{ 'Редактирование отправления' if shipment else 'Новое отправление' }}{% endblock %}
+{% block topbar_actions %}{% endblock %}
+
+{% block content %}
+<form method="post" novalidate>
+  {{ form.hidden_tag() }}
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card-modern p-4">
+        <div class="section-title mt-0">Отправитель</div>
+        <div class="mb-3">
+          {{ form.client_id.label(class='form-label') }}
+          {{ form.client_id(class='form-select') }}
+        </div>
+        <div class="mb-3">
+          {{ form.sender_name.label(class='form-label') }}
+          {{ form.sender_name(class='form-control') }}
+        </div>
+        <div class="mb-3">
+          {{ form.sender_phone.label(class='form-label') }}
+          {{ form.sender_phone(class='form-control') }}
+        </div>
+        <div class="mb-0">
+          {{ form.sender_address.label(class='form-label') }}
+          {{ form.sender_address(class='form-control', rows='2') }}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card-modern p-4">
+        <div class="section-title mt-0">Получатель</div>
+        <div class="mb-3">
+          {{ form.recipient_name.label(class='form-label') }}
+          {{ form.recipient_name(class='form-control') }}
+        </div>
+        <div class="mb-3">
+          {{ form.recipient_phone.label(class='form-label') }}
+          {{ form.recipient_phone(class='form-control') }}
+        </div>
+        <div class="mb-0">
+          {{ form.recipient_address.label(class='form-label') }}
+          {{ form.recipient_address(class='form-control', rows='2') }}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card-modern p-4">
+        <div class="section-title mt-0">Груз</div>
+        <div class="mb-3">
+          {{ form.description.label(class='form-label') }}
+          {{ form.description(class='form-control') }}
+        </div>
+        <div class="row g-2">
+          <div class="col-4 mb-3">
+            {{ form.weight_kg.label(class='form-label') }}
+            {{ form.weight_kg(class='form-control') }}
+          </div>
+          <div class="col-8 mb-3">
+            {{ form.dimensions.label(class='form-label') }}
+            {{ form.dimensions(class='form-control', placeholder='30x20x10 см') }}
+          </div>
+        </div>
+        <div class="mb-0">
+          {{ form.service_type.label(class='form-label') }}
+          {{ form.service_type(class='form-select') }}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card-modern p-4">
+        <div class="section-title mt-0">Доставка и оплата</div>
+        <div class="row g-2">
+          <div class="col-6 mb-3">
+            {{ form.price.label(class='form-label') }}
+            {{ form.price(class='form-control') }}
+          </div>
+          <div class="col-6 mb-3">
+            {{ form.cod_amount.label(class='form-label') }}
+            {{ form.cod_amount(class='form-control') }}
+          </div>
+        </div>
+        <div class="mb-3">
+          {{ form.courier_id.label(class='form-label') }}
+          {{ form.courier_id(class='form-select') }}
+        </div>
+        <div class="row g-2">
+          <div class="col-6 mb-3">
+            {{ form.status.label(class='form-label') }}
+            {{ form.status(class='form-select') }}
+          </div>
+          <div class="col-6 mb-3">
+            {{ form.scheduled_date.label(class='form-label') }}
+            {{ form.scheduled_date(class='form-control') }}
+          </div>
+        </div>
+        <div class="mb-0">
+          {{ form.notes.label(class='form-label') }}
+          {{ form.notes(class='form-control', rows='2') }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2 mt-3">
+    <button type="submit" class="btn btn-veho px-4"><i class="bi bi-check-lg"></i> Сохранить</button>
+    <a href="{{ url_for('shipment_detail', shipment_id=shipment.id) if shipment else url_for('shipments_list') }}" class="btn btn-outline-secondary">Отмена</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Клиенты — veho{% endblock %}
+{% block page_title %}Клиенты{% endblock %}
+{% block page_subtitle %}<span class="subtitle">{{ clients|length }} записей</span>{% endblock %}
+{% block topbar_actions %}
+<a href="{{ url_for('client_new') }}" class="btn btn-veho btn-sm"><i class="bi bi-plus-lg"></i> Добавить клиента</a>
+{% endblock %}
+
+{% block content %}
+<div class="table-modern">
+  <table>
+    <thead><tr><th>Название / ФИО</th><th>Тип</th><th>Контакты</th><th>Отправлений</th><th></th></tr></thead>
+    <tbody>
+      {% for c in clients %}
+      <tr>
+        <td>
+          <div class="fw-semibold">{{ c.name }}</div>
+          {% if c.contact_person %}<div class="text-muted small">{{ c.contact_person }}</div>{% endif %}
+        </td>
+        <td><span class="badge-soft bg-{{ 'primary' if c.client_type == 'business' else 'secondary' }}-subtle text-{{ 'primary' if c.client_type == 'business' else 'secondary' }}-emphasis">{{ c.type_label }}</span></td>
+        <td class="small">
+          {% if c.phone %}<div><i class="bi bi-telephone text-muted"></i> {{ c.phone }}</div>{% endif %}
+          {% if c.email %}<div class="text-muted">{{ c.email }}</div>{% endif %}
+        </td>
+        <td>{{ c.shipments|length }}</td>
+        <td class="text-end">
+          <a href="{{ url_for('client_edit', client_id=c.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-center text-muted py-5">
+        <i class="bi bi-people fs-1 d-block mb-2 opacity-50"></i>
+        Клиентов пока нет. <a href="{{ url_for('client_new') }}" class="text-orange">Добавить первого</a>
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

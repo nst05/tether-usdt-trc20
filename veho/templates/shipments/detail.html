@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+{% block title %}{{ shipment.tracking_number }} — veho{% endblock %}
+{% block page_title %}Отправление{% endblock %}
+{% block page_subtitle %}<span class="subtitle track-code">{{ shipment.tracking_number }}</span>{% endblock %}
+{% block topbar_actions %}
+<a href="{{ url_for('shipment_edit', shipment_id=shipment.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil"></i> Изменить</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-8">
+    <!-- Progress -->
+    <div class="card-modern p-4 mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+          <span class="badge-soft bg-{{ shipment.status_color }}-subtle text-{{ shipment.status_color }}-emphasis fs-6">{{ shipment.status_label }}</span>
+          <span class="badge-soft bg-light text-dark border ms-1">{{ shipment.service_label }}</span>
+        </div>
+        {% if shipment.is_active and shipment.status in status_flow and shipment.status != 'delivered' %}
+        <form method="post" action="{{ url_for('shipment_advance', shipment_id=shipment.id) }}" class="d-flex gap-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="text" name="location" class="form-control form-control-sm" placeholder="Локация (необязательно)" style="width:180px;">
+          <button class="btn btn-veho btn-sm text-nowrap"><i class="bi bi-arrow-right"></i> След. статус</button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="progress" style="height:8px;">
+        <div class="progress-bar" style="width: {{ shipment.progress_percent }}%; background: var(--orange);"></div>
+      </div>
+      <div class="d-flex justify-content-between mt-2 text-muted" style="font-size:0.7rem;">
+        {% for st in status_flow %}
+        <span class="{{ 'text-orange fw-bold' if STATUS_LABELS[shipment.status] == STATUS_LABELS[st] }}">{{ STATUS_LABELS[st] }}</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="card-modern p-4 h-100">
+          <div class="section-title mt-0">Отправитель</div>
+          <div class="fw-semibold mb-1">{{ shipment.sender_name }}</div>
+          {% if shipment.sender_phone %}<div class="small text-muted mb-1"><i class="bi bi-telephone"></i> {{ shipment.sender_phone }}</div>{% endif %}
+          <div class="small">{{ shipment.sender_address }}</div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card-modern p-4 h-100">
+          <div class="section-title mt-0">Получатель</div>
+          <div class="fw-semibold mb-1">{{ shipment.recipient_name }}</div>
+          {% if shipment.recipient_phone %}<div class="small text-muted mb-1"><i class="bi bi-telephone"></i> {{ shipment.recipient_phone }}</div>{% endif %}
+          <div class="small">{{ shipment.recipient_address }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-modern p-4 mt-3">
+      <div class="section-title mt-0">Груз</div>
+      <div class="row">
+        <div class="col-6 col-md-3 mb-2"><div class="text-muted small">Описание</div><div class="fw-semibold">{{ shipment.description or '—' }}</div></div>
+        <div class="col-6 col-md-3 mb-2"><div class="text-muted small">Вес</div><div class="fw-semibold">{{ shipment.weight_kg }} кг</div></div>
+        <div class="col-6 col-md-3 mb-2"><div class="text-muted small">Габариты</div><div class="fw-semibold">{{ shipment.dimensions or '—' }}</div></div>
+        <div class="col-6 col-md-3 mb-2"><div class="text-muted small">Плановая дата</div><div class="fw-semibold">{{ shipment.scheduled_date.strftime('%d.%m.%Y') if shipment.scheduled_date else '—' }}</div></div>
+      </div>
+      {% if shipment.notes %}<div class="mt-2 pt-2 border-top small text-muted">{{ shipment.notes }}</div>{% endif %}
+    </div>
+  </div>
+
+  <!-- Sidebar column -->
+  <div class="col-lg-4">
+    <div class="card-modern p-4 mb-3">
+      <div class="d-flex justify-content-between mb-2"><span class="text-muted small">Стоимость доставки</span><span class="fw-bold text-orange">{{ '%.0f'|format(shipment.price) }} ₽</span></div>
+      <div class="d-flex justify-content-between"><span class="text-muted small">Наложенный платёж</span><span class="fw-semibold">{{ '%.0f'|format(shipment.cod_amount) }} ₽</span></div>
+    </div>
+
+    <!-- Courier assignment -->
+    <div class="card-modern p-4 mb-3">
+      <div class="section-title mt-0">Курьер</div>
+      {% if shipment.courier %}
+      <a href="{{ url_for('courier_detail', courier_id=shipment.courier.id) }}" class="d-flex align-items-center gap-2 text-decoration-none text-dark mb-3">
+        <div class="stat-icon bg-orange-soft" style="width:38px;height:38px;font-size:1rem;margin:0;"><i class="bi bi-person"></i></div>
+        <div>
+          <div class="fw-semibold">{{ shipment.courier.full_name }}</div>
+          <div class="text-muted small">{{ shipment.courier.vehicle_label }}</div>
+        </div>
+      </a>
+      {% else %}
+      <div class="text-muted small mb-3">Курьер не назначен</div>
+      {% endif %}
+      <form method="post" action="{{ url_for('shipment_assign', shipment_id=shipment.id) }}" class="d-flex gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <select name="courier_id" class="form-select form-select-sm">
+          <option value="0">— снять / не назначен —</option>
+          {% for c in couriers %}
+          <option value="{{ c.id }}" {{ 'selected' if shipment.courier_id == c.id }}>{{ c.full_name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-dark-veho btn-sm text-nowrap">OK</button>
+      </form>
+    </div>
+
+    <!-- Manual status -->
+    <div class="card-modern p-4 mb-3">
+      <div class="section-title mt-0">Сменить статус</div>
+      <div class="d-flex flex-wrap gap-2">
+        {% for key, label in STATUS_LABELS.items() %}
+        <form method="post" action="{{ url_for('shipment_set_status', shipment_id=shipment.id, new_status=key) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm {{ 'btn-veho' if shipment.status == key else 'btn-outline-secondary' }}">{{ label }}</button>
+        </form>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="card-modern p-4 mb-3">
+      <div class="section-title mt-0">История</div>
+      <ul class="timeline">
+        {% for e in shipment.events %}
+        <li>
+          <span class="tl-dot" style="background: var(--bs-{{ e.status_color }});"></span>
+          <div class="fw-semibold small">{{ e.status_label }}</div>
+          {% if e.location %}<div class="small text-muted"><i class="bi bi-geo-alt"></i> {{ e.location }}</div>{% endif %}
+          {% if e.comment %}<div class="small text-muted">{{ e.comment }}</div>{% endif %}
+          <div class="tl-time">{{ e.timestamp.strftime('%d.%m.%Y %H:%M') }}</div>
+        </li>
+        {% else %}
+        <li><span class="tl-dot"></span><div class="small text-muted">Событий пока нет</div></li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <form method="post" action="{{ url_for('shipment_delete', shipment_id=shipment.id) }}" onsubmit="return confirm('Удалить отправление {{ shipment.tracking_number }}?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-outline-danger btn-sm w-100"><i class="bi bi-trash"></i> Удалить отправление</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block title %}Панель — veho{% endblock %}
+{% block page_title %}Панель управления{% endblock %}
+{% block page_subtitle %}<span class="subtitle">Обзор доставки в реальном времени</span>{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="stat-card">
+      <div class="stat-icon bg-orange-soft"><i class="bi bi-box-seam"></i></div>
+      <div class="stat-value">{{ total }}</div>
+      <div class="stat-label">Всего отправлений</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card">
+      <div class="stat-icon bg-blue-soft"><i class="bi bi-truck"></i></div>
+      <div class="stat-value">{{ active }}</div>
+      <div class="stat-label">В работе</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card">
+      <div class="stat-icon bg-green-soft"><i class="bi bi-check2-circle"></i></div>
+      <div class="stat-value">{{ delivered }}</div>
+      <div class="stat-label">Доставлено</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card">
+      <div class="stat-icon bg-purple-soft"><i class="bi bi-person-badge"></i></div>
+      <div class="stat-value">{{ couriers_active }}</div>
+      <div class="stat-label">Активных курьеров</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card-modern p-3 mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="fw-bold mb-0">Последние отправления</h6>
+        <a href="{{ url_for('shipments_list') }}" class="btn btn-sm btn-outline-secondary">Все</a>
+      </div>
+      {% if recent %}
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr class="text-muted small text-uppercase">
+              <th>Трек-номер</th><th>Получатель</th><th>Статус</th><th class="text-end">Стоимость</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in recent %}
+            <tr>
+              <td><a href="{{ url_for('shipment_detail', shipment_id=s.id) }}" class="track-code text-decoration-none text-orange">{{ s.tracking_number }}</a></td>
+              <td>{{ s.recipient_name }}</td>
+              <td><span class="badge-soft bg-{{ s.status_color }}-subtle text-{{ s.status_color }}-emphasis">{{ s.status_label }}</span></td>
+              <td class="text-end fw-semibold">{{ '%.0f'|format(s.price) }} ₽</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-4">
+        <i class="bi bi-inbox fs-1 d-block mb-2 opacity-50"></i>
+        Пока нет отправлений. <a href="{{ url_for('shipment_new') }}" class="text-orange">Создать первое</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card-modern p-3 mb-3">
+      <h6 class="fw-bold mb-3">Разбивка по статусам</h6>
+      {% for st in status_flow %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <span><span class="badge-soft bg-{{ STATUS_COLORS[st] }}-subtle text-{{ STATUS_COLORS[st] }}-emphasis">{{ STATUS_LABELS[st] }}</span></span>
+        <span class="fw-bold">{{ status_counts.get(st, 0) }}</span>
+      </div>
+      {% endfor %}
+      <div class="d-flex justify-content-between align-items-center pt-3 mt-1">
+        <span class="text-muted small">Выручка (доставлено)</span>
+        <span class="fw-bold text-orange fs-5">{{ '%.0f'|format(revenue) }} ₽</span>
+      </div>
+    </div>
+
+    <div class="card-modern p-3">
+      <h6 class="fw-bold mb-3">Курьеры на смене</h6>
+      {% for c in couriers %}
+      <a href="{{ url_for('courier_detail', courier_id=c.id) }}" class="d-flex align-items-center gap-2 py-2 text-decoration-none text-dark border-bottom">
+        <div class="stat-icon bg-orange-soft" style="width:34px;height:34px;font-size:0.9rem;margin:0;"><i class="bi bi-person"></i></div>
+        <div class="flex-grow-1">
+          <div class="fw-semibold small">{{ c.full_name }}</div>
+          <div class="text-muted" style="font-size:0.72rem;">{{ c.vehicle_label }}{% if c.zone %} · {{ c.zone }}{% endif %}</div>
+        </div>
+        <span class="badge-soft bg-secondary-subtle text-secondary-emphasis">{{ c.active_shipments|length }}</span>
+      </a>
+      {% else %}
+      <div class="text-muted small py-2">Нет активных курьеров.</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Клиент' if client else 'Новый клиент' }} — veho{% endblock %}
+{% block page_title %}{{ 'Редактирование клиента' if client else 'Новый клиент' }}{% endblock %}
+{% block topbar_actions %}{% endblock %}
+
+{% block content %}
+<form method="post" novalidate>
+  {{ form.hidden_tag() }}
+  <div class="card-modern p-4" style="max-width:720px;">
+    <div class="row g-3">
+      <div class="col-md-8">{{ form.name.label(class='form-label') }}{{ form.name(class='form-control') }}</div>
+      <div class="col-md-4">{{ form.client_type.label(class='form-label') }}{{ form.client_type(class='form-select') }}</div>
+      <div class="col-md-6">{{ form.contact_person.label(class='form-label') }}{{ form.contact_person(class='form-control') }}</div>
+      <div class="col-md-6">{{ form.phone.label(class='form-label') }}{{ form.phone(class='form-control') }}</div>
+      <div class="col-md-6">{{ form.email.label(class='form-label') }}{{ form.email(class='form-control') }}</div>
+      <div class="col-12">{{ form.address.label(class='form-label') }}{{ form.address(class='form-control', rows='2') }}</div>
+      <div class="col-12">{{ form.notes.label(class='form-label') }}{{ form.notes(class='form-control', rows='2') }}</div>
+    </div>
+    <div class="d-flex gap-2 mt-4">
+      <button type="submit" class="btn btn-veho px-4"><i class="bi bi-check-lg"></i> Сохранить</button>
+      <a href="{{ url_for('clients_list') }}" class="btn btn-outline-secondary">Отмена</a>
+    </div>
+  </div>
+</form>
+{% endblock %}

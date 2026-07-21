@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Курьеры — veho{% endblock %}
+{% block page_title %}Курьеры{% endblock %}
+{% block page_subtitle %}<span class="subtitle">{{ couriers|length }} человек</span>{% endblock %}
+{% block topbar_actions %}
+<a href="{{ url_for('courier_new') }}" class="btn btn-veho btn-sm"><i class="bi bi-plus-lg"></i> Добавить курьера</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  {% for c in couriers %}
+  <div class="col-md-6 col-lg-4">
+    <div class="card-modern p-4 h-100">
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <div class="stat-icon bg-orange-soft" style="margin:0;"><i class="bi bi-person"></i></div>
+        <div class="flex-grow-1">
+          <a href="{{ url_for('courier_detail', courier_id=c.id) }}" class="fw-bold text-decoration-none text-dark">{{ c.full_name }}</a>
+          <div class="text-muted small">{{ c.vehicle_label }}{% if c.vehicle_number %} · {{ c.vehicle_number }}{% endif %}</div>
+        </div>
+        <span class="badge-soft bg-{{ 'success' if c.status == 'active' else 'warning' if c.status == 'on_delivery' else 'secondary' }}-subtle text-{{ 'success' if c.status == 'active' else 'warning' if c.status == 'on_delivery' else 'secondary' }}-emphasis">{{ c.status_label }}</span>
+      </div>
+      <div class="d-flex justify-content-between text-center border-top pt-3">
+        <div><div class="fw-bold">{{ c.active_shipments|length }}</div><div class="text-muted" style="font-size:0.7rem;">в работе</div></div>
+        <div><div class="fw-bold">{{ c.delivered_count }}</div><div class="text-muted" style="font-size:0.7rem;">доставлено</div></div>
+        <div><div class="fw-bold small">{{ c.zone or '—' }}</div><div class="text-muted" style="font-size:0.7rem;">зона</div></div>
+      </div>
+      {% if c.phone %}<div class="mt-3 small text-muted"><i class="bi bi-telephone"></i> {{ c.phone }}</div>{% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="col-12">
+    <div class="card-modern p-5 text-center text-muted">
+      <i class="bi bi-truck fs-1 d-block mb-2 opacity-50"></i>
+      Курьеров пока нет. <a href="{{ url_for('courier_new') }}" class="text-orange">Добавить первого</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
