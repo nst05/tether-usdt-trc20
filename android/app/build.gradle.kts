@@ -45,17 +45,6 @@ android {
         }
     }
 
-    // Отдельный APK на каждую архитектуру процессора — так файл в ~3 раза меньше
-    // (для телефона нужен только arm64-v8a, ~30 МБ вместо ~95 МБ единого APK).
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = false
-        }
-    }
-
     // Флейворы ядра:
     //  • stub — заглушка libv2ray (APK собирается всегда, туннель не работает — только UI/логика);
     //  • full — реальное ядро Xray из app/libs/libv2ray.aar + jniLibs/*/libtun2socks.so.
