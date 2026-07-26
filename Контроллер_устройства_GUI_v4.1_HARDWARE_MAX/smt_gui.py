@@ -3,16 +3,17 @@
 """
 smt_gui — графический клиент физического прибора через оптопорт.
 
-Интерфейс v3 сохранён. Обмен выполняется только с реальным serial-портом:
-без демонстрационного режима и без эмуляции прибора. Транспорт автоматически
-определяет кадрирование безопасной командой чтения, снимает оптическое эхо,
-собирает фрагментированный ответ UART и фиксирует фактические TX/RX-байты.
+Интерфейс расширен для дипломной версии и работает только с реальными
+каналами связи: USB-оптопорт/serial, TCP-шлюз и GSM-модем/SMS. Оптический
+транспорт автоматически определяет кадрирование безопасной командой чтения,
+снимает оптическое эхо, собирает фрагментированный ответ UART и фиксирует
+фактические TX/RX-байты.
 
 Запуск:
     python3 smt_gui.py
 Требования: Python 3 с tkinter + pyserial (pip install pyserial).
 """
-import os, sys, json, time, threading, queue, datetime, socket, hashlib
+import os, sys, json, time, threading, queue, datetime, socket, hashlib, csv
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -61,24 +62,6 @@ try:
 except Exception:
     ss = None
 try:
-    import smt_aliases as al         # обезличенные имена CMD_### для отображения
-except Exception:
-    al = None
-
-def disp(name):
-    """Показываемое имя команды: CMD_### если доступны алиасы, иначе как есть."""
-    return al.to_display(name) if al else name
-
-def disp_cmd(text):
-    """Заменить ведущее имя в строке команды на алиас для показа (значение/хвост
-    сохраняются). Реальный провод формируется отдельно и остаётся настоящим."""
-    import re as _re
-    m = _re.match(r"^(\s*[{}/?!]*\s*)([A-Za-z0-9_]+)(.*)$", str(text), _re.S)
-    if not m:
-        return text
-    pre, tok, rest = m.groups()
-    return pre + disp(tok) + rest
-try:
     import smt_client as sc          # OpticTransport, SmtClient, PROTECTED_WRITE, FRAMINGS
 except Exception as e:               # pragma: no cover
     sys.exit(f"Не найден/не импортируется smt_client.py рядом с GUI: {e}")
@@ -93,6 +76,11 @@ try:
     import smt_eventlog as evlog_mod  # разбор журнала событий/аудита
 except Exception:
     state_mod = evlog_mod = None
+
+try:
+    import smt_tools as tools_mod     # снимки, сравнение, пакетные сценарии
+except Exception:
+    tools_mod = None
 
 # Креды уровней доступа для Auth-scan (только ЧТЕНИЕ). Пароль может быть НЕ дефолтным —
 # читаем действующее значение (находка F7), не подставляя 123456.
@@ -113,7 +101,7 @@ TELE_PARAMS = ["Volume", "VOLUME_GLOB", "VOLUME_INST", "VOLUME_COMMIS", "VOLUME_
 
 
 def build_telemetry_packet(readings):
-    """Собрать РЕАЛЬНЫЙ телеметрический пакет из снятых показаний (не демо):
+    """Собрать РЕАЛЬНЫЙ телеметрический пакет из фактически снятых показаний:
     одна запись V с текущей меткой времени, честные CRC16 (XMODEM/KERMIT/MODBUS)
     и auth=MD5(всё до 'auth='). Формат — как у прибора (sub_08019192)."""
     def num(name, d=0.0):
@@ -240,10 +228,7 @@ def tele_send(host, port, data, out_q):
 def load_catalog():
     p = os.path.join(HERE, "smt_commands.json")
     with open(p, encoding="utf-8") as f:
-        cmds = json.load(f)["commands"]
-    for c in cmds:                      # видимое (обезличенное) имя; реальное — в c["name"]
-        c["display"] = disp(c["name"])
-    return cmds
+        return json.load(f)["commands"]
 
 
 def pretty(v):
@@ -316,10 +301,16 @@ def value_options(cmd):
 
 
 def directions(cmd, is_action):
-    """Какие операции валидны для команды по её назначению: (read, write, action)."""
-    read = True                       # прочитать можно любую (прибор решит)
-    write = not is_action             # значение пишется у всех, кроме чистых действий
-    return read, write, is_action
+    """Какие операции валидны по назначению: (read, write, action).
+
+    Сырый протокол остаётся доступен отдельно, но каталог не предлагает запись для
+    явно read-only команд — это делает интерфейс убедительнее и снижает ошибки.
+    """
+    typ = (cmd.get("type") or "").lower()
+    if is_action:
+        return False, False, True
+    read_only = typ.strip() == "чтение"
+    return True, not read_only, False
 
 
 def build_critical(catalog):
@@ -362,16 +353,21 @@ def classify_send(text, actions):
 
 # ───────────────────────── фоновый исполнитель ──────────────────────────
 class Backend(threading.Thread):
-    """Единственный поток, владеющий физическим serial-портом."""
+    """Единственный поток, владеющий реальным транспортом прибора."""
     def __init__(self, task_q, out_q, critical=None, actions=None, catalog=None):
         super().__init__(daemon=True)
         self.task_q, self.out_q = task_q, out_q
         self.cli = None
         self.critical = critical or set()
         self.actions = actions or set()
-        self.catalog = catalog or []
+        self.catalog = list(catalog or [])
         self._echo_noted = False
         self.recorder = None
+        self.mode = "off"
+        self.cancel_event = threading.Event()
+
+    def cancel_current(self):
+        self.cancel_event.set()
 
     def post(self, kind, payload):
         self.out_q.put((kind, payload))
@@ -405,18 +401,25 @@ class Backend(threading.Thread):
                     self._auth(task["cred"], task["value"])
                 elif op == "passport":
                     self._passport()
-                elif op == "readall":
-                    self._readall()
-                elif op == "groupread":
-                    self._groupread(task.get("group"))
                 elif op == "authscan":
                     self._authscan()
                 elif op == "tele_read":
                     self._tele_read()
                 elif op == "preflight":
                     self._preflight()
+                elif op == "scan_all":
+                    self._scan_all()
+                elif op == "batch":
+                    self._batch(task.get("text", ""), task.get("expert", False),
+                                task.get("dry_run", False))
                 elif op == "export_session":
                     self._export_session(task.get("path"))
+                elif op == "raw_hex":
+                    self._raw_hex(task.get("hex", ""), task.get("timeout"), task.get("expert", False))
+                elif op == "sms_receive":
+                    self._sms_receive(task.get("delete", False))
+                elif op == "modem_at":
+                    self._modem_at(task.get("text", "AT"))
             except Exception as exc:
                 self.log("err", f"[FAIL] {op}: {exc}")
                 if op == "connect" or isinstance(exc, getattr(sc, "TransportError", OSError)):
@@ -434,41 +437,94 @@ class Backend(threading.Thread):
                            "удаляется только из разбираемого ответа. В hex остаются исходные байты.")
 
     def _connect(self, task):
+        """Открыть выбранный реальный транспорт."""
         self._close()
+        transport = task.get("transport", "serial")
+        if transport == "serial":
+            self._connect_serial(task)
+        elif transport == "tcp":
+            self._connect_tcp(task)
+        elif transport == "sms":
+            self._connect_sms(task)
+        else:
+            raise ValueError(f"Неизвестный транспорт: {transport}")
+
+    def _start_recorder(self, **header):
+        if ss is None:
+            return
+        try:
+            self.recorder = ss.SessionRecorder(os.path.join(HERE, "sessions"))
+            self.recorder.header(**header)
+            self.post("session_file", self.recorder.jsonl_path or "")
+            self.log("ok", f"[сессия] запись на диск: {self.recorder.jsonl_path}")
+        except Exception as exc:
+            self.recorder = None
+            self.log("warn", f"[сессия] журнал не открыт: {exc}")
+
+    def _connect_serial(self, task):
         port = task["port"].strip()
-        baud = int(task["baud"])
-        requested = task["framing"]
-        self.log("ok", f"[*] Открываю {port} · {baud} 8N1 · кадр {requested}…")
-        tr = sc.OpticTransport(port, baud)
+        baud = int(task["baud"]); requested = task["framing"]
+        bits = int(task.get("bytesize", 8)); parity = task.get("parity", "N")
+        stopbits = float(task.get("stopbits", 1))
+        self.log("ok", f"[*] Открываю {port} · {baud} {bits}{parity}{stopbits:g} · кадр {requested}…")
+        tr = sc.OpticTransport(
+            port, baud, bytesize=bits, parity=parity, stopbits=stopbits,
+            xonxoff=bool(task.get("xonxoff")), rtscts=bool(task.get("rtscts")),
+            dsrdtr=bool(task.get("dsrdtr")), dtr=bool(task.get("dtr")),
+            rts=bool(task.get("rts")),
+            response_timeout=float(task.get("response_timeout", 2.5)),
+            idle_gap=float(task.get("idle_gap", 0.25)),
+            read_retries=int(task.get("read_retries", 1)),
+        )
         try:
             if requested == "auto":
                 frame_name, probe = tr.detect_framing("DevInfo")
             else:
-                tr.set_framing(requested)
-                probe = tr.probe("DevInfo")
-                frame_name = requested
+                tr.set_framing(requested); probe = tr.probe("DevInfo"); frame_name = requested
         except Exception:
-            tr.close()
-            raise
-        self.cli = sc.SmtClient(tr)
-        self._echo_noted = False
-        self._wire_log()
-        devinfo = sc.value_of(probe, name="DevInfo")
-        self.post("status", ("on", port))
-        self.log("ok", f"[+] Подключено: {port} · {baud} 8N1 · кадрирование {frame_name} · "
-                       f"ответ {tr.last_latency_ms} мс")
+            tr.close(); raise
+        self.cli = sc.SmtClient(tr); self.mode = "serial"; self._echo_noted = False
+        self._wire_log(); devinfo = sc.value_of(probe, name="DevInfo")
+        self.post("status", ("serial", tr.line_description()))
+        self.log("ok", f"[+] Реальный прибор подключён: {tr.line_description()} · "
+                       f"кадр {frame_name} · ответ {tr.last_latency_ms} мс")
         self.log("io", f"     DevInfo = {pretty(devinfo)!r}")
-        # журнал сессии на диск (вся работа с физическим прибором сохраняется)
-        if ss is not None:
-            try:
-                self.recorder = ss.SessionRecorder(os.path.join(HERE, "sessions"))
-                self.recorder.header(port=port, baud=baud, framing=frame_name,
-                                     devinfo=str(pretty(devinfo)))
-                self.post("session_file", self.recorder.jsonl_path or "")
-                self.log("ok", f"[сессия] запись на диск: {self.recorder.jsonl_path}")
-            except Exception as exc:
-                self.recorder = None
-                self.log("warn", f"[сессия] журнал не открыт: {exc}")
+        self._start_recorder(port=port, baud=baud, framing=frame_name,
+                             transport="serial", line=tr.line_description(),
+                             devinfo=str(pretty(devinfo)))
+
+    def _connect_tcp(self, task):
+        host = task.get("host", "").strip(); port = int(task.get("tcp_port", 0))
+        term_name = task.get("terminator", "CRLF")
+        terms = {"нет": b"", "CR": b"\r", "LF": b"\n", "CRLF": b"\r\n"}
+        if not host or not 1 <= port <= 65535:
+            raise ValueError("Для TCP укажи host и порт 1…65535")
+        tr = sc.TcpServerTransport(host, port, timeout=float(task.get("tcp_timeout", 3.0)),
+                                   idle_gap=float(task.get("idle_gap", 0.25)),
+                                   terminator=terms.get(term_name, b"\r\n"))
+        self.log("ok", f"[*] Подключаю реальный TCP-шлюз {host}:{port}…")
+        probe = tr.probe("DevInfo")
+        self.cli = sc.SmtClient(tr); self.mode = "tcp"; self._wire_log()
+        devinfo = sc.value_of(probe, name="DevInfo")
+        self.post("status", ("tcp", f"{host}:{port}"))
+        self.log("ok", f"[+] TCP-шлюз доступен: {host}:{port} · ответ {tr.last_latency_ms} мс")
+        self.log("io", f"     DevInfo = {pretty(devinfo)!r}")
+        self._start_recorder(port=f"{host}:{port}", baud=0, framing="tcp",
+                             transport="tcp", devinfo=str(pretty(devinfo)))
+
+    def _connect_sms(self, task):
+        port = task.get("modem_port", "").strip(); phone = task.get("phone", "").strip()
+        baud = int(task.get("modem_baud", 115200)); prefix = task.get("sms_prefix", "")
+        self.log("ok", f"[*] Открываю GSM-модем {port} · {baud} для SMS → {phone}…")
+        tr = sc.SmsTransport(port, phone, baud=baud, prefix=prefix,
+                             response_timeout=float(task.get("sms_timeout", 20.0)))
+        health = tr.health_check()
+        self.cli = sc.SmtClient(tr); self.mode = "sms"; self._wire_log()
+        self.post("status", ("sms", f"{port} → {phone}"))
+        self.log("ok", f"[+] GSM-модем готов: {port} · SMS → {phone}")
+        self.log("io", "     " + pretty(sc.decode_response(health).strip()))
+        self._start_recorder(port=port, baud=baud, framing="sms-text",
+                             transport="sms", devinfo=f"SMS target {phone}")
 
     def _close(self):
         if self.recorder is not None:
@@ -487,6 +543,7 @@ class Backend(threading.Thread):
         except Exception:
             pass
         self.cli = None
+        self.mode = "off"
 
     def _tx(self, cmd, retry_safe=False, expert=False, mutating=None, kind="read"):
         """Один физический обмен. Повтор — только для чтения; критичные записи/
@@ -543,7 +600,7 @@ class Backend(threading.Thread):
 
     def _fmt(self, name, raw, val):
         if val not in (None, ""):
-            return f"{disp(name)} = {pretty(val)}"
+            return f"{name} = {pretty(val)}"
         if not raw:
             return f"{name} = (нет ответа)"
         text = pretty(sc.decode_response(raw).strip())
@@ -551,7 +608,9 @@ class Backend(threading.Thread):
 
     def _read(self, name):
         raw, val = self._tx(name, retry_safe=True, mutating=False, kind="read")
-        self.log("io", f">> {disp(name)}\n<< {self._fmt(name, raw, val)}")
+        shown = pretty(val) if val not in (None, "") else ""
+        self.post("reading", (name, shown, datetime.datetime.now().isoformat(timespec="seconds")))
+        self.log("io", f">> {name}\n<< {self._fmt(name, raw, val)}")
 
     def _send(self, text, expert):
         text = text.strip()
@@ -567,87 +626,34 @@ class Backend(threading.Thread):
                              "Включи «Экспертный режим» для фактической отправки на прибор.")
             return
         if critical:
-            self.log("warn", f"⚠ ЭКСПЕРТ: отправка критичной команды >> {disp_cmd(text)}")
+            self.log("warn", f"⚠ ЭКСПЕРТ: отправка критичной команды >> {text}")
         # Запись/действие не повторяются автоматически: неизвестно, успел ли прибор
         # выполнить первую посылку до потери ответа.
         raw, val = self._tx(text, retry_safe=False, expert=expert, mutating=True, kind=kind)
-        self.log("io", f">> {disp_cmd(text)}\n<< {self._fmt(name, raw, val)}")
+        self.log("io", f">> {text}\n<< {self._fmt(name, raw, val)}")
 
     def _auth(self, cred, value):
         cmd = f"{cred}={value}" if value != "" else cred
-        self.log("ok", f"[auth] Предъявление обработканых данных: {cred} …")
+        self.log("ok", f"[auth] Предъявление учётных данных: {cred} …")
         raw, val = self._tx(cmd, retry_safe=False, expert=True, mutating=True, kind="auth")
-        self.log("io", f">> {disp_cmd(cmd)}\n<< {self._fmt(cred, raw, val)}")
+        self.log("io", f">> {cmd}\n<< {self._fmt(cred, raw, val)}")
 
     def _passport(self):
-        self.log("ok", "[*] Снятие паспорта с физического прибора…")
+        self.log("ok", "[*] Снятие паспорта с текущего транспорта…")
         ok = 0
         for name in sc.PASSPORT:
             try:
                 raw, val = self._tx(name, retry_safe=True, mutating=False, kind="read")
                 if raw:
                     ok += 1
-                self.log("io", f"  {disp(name):<20} = {pretty(val)!r}")
+                self.log("io", f"  {name:<20} = {pretty(val)!r}")
             except Exception as exc:
-                self.log("err", f"  {disp(name):<20} = <err:{exc}>")
+                self.log("err", f"  {name:<20} = <err:{exc}>")
             time.sleep(0.04)
         self.log("ok", f"[*] Паспорт завершён: ответы {ok}/{len(sc.PASSPORT)}.")
 
-    def _read_names(self, names, title, delay=0.03):
-        """Прочитать список команд подряд, собрать {имя: значение}, отчитаться о
-        прогрессе и вернуть снимок. Только ЧТЕНИЕ (get) — ничего не меняет."""
-        self.log("ok", f"[*] {title}: чтение {len(names)} параметров с прибора…")
-        profile, ok = {}, 0
-        total = len(names)
-        for idx, name in enumerate(names, 1):
-            try:
-                raw, val = self._tx(name, retry_safe=True, mutating=False, kind="read")
-                text = pretty(val) if val not in (None, "") else ""
-                profile[name] = text
-                if raw:
-                    ok += 1
-                self.log("io", f"  [{idx:>3}/{total}] {disp(name):<22} = {text!r}")
-            except Exception as exc:
-                profile[name] = f"<err:{exc}>"
-                self.log("err", f"  [{idx:>3}/{total}] {disp(name):<22} = <err:{exc}>")
-            if idx % 10 == 0 or idx == total:
-                self.post("progress", (idx, total))
-            time.sleep(delay)
-        self.log("ok", f"[*] {title} завершено: ответы {ok}/{total}.")
-        self.post("profile", profile)
-        return profile
-
-    def _readable_names(self, cmds):
-        """Имена, которые безопасно читать (get). ДЕЙСТВИЯ исключаются: их «голое»
-        имя на реальном приборе выполняет операцию, а не читает значение."""
-        skipped = [c["name"] for c in cmds if c["name"] in self.actions]
-        names = [c["name"] for c in cmds if c["name"] not in self.actions]
-        if skipped:
-            self.log("warn", f"[читаю] пропущено действий (их нельзя читать голым "
-                             f"именем): {len(skipped)} — они выполняются только "
-                             "кнопкой «Действие» в экспертном режиме.")
-        return names
-
-    def _readall(self):
-        """Снять ПОЛНЫЙ снимок прибора — прочитать все параметры каталога (get).
-        Команды-ДЕЙСТВИЯ в снимок не входят (чтобы ничего не выполнить)."""
-        cmds = self.catalog or [{"name": n} for n in sc.PASSPORT]
-        names = self._readable_names(cmds)
-        self._read_names(names, "Полное чтение (все параметры)")
-
-    def _groupread(self, group):
-        cmds = [c for c in self.catalog if c.get("group") == group]
-        if not cmds:
-            self.log("warn", f"[группа] в каталоге нет команд группы {group!r}.")
-            return
-        names = self._readable_names(cmds)
-        if not names:
-            self.log("warn", f"[группа] в «{group}» только действия — читать нечего.")
-            return
-        self._read_names(names, f"Чтение группы «{group}»")
-
     def _authscan(self):
-        self.log("ok", "[*] Auth-scan — чтение доступных кредов с физического прибора:")
+        self.log("ok", "[*] Auth-scan — чтение доступных учётных параметров:")
         plain = False
         for name, desc in SECRET_READS:
             raw, val = self._tx(name, retry_safe=True, mutating=False, kind="read")
@@ -666,18 +672,132 @@ class Backend(threading.Thread):
         for name in TELE_PARAMS:
             raw, val = self._tx(name, retry_safe=True, mutating=False, kind="read")
             values[name] = pretty(val) if val not in (None, "") else ""
-            self.log("io", f"  {disp(name):<16} = {values[name]!r}")
+            self.log("io", f"  {name:<16} = {values[name]!r}")
         self.post("tele_reading", values)
 
-    def _preflight(self):
-        self.log("ok", "[*] Пре-флайт: повторная проверка физической линии…")
-        raw = self.cli.t.probe("DevInfo")
+    def _scan_all(self):
+        if self.mode == "sms":
+            raise RuntimeError("Полный опрос по SMS отключён: он отправил бы сотни сообщений. "
+                               "Используй выборочные команды или пакетный сценарий.")
+        self.cancel_event.clear()
+        values = {}
+        total = len(self.catalog)
+        self.log("ok", f"[*] Полный безопасный опрос каталога: {total} команд (только READ)…")
+        for index, item in enumerate(self.catalog, 1):
+            if self.cancel_event.is_set():
+                self.log("warn", f"[scan] остановлено пользователем: {index-1}/{total}")
+                break
+            name = item["name"]
+            if name in self.actions:
+                # Действия нельзя безопасно "прочитать": голое имя запускает операцию.
+                # Они входят в снимок как доступная возможность, но не выполняются.
+                values[name] = "<action: не выполнялось>"
+            else:
+                try:
+                    raw, val = self._tx(name, retry_safe=True, mutating=False, kind="scan")
+                    values[name] = pretty(val) if val not in (None, "") else ("<no response>" if not raw else "")
+                except Exception as exc:
+                    values[name] = f"<err:{exc}>"
+            self.post("scan_progress", (index, total, name, values[name]))
+            time.sleep(0.015)
+        self.post("snapshot", (values, self.mode))
+        self.log("ok", f"[*] Снимок готов: {len(values)}/{total} параметров.")
+
+    def _batch(self, text, expert, dry_run=False):
+        if tools_mod is None:
+            raise RuntimeError("модуль smt_tools.py не найден")
+        steps = tools_mod.parse_batch_script(text, self.actions)
+        protected = [s for s in steps if s.kind in ("write", "action") and s.name in self.critical]
+        if protected and not expert and not dry_run:
+            names = ", ".join(sorted({x.name for x in protected}))
+            raise PermissionError("сценарий содержит критические операции: " + names +
+                                  ". Включи Экспертный режим.")
+        self.log("ok", f"[batch] сценарий: {len(steps)} шагов" +
+                 (" · только проверка" if dry_run else " · выполнение"))
+        if dry_run:
+            for i, step in enumerate(steps, 1):
+                self.log("io", f"  {i:03d} · строка {step.line}: {step.kind} "
+                               f"{step.name}{('=' + step.value) if step.kind == 'write' else ''}"
+                               f"{(' ' + str(step.delay_ms) + ' ms') if step.kind == 'sleep' else ''}")
+            self.post("batch_done", (True, len(steps), "Сценарий корректен"))
+            return
+        self.cancel_event.clear()
+        done = 0
+        for i, step in enumerate(steps, 1):
+            if self.cancel_event.is_set():
+                self.log("warn", f"[batch] остановлено: {done}/{len(steps)}")
+                self.post("batch_done", (False, done, "Остановлено пользователем")); return
+            self.post("batch_progress", (i, len(steps), step.source))
+            if step.kind == "sleep":
+                deadline = time.monotonic() + step.delay_ms / 1000.0
+                while time.monotonic() < deadline:
+                    if self.cancel_event.is_set():
+                        break
+                    time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+            elif step.kind == "read":
+                self._read(step.name)
+            elif step.kind == "write":
+                self._send(f"{step.name}={step.value}", expert)
+            elif step.kind == "action":
+                self._send(step.name, expert)
+            done += 1
+        self.post("batch_done", (True, done, "Выполнено"))
+        self.log("ok", f"[batch] завершено: {done}/{len(steps)}")
+
+    def _raw_hex(self, text, timeout=None, expert=False):
+        if not expert:
+            raise PermissionError("RAW HEX доступен в Экспертном режиме: точные байты могут "
+                                  "выполнить неизвестную запись или сервисную операцию.")
+        compact = "".join(str(text).replace("0x", "").replace(",", " ").split())
+        if not compact:
+            return
+        if len(compact) % 2:
+            raise ValueError("HEX-строка должна содержать чётное число цифр")
+        try:
+            payload = bytes.fromhex(compact)
+        except ValueError as exc:
+            raise ValueError("Некорректная HEX-строка") from exc
+        raw_exchange = getattr(self.cli.t, "raw_exchange", None)
+        if raw_exchange is None:
+            raise RuntimeError("Текущий транспорт не поддерживает сырой HEX-обмен")
+        raw = raw_exchange(payload, response_timeout=float(timeout) if timeout else None)
         self._wire_log()
-        value = sc.value_of(raw, name="DevInfo")
+        self.log("io", f">> RAW HEX ({len(payload)}): {payload.hex(' ').upper()}\n"
+                       f"<< RAW HEX ({len(raw)}): {raw.hex(' ').upper() if raw else '(нет ответа)'}")
+        self.post("raw_result", raw)
+
+    def _sms_receive(self, delete=False):
+        receive = getattr(self.cli.t, "receive_unread", None)
+        if receive is None:
+            raise RuntimeError("Текущий транспорт не является GSM/SMS-модемом")
+        messages = receive(delete=bool(delete))
+        self.log("ok", f"[SMS] непрочитанных сообщений: {len(messages)}")
+        for item in messages:
+            self.log("io", f"  #{item.get('index')} {item.get('header')}\n     {item.get('text')}")
+        self.post("sms_messages", messages)
+
+    def _modem_at(self, text):
+        send_at = getattr(self.cli.t, "send_at", None)
+        if send_at is None:
+            raise RuntimeError("AT-команды доступны только для GSM-модема")
+        raw = send_at(str(text).strip())
+        self._wire_log()
+        self.log("io", f">> AT {text}\n<< {pretty(sc.decode_response(raw).strip())}")
+
+    def _preflight(self):
+        self.log("ok", "[*] Пре-флайт: проверка активного реального транспорта…")
         tr = self.cli.t
-        self.log("ok", f"[OK] Прибор отвечает · кадр {tr.frame_name or 'ручной'} · "
+        if self.mode == "sms":
+            raw = tr.health_check(); self._wire_log()
+            self.log("ok", f"[OK] GSM-модем отвечает · {tr.last_latency_ms} мс")
+            self.log("io", "     " + pretty(sc.decode_response(raw).strip()))
+            return
+        raw = tr.probe("DevInfo")
+        self._wire_log(); value = sc.value_of(raw, name="DevInfo")
+        self.log("ok", f"[OK] Канал отвечает · {self.mode} · кадр "
+                       f"{getattr(tr, 'frame_name', '—') or 'ручной'} · "
                        f"{tr.last_latency_ms} мс · RX {len(tr.last_raw_rx)} байт" +
-                       (" · оптическое эхо снято" if tr.last_echo_removed else ""))
+                       (" · оптическое эхо снято" if getattr(tr, 'last_echo_removed', False) else ""))
         self.log("io", f"     DevInfo = {pretty(value)!r}")
 
 
@@ -692,24 +812,30 @@ def build_app(root, selftest=False):
     task_q, out_q = queue.Queue(), queue.Queue()
     backend = Backend(task_q, out_q, critical, actions, catalog); backend.start()
 
-    root.title("Аудит прибора — оптопорт · каталог 158 команд")
+    root.title("Контроллер устройства 4.1 HARDWARE MAX · 158 команд")
     root.geometry("1220x850")
 
-    state = {"selected": None, "connected": False, "expert": False}
+    state = {"selected": None, "connected": False, "expert": False,
+             "mode": "off", "current_snapshot": {}, "loaded_snapshot": {},
+             "monitoring": False, "monitor_rows": []}
     settings = load_settings()
 
-    # ── шапка: подключение ──────────────────────────────────────────────
+    # ── шапка: реальные транспорты ─────────────────────────────────────
     top = ttk.Frame(root, padding=6); top.pack(fill="x")
-    ttk.Label(top, text="Порт:").pack(side="left")
-    port_var = tk.StringVar(value=suggested_port(settings.get("port")))
-    port_ent = ttk.Entry(top, textvariable=port_var, width=16); port_ent.pack(side="left", padx=(2, 6))
+    ttk.Label(top, text="Транспорт:").pack(side="left")
+    transport_var = tk.StringVar(value=settings.get("transport", "Оптопорт / Serial"))
+    transport_cb = ttk.Combobox(top, textvariable=transport_var, state="readonly", width=18,
+                                values=["Оптопорт / Serial", "TCP-шлюз", "GSM / SMS"])
+    transport_cb.pack(side="left", padx=(3, 8))
+    conn_btn = ttk.Button(top, text="Подключить"); conn_btn.pack(side="left")
+    status_lbl = ttk.Label(top, text="● отключено", foreground="#b00"); status_lbl.pack(side="left", padx=10)
 
     def list_ports():
         try:
             from serial.tools import list_ports
             ports = list(list_ports.comports())
             if not ports:
-                messagebox.showinfo("Порты", "Serial-порты не найдены.\nПодключи USB-оптозонд.")
+                messagebox.showinfo("Порты", "Serial-порты не найдены.\nПодключи USB-оптоголовку или GSM-модем.")
                 return
             lines = []
             for item in ports:
@@ -719,49 +845,131 @@ def build_app(root, selftest=False):
                 lines.append(f"{item.device} — {details}")
             candidates = [item.device for item in ports if any(
                 hint in ((item.device or "") + " " + (item.description or "")).lower()
-                for hint in ("ttyusb", "ttyacm", "usbserial", "usbmodem", " ch340", "cp210", "ftdi", "com")
+                for hint in ("ttyusb", "ttyacm", "usbserial", "usbmodem", "ch340", "cp210", "ftdi", "com")
             )]
             if len(candidates) == 1:
                 port_var.set(candidates[0])
-            messagebox.showinfo("Порты", "\n".join(lines) +
+            messagebox.showinfo("Физические serial-порты", "\n".join(lines) +
                                 (f"\n\nАвтовыбран: {candidates[0]}" if len(candidates) == 1 else ""))
         except Exception as e:
             messagebox.showerror("Порты", str(e))
     ttk.Button(top, text="Порты…", command=list_ports).pack(side="left")
 
-    ttk.Label(top, text="Baud:").pack(side="left", padx=(10, 2))
+    def do_dump():
+        path = filedialog.askopenfilename(filetypes=[("dump W25Q64", "*.bin"), ("все", "*.*")])
+        if path:
+            hist_load_path(path); main_nb.select(tab_hist)
+    ttk.Button(top, text="Открыть flash-дамп…", command=do_dump).pack(side="right")
+
+    conn = ttk.LabelFrame(root, text="Параметры физического подключения", padding=(6, 3))
+    conn.pack(fill="x", padx=6, pady=(0, 4))
+    for col in range(14): conn.columnconfigure(col, weight=0)
+
+    # Serial / оптопорт
+    ttk.Label(conn, text="Serial:").grid(row=0, column=0, sticky="w")
+    port_var = tk.StringVar(value=suggested_port(settings.get("port")))
+    port_ent = ttk.Entry(conn, textvariable=port_var, width=15); port_ent.grid(row=0, column=1, padx=2)
     baud_var = tk.StringVar(value=str(settings.get("baud", "9600")))
-    ttk.Combobox(top, textvariable=baud_var, width=7, state="readonly",
-                 values=["9600", "19200", "38400", "57600", "115200"]).pack(side="left")
-
-    ttk.Label(top, text="Кадр:").pack(side="left", padx=(10, 2))
+    baud_cb = ttk.Combobox(conn, textvariable=baud_var, width=7, values=[
+        "300", "600", "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400"
+    ])
+    baud_cb.grid(row=0, column=2, padx=2)
     fr_var = tk.StringVar(value=settings.get("framing", "auto"))
-    ttk.Combobox(top, textvariable=fr_var, width=7, state="readonly",
-                 values=["auto"] + list(sc.FRAMINGS.keys())).pack(side="left")
+    fr_cb = ttk.Combobox(conn, textvariable=fr_var, width=7, state="readonly",
+                         values=["auto"] + list(sc.FRAMINGS.keys())); fr_cb.grid(row=0, column=3, padx=2)
+    bits_var = tk.StringVar(value=str(settings.get("bytesize", "8")))
+    bits_cb = ttk.Combobox(conn, textvariable=bits_var, width=3, state="readonly", values=["5","6","7","8"]); bits_cb.grid(row=0,column=4,padx=2)
+    parity_var = tk.StringVar(value=settings.get("parity", "N"))
+    parity_cb = ttk.Combobox(conn, textvariable=parity_var, width=3, state="readonly", values=["N","E","O","M","S"]); parity_cb.grid(row=0,column=5,padx=2)
+    stop_var = tk.StringVar(value=str(settings.get("stopbits", "1")))
+    stop_cb = ttk.Combobox(conn, textvariable=stop_var, width=4, state="readonly", values=["1","1.5","2"]); stop_cb.grid(row=0,column=6,padx=2)
+    ttk.Label(conn, text="таймаут:").grid(row=0,column=7,sticky="e")
+    resp_timeout_var = tk.StringVar(value=str(settings.get("response_timeout", "2.5")))
+    resp_timeout_ent = ttk.Entry(conn,textvariable=resp_timeout_var,width=5); resp_timeout_ent.grid(row=0,column=8,padx=2)
+    ttk.Label(conn, text="пауза:").grid(row=0,column=9,sticky="e")
+    idle_gap_var = tk.StringVar(value=str(settings.get("idle_gap", "0.25")))
+    idle_gap_ent = ttk.Entry(conn,textvariable=idle_gap_var,width=5); idle_gap_ent.grid(row=0,column=10,padx=2)
+    ttk.Label(conn, text="повторы READ:").grid(row=0,column=11,sticky="e")
+    retries_var = tk.StringVar(value=str(settings.get("read_retries", "1")))
+    retries_ent = ttk.Entry(conn,textvariable=retries_var,width=3); retries_ent.grid(row=0,column=12,padx=2)
 
-    conn_btn = ttk.Button(top, text="Подключить")
-    conn_btn.pack(side="left", padx=12)
-    status_lbl = ttk.Label(top, text="● отключено", foreground="#b00")
-    status_lbl.pack(side="left")
+    flow = ttk.Frame(conn); flow.grid(row=0,column=13,sticky="w")
+    xon_var=tk.BooleanVar(value=bool(settings.get("xonxoff",False)))
+    rtscts_var=tk.BooleanVar(value=bool(settings.get("rtscts",False)))
+    dsrdtr_var=tk.BooleanVar(value=bool(settings.get("dsrdtr",False)))
+    dtr_var=tk.BooleanVar(value=bool(settings.get("dtr",False)))
+    rts_var=tk.BooleanVar(value=bool(settings.get("rts",False)))
+    for text,var in (("XON",xon_var),("RTS/CTS",rtscts_var),("DSR/DTR",dsrdtr_var),("DTR=1",dtr_var),("RTS=1",rts_var)):
+        ttk.Checkbutton(flow,text=text,variable=var).pack(side="left")
+
+    # TCP
+    ttk.Label(conn, text="TCP:").grid(row=1,column=0,sticky="w")
+    tcp_host_var=tk.StringVar(value=settings.get("tcp_host","127.0.0.1"))
+    tcp_host_ent=ttk.Entry(conn,textvariable=tcp_host_var,width=20); tcp_host_ent.grid(row=1,column=1,columnspan=2,sticky="ew",padx=2)
+    tcp_port_var=tk.StringVar(value=str(settings.get("tcp_port","40000")))
+    tcp_port_ent=ttk.Entry(conn,textvariable=tcp_port_var,width=7); tcp_port_ent.grid(row=1,column=3,padx=2)
+    term_var=tk.StringVar(value=settings.get("terminator","CRLF"))
+    term_cb=ttk.Combobox(conn,textvariable=term_var,width=6,state="readonly",values=["нет","CR","LF","CRLF"]); term_cb.grid(row=1,column=4,padx=2)
+    tcp_timeout_var=tk.StringVar(value=str(settings.get("tcp_timeout","3.0")))
+    ttk.Label(conn,text="таймаут:").grid(row=1,column=5,sticky="e")
+    tcp_timeout_ent=ttk.Entry(conn,textvariable=tcp_timeout_var,width=5); tcp_timeout_ent.grid(row=1,column=6,padx=2)
+
+    # GSM/SMS
+    ttk.Label(conn, text="SMS:").grid(row=2,column=0,sticky="w")
+    modem_port_var=tk.StringVar(value=settings.get("modem_port", suggested_port()))
+    modem_port_ent=ttk.Entry(conn,textvariable=modem_port_var,width=15); modem_port_ent.grid(row=2,column=1,padx=2)
+    modem_baud_var=tk.StringVar(value=str(settings.get("modem_baud","115200")))
+    modem_baud_cb=ttk.Combobox(conn,textvariable=modem_baud_var,width=7,values=["9600","19200","38400","57600","115200"]); modem_baud_cb.grid(row=2,column=2,padx=2)
+    phone_var=tk.StringVar(value=settings.get("phone",""))
+    phone_ent=ttk.Entry(conn,textvariable=phone_var,width=18); phone_ent.grid(row=2,column=3,columnspan=2,padx=2,sticky="ew")
+    sms_prefix_var=tk.StringVar(value=settings.get("sms_prefix",""))
+    sms_prefix_ent=ttk.Entry(conn,textvariable=sms_prefix_var,width=18); sms_prefix_ent.grid(row=2,column=5,columnspan=2,padx=2,sticky="ew")
+    sms_timeout_var=tk.StringVar(value=str(settings.get("sms_timeout","20")))
+    ttk.Label(conn,text="таймаут:").grid(row=2,column=7,sticky="e")
+    sms_timeout_ent=ttk.Entry(conn,textvariable=sms_timeout_var,width=5); sms_timeout_ent.grid(row=2,column=8,padx=2)
+    ttk.Label(conn,text="номер / префикс команды").grid(row=2,column=9,columnspan=4,sticky="w")
+
+    serial_widgets=[port_ent,baud_cb,fr_cb,bits_cb,parity_cb,stop_cb,resp_timeout_ent,idle_gap_ent,retries_ent]
+    tcp_widgets=[tcp_host_ent,tcp_port_ent,term_cb,tcp_timeout_ent]
+    sms_widgets=[modem_port_ent,modem_baud_cb,phone_ent,sms_prefix_ent,sms_timeout_ent]
+    def update_transport_fields(*_):
+        mode=transport_var.get()
+        def set_group(items,enabled):
+            for w in items:
+                try: w.state(["!disabled"] if enabled else ["disabled"])
+                except Exception: w.configure(state="normal" if enabled else "disabled")
+        set_group(serial_widgets, mode.startswith("Оптопорт"))
+        set_group(tcp_widgets, mode.startswith("TCP"))
+        set_group(sms_widgets, mode.startswith("GSM"))
+    transport_cb.bind("<<ComboboxSelected>>", update_transport_fields)
 
     def do_connect():
         if state["connected"]:
-            task_q.put({"op": "disconnect"})
-        else:
-            selected = {"port": port_var.get().strip(),
-                        "baud": int(baud_var.get()), "framing": fr_var.get()}
-            save_settings(selected)
-            task_q.put({"op": "connect", **selected})
+            task_q.put({"op":"disconnect"}); return
+        label=transport_var.get()
+        try:
+            common={"op":"connect", "idle_gap":float(idle_gap_var.get() or 0.25)}
+            if label.startswith("Оптопорт"):
+                selected={**common,"transport":"serial","port":port_var.get().strip(),
+                    "baud":int(baud_var.get()),"framing":fr_var.get(),"bytesize":int(bits_var.get()),
+                    "parity":parity_var.get(),"stopbits":float(stop_var.get()),
+                    "response_timeout":float(resp_timeout_var.get()),"read_retries":int(retries_var.get()),
+                    "xonxoff":xon_var.get(),"rtscts":rtscts_var.get(),"dsrdtr":dsrdtr_var.get(),
+                    "dtr":dtr_var.get(),"rts":rts_var.get()}
+            elif label.startswith("TCP"):
+                selected={**common,"transport":"tcp","host":tcp_host_var.get().strip(),
+                    "tcp_port":int(tcp_port_var.get()),"terminator":term_var.get(),
+                    "tcp_timeout":float(tcp_timeout_var.get())}
+            else:
+                selected={**common,"transport":"sms","modem_port":modem_port_var.get().strip(),
+                    "modem_baud":int(modem_baud_var.get()),"phone":phone_var.get().strip(),
+                    "sms_prefix":sms_prefix_var.get(),"sms_timeout":float(sms_timeout_var.get())}
+        except ValueError:
+            messagebox.showerror("Подключение","Проверь числовые параметры транспорта."); return
+        saved={k:v for k,v in selected.items() if k!="op"}; saved["transport"]=label
+        save_settings(saved); task_q.put(selected)
     conn_btn.config(command=do_connect)
-
-    def do_dump():
-        # Кнопка сохранена ради неизменности интерфейса. Файл используется только
-        # парсерами вкладки «История» и никогда не подменяет физический прибор.
-        path = filedialog.askopenfilename(filetypes=[("dump W25Q64", "*.bin"), ("все", "*.*")])
-        if path:
-            hist_load_path(path)
-            main_nb.select(tab_hist)
-    ttk.Button(top, text="Открыть дамп…", command=do_dump).pack(side="left", padx=(10, 0))
+    update_transport_fields()
 
     # ── второй ряд: уровень доступа / аутентификация / экспертный режим ──
     top2 = ttk.Frame(root, padding=(6, 0, 6, 6)); top2.pack(fill="x")
@@ -802,25 +1010,28 @@ def build_app(root, selftest=False):
         state["expert"] = expert_var.get()
         exp_lbl.config(text=("● ЭКСПЕРТ ВКЛ" if state["expert"] else "○ эксперт выкл"),
                        foreground=("#c0392b" if state["expert"] else "#777"))
+        try:
+            on_select()
+        except Exception:
+            pass
     ttk.Checkbutton(top2, text="Экспертный режим", variable=expert_var,
                     command=toggle_expert).pack(side="left", padx=(16, 2))
     exp_lbl = ttk.Label(top2, text="○ эксперт выкл", foreground="#777")
     exp_lbl.pack(side="left")
 
-    # ── верхний нотбук: «Команды», «Панели», «Телеметрия», «История» ─────
+    # ── верхний нотбук: «Команды» и «Телеметрия» ────────────────────────
     main_nb = ttk.Notebook(root)
     tab_cmd = ttk.Frame(main_nb)
-    tab_panels = ttk.Frame(main_nb)
+    tab_terminal = ttk.Frame(main_nb, padding=6)
     tab_tele = ttk.Frame(main_nb, padding=6)
     tab_hist = ttk.Frame(main_nb, padding=6)
+    tab_lab = ttk.Frame(main_nb, padding=6)
     main_nb.add(tab_cmd, text="Команды (158)")
-    main_nb.add(tab_panels, text="Панели управления")
+    main_nb.add(tab_terminal, text="Транспорт · RAW · SMS")
     main_nb.add(tab_tele, text="Телеметрия")
     main_nb.add(tab_hist, text="История")
+    main_nb.add(tab_lab, text="Снимки · сценарии · мониторинг")
     main_nb.pack(fill="both", expand=True)
-
-    # реестр полей значений по имени команды — заполняется полным/групповым чтением
-    panel_vars = {}
 
     # ── тело вкладки «Команды»: слева каталог, справа детали+запись ──────
     body = ttk.Panedwindow(tab_cmd, orient="horizontal"); body.pack(fill="both", expand=True)
@@ -858,17 +1069,18 @@ def build_app(root, selftest=False):
         for c in catalog:
             if g != "(все группы)" and c["group"] != g:
                 continue
-            if q and q not in c["display"].lower() and q not in c["desc"].lower():
+            if q and q not in c["name"].lower() and q not in c["desc"].lower():
                 continue
-            prot = "заблок." if c["protected_write"] else "разрешена"
-            tags = ("prot",) if c["protected_write"] else ()
+            is_critical = c["name"] in critical
+            prot = "эксперт" if is_critical else "обычная"
+            tags = ("prot",) if is_critical else ()
             tree.insert("", "end", iid=c["name"],
-                        values=(c["display"], clean_desc(c["desc"], 70), c["type"],
+                        values=(c["name"], clean_desc(c["desc"], 70), c["type"],
                                 access_human(c["prov"]), access_human(c["user"]), prot),
                         tags=tags)
             n += 1
         count_lbl.config(text=f"Показано: {n} из {len(catalog)} команд "
-                              f"· красным — запись защищена (сервис/актуатор/пароли)")
+                              f"· красным — экспертная запись/действие")
     search_var.trace_add("write", refill)
     grp_var.trace_add("write", refill)
 
@@ -912,43 +1124,6 @@ def build_app(root, selftest=False):
             task_q.put({"op": "send", "text": txt, "expert": state["expert"]})
     ttk.Button(free, text="Отправить", command=do_send_free).pack(side="left", padx=6)
 
-    def do_export_profile():
-        prof = state.get("profile")
-        if not prof:
-            messagebox.showinfo("Профиль устройства",
-                                "Сначала сними полный снимок кнопкой «Прочитать ВСЁ (158)».")
-            return
-        path = filedialog.asksaveasfilename(
-            title="Сохранить профиль устройства",
-            defaultextension=".json",
-            initialfile=f"device_profile_{datetime.date.today()}",
-            filetypes=[("JSON", "*.json"), ("CSV", "*.csv")])
-        if not path:
-            return
-        by_name = {c["name"]: c for c in catalog}
-        try:
-            if path.lower().endswith(".csv"):
-                import csv as _csv
-                with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-                    w = _csv.writer(fh, delimiter=";")
-                    w.writerow(["name", "display", "group", "type", "value"])
-                    for name, val in prof.items():
-                        c = by_name.get(name, {})
-                        w.writerow([name, disp(name), c.get("group", ""),
-                                    c.get("type", ""), val])
-            else:
-                rows = [{"name": name, "display": disp(name),
-                         "group": by_name.get(name, {}).get("group", ""),
-                         "type": by_name.get(name, {}).get("type", ""),
-                         "value": val} for name, val in prof.items()]
-                doc = {"captured": datetime.datetime.now().isoformat(timespec="seconds"),
-                       "count": len(rows), "parameters": rows}
-                with open(path, "w", encoding="utf-8") as fh:
-                    json.dump(doc, fh, ensure_ascii=False, indent=2)
-            append("ok", f"[профиль] сохранено {len(prof)} параметров → {path}")
-        except Exception as exc:
-            messagebox.showerror("Профиль устройства", str(exc))
-
     quick = ttk.LabelFrame(right, text="Быстрые действия", padding=6); quick.pack(fill="x")
     quick.columnconfigure(0, weight=1); quick.columnconfigure(1, weight=1)
     _qa = [
@@ -957,14 +1132,10 @@ def build_app(root, selftest=False):
         ("Auth-scan", lambda: task_q.put({"op": "authscan"})),
         ("Показания", lambda: [task_q.put({"op": "read", "name": n}) for n in
                                ("Volume", "VOLUME_GLOB", "VOLUME_INST", "VOLUME_COMMIS")]),
-        ("Прочитать ВСЁ (158)", lambda: task_q.put({"op": "readall"})),
-        ("Профиль → файл…", do_export_profile),
     ]
     for _i, (_t, _cmd) in enumerate(_qa):
         ttk.Button(quick, text=_t, command=_cmd).grid(
             row=_i // 2, column=_i % 2, sticky="ew", padx=2, pady=2)
-    profile_lbl = ttk.Label(quick, text="снимок не снят", foreground="#777")
-    profile_lbl.grid(row=len(_qa) // 2 + 1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
     def on_select(_=None):
         sel = tree.focus()
@@ -975,7 +1146,7 @@ def build_app(root, selftest=False):
             return
         state["selected"] = c
         det_txt.configure(state="normal"); det_txt.delete("1.0", "end")
-        det_txt.insert("end", f"{c['display']}   ({c['type']})\n", "h")
+        det_txt.insert("end", f"{c['name']}   ({c['type']})\n", "h")
         det_txt.insert("end", f"Группа: {c['group']}\n")
         det_txt.insert("end", f"Доступ  П={c['prov']} ({access_human(c['prov'])})  "
                               f"О={c['user']} ({access_human(c['user'])})\n")
@@ -1027,99 +1198,60 @@ def build_app(root, selftest=False):
     write_btn.config(command=do_write)
     act_btn.config(command=do_action)
 
-    # ── вкладка «Панели управления»: ВСЕ команды по функциям ────────────
-    pan_top = ttk.Frame(tab_panels, padding=6); pan_top.pack(fill="x")
-    ttk.Label(pan_top, wraplength=980, foreground="#555", justify="left",
-              text="Полное управление прибором: все 158 команд по функциональным группам. "
-                   "Get — прочитать, Set — записать значение, Действие — выполнить. Поля "
-                   "заполняются кнопками «Прочитать группу» / «Прочитать ВСЁ». Критичные "
-                   "(красные) уходят на прибор только при включённом «Экспертном режиме»."
-              ).pack(side="left", fill="x", expand=True)
-    ttk.Button(pan_top, text="Прочитать ВСЁ",
-               command=lambda: task_q.put({"op": "readall"})).pack(side="right", padx=4)
+    # ── вкладка «Транспорт · RAW · SMS» ────────────────────────────────
+    ttk.Label(tab_terminal, wraplength=1160, foreground="#555", justify="left",
+              text="Работа только с реальным подключением. Командный терминал использует "
+                   "каталожное кадрирование и экспертный гейт; RAW HEX передаёт точные байты "
+                   "без добавления CR/LF/скобок; AT и приём SMS доступны при GSM-подключении.").pack(anchor="w")
 
-    pan_canvas = tk.Canvas(tab_panels, highlightthickness=0)
-    pan_sb = ttk.Scrollbar(tab_panels, orient="vertical", command=pan_canvas.yview)
-    pan_inner = ttk.Frame(pan_canvas)
-    pan_inner.bind("<Configure>",
-                   lambda e: pan_canvas.configure(scrollregion=pan_canvas.bbox("all")))
-    pan_win = pan_canvas.create_window((0, 0), window=pan_inner, anchor="nw")
-    pan_canvas.bind("<Configure>", lambda e: pan_canvas.itemconfigure(pan_win, width=e.width))
-    pan_canvas.configure(yscrollcommand=pan_sb.set)
-    pan_canvas.pack(side="left", fill="both", expand=True)
-    pan_sb.pack(side="right", fill="y")
+    term_cmd = ttk.LabelFrame(tab_terminal, text="Командный терминал", padding=6)
+    term_cmd.pack(fill="x", pady=(6, 3)); term_cmd.columnconfigure(1, weight=1)
+    ttk.Label(term_cmd, text="Команда:").grid(row=0,column=0,sticky="w")
+    terminal_cmd_var=tk.StringVar()
+    terminal_cmd_ent=ttk.Entry(term_cmd,textvariable=terminal_cmd_var)
+    terminal_cmd_ent.grid(row=0,column=1,sticky="ew",padx=5)
+    def terminal_send():
+        text=terminal_cmd_var.get().strip()
+        if text: task_q.put({"op":"send","text":text,"expert":state["expert"]})
+    ttk.Button(term_cmd,text="Отправить",command=terminal_send).grid(row=0,column=2)
+    terminal_cmd_ent.bind("<Return>",lambda _e: terminal_send())
+    ttk.Label(term_cmd,text="Примеры: DevInfo · SERVER_URL=host:port · VALVE_OPEN",
+              foreground="#777").grid(row=1,column=1,sticky="w")
 
-    def _pan_wheel(e):
-        step = -1 if getattr(e, "num", None) == 4 else 1 if getattr(e, "num", None) == 5 \
-            else int(-1 * (e.delta / 120)) if getattr(e, "delta", 0) else 0
-        if step:
-            pan_canvas.yview_scroll(step, "units")
-    pan_canvas.bind("<Enter>", lambda e: (pan_canvas.bind_all("<MouseWheel>", _pan_wheel),
-                                          pan_canvas.bind_all("<Button-4>", _pan_wheel),
-                                          pan_canvas.bind_all("<Button-5>", _pan_wheel)))
-    pan_canvas.bind("<Leave>", lambda e: (pan_canvas.unbind_all("<MouseWheel>"),
-                                          pan_canvas.unbind_all("<Button-4>"),
-                                          pan_canvas.unbind_all("<Button-5>")))
+    raw_box = ttk.LabelFrame(tab_terminal, text="Точный RAW HEX-обмен (Serial/TCP)", padding=6)
+    raw_box.pack(fill="both", expand=True, pady=3)
+    raw_top=ttk.Frame(raw_box); raw_top.pack(fill="x")
+    ttk.Label(raw_top,text="Таймаут ответа, с:").pack(side="left")
+    raw_timeout_var=tk.StringVar(value="2.5")
+    ttk.Entry(raw_top,textvariable=raw_timeout_var,width=6).pack(side="left",padx=4)
+    ttk.Label(raw_top,text="HEX допускает пробелы: 2F 3F 44 65 76 49 6E 66 6F 21 0D 0A",
+              foreground="#777").pack(side="left",padx=8)
+    raw_hex_text=scrolledtext.ScrolledText(raw_box,height=6,wrap="word",font=("TkFixedFont",10))
+    raw_hex_text.pack(fill="both",expand=True,pady=4)
+    raw_buttons=ttk.Frame(raw_box); raw_buttons.pack(fill="x")
+    def raw_send():
+        task_q.put({"op":"raw_hex","hex":raw_hex_text.get("1.0","end"),
+                    "timeout":raw_timeout_var.get(), "expert":state["expert"]})
+    ttk.Button(raw_buttons,text="Передать точные байты",command=raw_send).pack(side="left")
+    ttk.Button(raw_buttons,text="DevInfo / IEC HEX",command=lambda:(
+        raw_hex_text.delete("1.0","end"),
+        raw_hex_text.insert("1.0","2F 3F 44 65 76 49 6E 66 6F 21 0D 0A"))).pack(side="left",padx=4)
+    ttk.Button(raw_buttons,text="Очистить",command=lambda:raw_hex_text.delete("1.0","end")).pack(side="left")
 
-    def make_panel_row(parent, c, r):
-        name = c["name"]
-        is_action = name in actions
-        is_crit = name in critical
-        ttk.Label(parent, text=disp(name), width=22, anchor="w",
-                  foreground=("#c0392b" if is_crit else "#111")).grid(
-            row=r, column=0, sticky="w", padx=(0, 4), pady=1)
-        ttk.Label(parent, text=(clean_desc(c["desc"], 44) or c["type"]), width=44,
-                  anchor="w", foreground="#666").grid(row=r, column=1, sticky="w", padx=4)
-        var = tk.StringVar()
-        panel_vars[name] = var
-        ent = ttk.Entry(parent, textvariable=var, width=18)
-        ent.grid(row=r, column=2, sticky="ew", padx=4)
-        opts = value_options(c)
-        if opts:
-            ocb = ttk.Combobox(parent, width=13, state="readonly", values=opts)
-            ocb.grid(row=r, column=3, padx=1)
-            ocb.bind("<<ComboboxSelected>>",
-                     lambda e, v=var, cb=ocb: v.set(cb.get().split(" ", 1)[0]))
-        else:
-            ttk.Label(parent, text=c["type"], width=13, foreground="#999").grid(
-                row=r, column=3, padx=1)
-        ttk.Button(parent, text="Get", width=5,
-                   command=lambda n=name: task_q.put({"op": "read", "name": n})).grid(
-            row=r, column=4, padx=1)
-        if is_action:
-            ent.state(["disabled"])
-            ttk.Button(parent, text="Действие", width=10,
-                       command=lambda n=name: task_q.put(
-                           {"op": "send", "text": n, "expert": state["expert"]})).grid(
-                row=r, column=5, padx=1)
-        else:
-            ttk.Button(parent, text="Set", width=10,
-                       command=lambda n=name, v=var: task_q.put(
-                           {"op": "write", "name": n, "val": v.get(),
-                            "expert": state["expert"]})).grid(row=r, column=5, padx=1)
-
-    by_group = {}
-    for c in catalog:
-        by_group.setdefault(c["group"], []).append(c)
-    _preferred = ["Значения и накопители", "Датчик и температура", "Фильтр Калмана",
-                  "Исполнительный механизм (актуатор)", "Связь: GSM / RS-485 / сервер",
-                  "Дисплей / сервис / питание", "Сервис и защита от вмешательства",
-                  "Доступ / пароли", "Прочее / служебное"]
-    group_order = [g for g in _preferred if g in by_group] + \
-                  [g for g in sorted(by_group) if g not in _preferred]
-    for group in group_order:
-        cmds = sorted(by_group[group], key=lambda x: x["name"])
-        n_crit = sum(1 for c in cmds if c["name"] in critical)
-        gf = ttk.LabelFrame(pan_inner, padding=6,
-                            text=f"{group}  ·  {len(cmds)} команд"
-                                 + (f"  ·  критичных: {n_crit}" if n_crit else ""))
-        gf.pack(fill="x", padx=8, pady=5)
-        gf.columnconfigure(2, weight=1)
-        ttk.Button(gf, text="Прочитать группу",
-                   command=lambda g=group: task_q.put({"op": "groupread", "group": g})).grid(
-            row=0, column=0, columnspan=6, sticky="w", pady=(0, 4))
-        for r, c in enumerate(cmds, start=1):
-            make_panel_row(gf, c, r)
+    sms_box=ttk.LabelFrame(tab_terminal,text="GSM-модем / SMS",padding=6)
+    sms_box.pack(fill="both",expand=True,pady=3)
+    sms_top=ttk.Frame(sms_box); sms_top.pack(fill="x")
+    at_var=tk.StringVar(value="AT+CSQ")
+    ttk.Label(sms_top,text="AT:").pack(side="left")
+    ttk.Entry(sms_top,textvariable=at_var,width=28).pack(side="left",padx=4)
+    ttk.Button(sms_top,text="Выполнить AT",command=lambda:task_q.put(
+        {"op":"modem_at","text":at_var.get()})).pack(side="left")
+    sms_delete_var=tk.BooleanVar(value=False)
+    ttk.Checkbutton(sms_top,text="удалить после чтения",variable=sms_delete_var).pack(side="left",padx=10)
+    ttk.Button(sms_top,text="Получить непрочитанные SMS",command=lambda:task_q.put(
+        {"op":"sms_receive","delete":sms_delete_var.get()})).pack(side="left")
+    sms_text=scrolledtext.ScrolledText(sms_box,height=6,wrap="word",font=("TkFixedFont",9))
+    sms_text.pack(fill="both",expand=True,pady=(4,0))
 
     # ── вкладка «Телеметрия»: ПРИЁМ + ОТПРАВКА (обе стороны) ─────────────
     state.setdefault("readings", {}); state.setdefault("tele_srv", None)
@@ -1255,13 +1387,14 @@ def build_app(root, selftest=False):
     # ── вкладка «История»: чекпоинт показаний + журнал событий (только чтение) ──
     ttk.Label(tab_hist, wraplength=1150, foreground="#555", justify="left",
               text="История — ТОЛЬКО ЧТЕНИЕ. Разбор дампа W25Q64: чекпоинт показаний "
-                   "(0x7FE000/0x7FC000, кольцо 64×128 Б, пинг-понг) и журнал событий/"
-                   "аудита (0x15E000, записи по 16 Б). Столбец «Целостн.» = маркер 0xA5A5 "
+                   "(0x7FE000/0x7FC000), главный архив (до 0x128000) и журнал событий/"
+                   "аудита (0x15E000). Столбец «Целостн.» = маркер 0xA5A5 "
                    "И совпадение показания с его копией (+0x00 vs +0x10). Инструмент "
                    "разбирает и показывает; редактирования нет."
               ).pack(anchor="w")
     hctl = ttk.Frame(tab_hist); hctl.pack(fill="x", pady=4)
     ttk.Button(hctl, text="Загрузить дамп…", command=lambda: hist_load()).pack(side="left")
+    ttk.Button(hctl, text="Экспорт разбора CSV…", command=lambda: hist_export()).pack(side="left", padx=4)
     hist_path = ttk.Label(hctl, text="дамп не загружен", foreground="#777")
     hist_path.pack(side="left", padx=8)
 
@@ -1289,8 +1422,21 @@ def build_app(root, selftest=False):
     ev_tree.configure(yscrollcommand=evsb.set)
     ev_tree.pack(side="left", fill="both", expand=True); evsb.pack(side="left", fill="y")
 
+    arf = ttk.Labelframe(hpan, text="Главный архив измерений", padding=4); hpan.add(arf, weight=1)
+    ar_info = ttk.Label(arf, text="—", foreground="#555"); ar_info.pack(anchor="w")
+    ar_tree = ttk.Treeview(arf, columns=("idx", "dt", "vol", "t1", "t2"),
+                           show="headings", height=6)
+    for c, t, w in (("idx", "#", 55), ("dt", "Время (UTC)", 155),
+                    ("vol", "Показания, м³", 140), ("t1", "t1 °C", 75), ("t2", "t2 °C", 75)):
+        ar_tree.heading(c, text=t); ar_tree.column(c, width=w, anchor="w")
+    arsb = ttk.Scrollbar(arf, orient="vertical", command=ar_tree.yview)
+    ar_tree.configure(yscrollcommand=arsb.set)
+    ar_tree.pack(side="left", fill="both", expand=True); arsb.pack(side="left", fill="y")
+    state["history_checkpoint"] = []; state["history_archive"] = []; state["history_events"] = []
+
     def hist_fill(data):
         cp_tree.delete(*cp_tree.get_children()); ev_tree.delete(*ev_tree.get_children())
+        ar_tree.delete(*ar_tree.get_children())
         if state_mod:
             try:
                 base, recs = state_mod.parse_dump(data)
@@ -1302,6 +1448,7 @@ def build_app(root, selftest=False):
                                            f"{r['temp1']:.2f}", f"{r['temp2']:.2f}",
                                            "да" if ok else "НЕТ"),
                                    tags=() if ok else ("bad",))
+                state["history_checkpoint"] = recs
                 cp_info.config(text=f"Активная половина 0x{base:06X} · записей: {len(recs)}")
             except Exception as e:
                 cp_info.config(text=f"Чекпоинт не найден в дампе: {e}")
@@ -1312,9 +1459,25 @@ def build_app(root, selftest=False):
                     dt = datetime.datetime.utcfromtimestamp(t).strftime('%Y-%m-%d %H:%M:%S')
                     note = evlog_mod.KNOWN.get(txt) or evlog_mod.CODE_NAMES.get(code, "")
                     ev_tree.insert("", "end", values=(cnt, dt, f"0x{code:04X}", txt, note))
+                state["history_events"] = sorted(seen.items())
                 ev_info.config(text=f"Журнал 0x15E000 · записей: {len(seen)}")
             except Exception as e:
                 ev_info.config(text=f"Журнал не разобран: {e}")
+        if state_mod:
+            try:
+                archive = state_mod.parse_archive(data)
+                state["history_archive"] = archive
+                # В таблице показываем последние 2000, полный набор остаётся для CSV.
+                for r in archive[-2000:]:
+                    dt = r["datetime"].strftime("%Y-%m-%d %H:%M:%S") if r.get("datetime") else "—"
+                    ar_tree.insert("", "end", values=(r.get("index", ""), dt,
+                                                       f"{r.get('volume', 0):.6f}",
+                                                       f"{r.get('temp1', 0):.2f}",
+                                                       f"{r.get('temp2', 0):.2f}"))
+                ar_info.config(text=f"Главный архив: {len(archive)} записей" +
+                                    (" · показаны последние 2000" if len(archive) > 2000 else ""))
+            except Exception as e:
+                ar_info.config(text=f"Главный архив не разобран: {e}")
 
     def hist_load_path(p):
         try:
@@ -1328,6 +1491,219 @@ def build_app(root, selftest=False):
         p = filedialog.askopenfilename(filetypes=[("dump W25Q64", "*.bin"), ("все", "*.*")])
         if p:
             hist_load_path(p)
+
+    def hist_export():
+        if not (state.get("history_checkpoint") or state.get("history_archive") or
+                state.get("history_events")):
+            append("warn", "[история] сначала загрузи дамп."); return
+        p = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")],
+                                         initialfile="history_export.csv")
+        if not p:
+            return
+        with open(p, "w", encoding="utf-8-sig", newline="") as stream:
+            w = csv.writer(stream)
+            w.writerow(["section", "index", "datetime_utc", "value", "temp1", "temp2", "code", "note"])
+            for r in state.get("history_checkpoint", []):
+                dt = r["datetime"].isoformat(sep=" ") if r.get("datetime") else ""
+                ok = r.get("valid") and abs(r.get("volume", 0) - r.get("volume_copy", 0)) < 1e-9
+                w.writerow(["checkpoint", r.get("index"), dt, r.get("volume"),
+                            r.get("temp1"), r.get("temp2"), "", "integrity=ok" if ok else "integrity=bad"])
+            for r in state.get("history_archive", []):
+                dt = r["datetime"].isoformat(sep=" ") if r.get("datetime") else ""
+                w.writerow(["archive", r.get("index"), dt, r.get("volume"),
+                            r.get("temp1"), r.get("temp2"), "", ""])
+            for cnt, (ts, code, txt) in state.get("history_events", []):
+                dt = datetime.datetime.utcfromtimestamp(ts).isoformat(sep=" ")
+                note = (evlog_mod.KNOWN.get(txt) or evlog_mod.CODE_NAMES.get(code, "")) if evlog_mod else ""
+                w.writerow(["event", cnt, dt, txt, "", "", f"0x{code:04X}", note])
+        append("ok", f"[история] экспортировано → {p}")
+
+    # ── вкладка «Снимки · сценарии · мониторинг» ───────────────────────
+    ttk.Label(tab_lab, wraplength=1160, foreground="#555", justify="left",
+              text="Инженерная работа с реальным прибором: полный READ-аудит каталога, "
+                   "экспорт и сравнение снимков, проверяемые пакетные сценарии и "
+                   "периодический мониторинг параметров по активному физическому каналу."
+              ).pack(anchor="w")
+
+    lab_pan = ttk.Panedwindow(tab_lab, orient="horizontal"); lab_pan.pack(fill="both", expand=True, pady=4)
+    snap_frame = ttk.Labelframe(lab_pan, text="Снимок всех 158 команд", padding=5)
+    lab_pan.add(snap_frame, weight=3)
+    work_frame = ttk.Frame(lab_pan, padding=(5, 0, 0, 0)); lab_pan.add(work_frame, weight=2)
+
+    snap_bar = ttk.Frame(snap_frame); snap_bar.pack(fill="x")
+    scan_btn = ttk.Button(snap_bar, text="Аудит всех 158 команд",
+                          command=lambda: task_q.put({"op": "scan_all"}))
+    scan_btn.pack(side="left")
+    ttk.Button(snap_bar, text="Стоп", command=backend.cancel_current).pack(side="left", padx=3)
+    scan_var = tk.DoubleVar(value=0)
+    scan_progress = ttk.Progressbar(snap_bar, variable=scan_var, maximum=max(1, len(catalog)))
+    scan_progress.pack(side="left", fill="x", expand=True, padx=6)
+    scan_label = ttk.Label(snap_bar, text="0/158"); scan_label.pack(side="left")
+
+    snap_cols = ("name", "current", "reference", "status")
+    snap_tree = ttk.Treeview(snap_frame, columns=snap_cols, show="headings", height=16)
+    for c, t, w in (("name", "Команда", 170), ("current", "Текущий снимок", 180),
+                    ("reference", "Эталон / загруженный", 180), ("status", "Сравнение", 90)):
+        snap_tree.heading(c, text=t); snap_tree.column(c, width=w, anchor="w")
+    snap_tree.tag_configure("changed", foreground="#c0392b")
+    snap_tree.tag_configure("same", foreground="#0a7d0a")
+    snap_tree.tag_configure("error", foreground="#b00")
+    snap_sb = ttk.Scrollbar(snap_frame, orient="vertical", command=snap_tree.yview)
+    snap_tree.configure(yscrollcommand=snap_sb.set)
+    snap_tree.pack(side="left", fill="both", expand=True, pady=5); snap_sb.pack(side="left", fill="y", pady=5)
+
+    snap_actions = ttk.Frame(snap_frame); snap_actions.pack(fill="x", side="bottom")
+    loaded_lbl = ttk.Label(snap_actions, text="эталон не загружен", foreground="#777")
+    loaded_lbl.pack(side="left")
+
+    def refresh_snapshot_tree():
+        snap_tree.delete(*snap_tree.get_children())
+        current = state.get("current_snapshot", {})
+        reference = state.get("loaded_snapshot", {})
+        names = sorted(set(current) | set(reference))
+        for name in names:
+            a = current.get(name, "<нет>"); b = reference.get(name, "<нет>")
+            if not reference:
+                status = "—"; tags = ("error",) if str(a).startswith("<err:") else ()
+            elif str(a) == str(b):
+                status = "совпадает"; tags = ("same",)
+            else:
+                status = "ИЗМЕНЕНО"; tags = ("changed",)
+            snap_tree.insert("", "end", values=(name, a, b if reference else "", status), tags=tags)
+
+    def save_snapshot(ext):
+        values = state.get("current_snapshot", {})
+        if not values:
+            append("warn", "[снимок] сначала выполни полный опрос."); return
+        if tools_mod is None:
+            append("err", "[снимок] smt_tools.py не найден."); return
+        p = filedialog.asksaveasfilename(defaultextension=ext,
+                                         filetypes=[("JSON", "*.json"), ("CSV", "*.csv")],
+                                         initialfile=f"snapshot_{datetime.datetime.now():%Y%m%d_%H%M%S}{ext}")
+        if not p:
+            return
+        if p.lower().endswith(".csv"):
+            tools_mod.save_snapshot_csv(p, values)
+        else:
+            tools_mod.save_snapshot_json(p, values, source=state.get("mode", "unknown"),
+                                         meta={"catalog_count": len(catalog)})
+        append("ok", f"[снимок] сохранено {len(values)} параметров → {p}")
+
+    def load_reference():
+        if tools_mod is None:
+            append("err", "[снимок] smt_tools.py не найден."); return
+        p = filedialog.askopenfilename(filetypes=[("Снимки", "*.json *.csv"), ("все", "*.*")])
+        if not p:
+            return
+        try:
+            state["loaded_snapshot"] = tools_mod.load_snapshot(p)
+            loaded_lbl.config(text=f"эталон: {os.path.basename(p)} · {len(state['loaded_snapshot'])}")
+            refresh_snapshot_tree()
+            append("ok", f"[снимок] загружен эталон: {p}")
+        except Exception as exc:
+            append("err", f"[снимок] ошибка загрузки: {exc}")
+
+    ttk.Button(snap_actions, text="Экспорт JSON…", command=lambda: save_snapshot(".json")).pack(side="right")
+    ttk.Button(snap_actions, text="Экспорт CSV…", command=lambda: save_snapshot(".csv")).pack(side="right", padx=3)
+    ttk.Button(snap_actions, text="Загрузить эталон…", command=load_reference).pack(side="right", padx=3)
+
+    # Пакетные сценарии
+    batch_frame = ttk.Labelframe(work_frame, text="Пакетный сценарий", padding=5)
+    batch_frame.pack(fill="both", expand=True)
+    batch_text = scrolledtext.ScrolledText(batch_frame, height=11, wrap="none", font=("TkFixedFont", 9))
+    batch_text.pack(fill="both", expand=True)
+    batch_text.insert("1.0", """# Пример сценария работы с прибором
+READ DevInfo
+READ DEVICE_SN
+READ STATUS_SYSTEM
+READ Volume
+SLEEP 250
+SET LCD_TIME=15
+READ LCD_TIME
+# Критические ACTION/SET выполняются только в Экспертном режиме
+""")
+    batch_status = ttk.Label(batch_frame, text="готов", foreground="#555"); batch_status.pack(anchor="w")
+    batch_bar = ttk.Frame(batch_frame); batch_bar.pack(fill="x")
+    ttk.Button(batch_bar, text="Проверить", command=lambda: task_q.put(
+        {"op": "batch", "text": batch_text.get("1.0", "end"), "expert": state["expert"],
+         "dry_run": True})).pack(side="left")
+    ttk.Button(batch_bar, text="Выполнить", command=lambda: task_q.put(
+        {"op": "batch", "text": batch_text.get("1.0", "end"), "expert": state["expert"],
+         "dry_run": False})).pack(side="left", padx=3)
+    ttk.Button(batch_bar, text="Стоп", command=backend.cancel_current).pack(side="left")
+
+    def batch_load():
+        p = filedialog.askopenfilename(filetypes=[("SMT script", "*.smt *.txt"), ("все", "*.*")])
+        if p:
+            batch_text.delete("1.0", "end"); batch_text.insert("1.0", open(p, encoding="utf-8").read())
+    def batch_save():
+        p = filedialog.asksaveasfilename(defaultextension=".smt", filetypes=[("SMT script", "*.smt")])
+        if p:
+            open(p, "w", encoding="utf-8").write(batch_text.get("1.0", "end"))
+    ttk.Button(batch_bar, text="Открыть…", command=batch_load).pack(side="right")
+    ttk.Button(batch_bar, text="Сохранить…", command=batch_save).pack(side="right", padx=3)
+
+    # Мониторинг
+    mon_frame = ttk.Labelframe(work_frame, text="Периодический мониторинг", padding=5)
+    mon_frame.pack(fill="both", expand=True, pady=(6, 0))
+    mon_ctl = ttk.Frame(mon_frame); mon_ctl.pack(fill="x")
+    mon_names_var = tk.StringVar(value="Volume,VOLUME_INST,STATUS_SYSTEM,STATUS_ALARM")
+    ttk.Entry(mon_ctl, textvariable=mon_names_var).pack(side="left", fill="x", expand=True)
+    ttk.Label(mon_ctl, text="интервал, с:").pack(side="left", padx=(5, 1))
+    mon_interval_var = tk.StringVar(value="2")
+    ttk.Entry(mon_ctl, textvariable=mon_interval_var, width=5).pack(side="left")
+    mon_status = ttk.Label(mon_ctl, text="○", foreground="#777"); mon_status.pack(side="left", padx=4)
+
+    mon_tree = ttk.Treeview(mon_frame, columns=("ts", "name", "value"), show="headings", height=7)
+    for c, t, w in (("ts", "Время", 145), ("name", "Параметр", 140), ("value", "Значение", 170)):
+        mon_tree.heading(c, text=t); mon_tree.column(c, width=w, anchor="w")
+    mon_tree.pack(fill="both", expand=True, pady=4)
+
+    def monitor_tick():
+        if not state.get("monitoring"):
+            return
+        for name in state.get("monitor_names", []):
+            task_q.put({"op": "read", "name": name})
+        try:
+            ms = max(250, int(float(mon_interval_var.get().replace(",", ".")) * 1000))
+        except ValueError:
+            ms = 2000
+        state["monitor_after"] = root.after(ms, monitor_tick)
+
+    def monitor_start():
+        names = [x.strip() for x in mon_names_var.get().replace(";", ",").split(",") if x.strip()]
+        if not names:
+            append("warn", "[мониторинг] укажи хотя бы один параметр."); return
+        bad = [name for name in names if name in actions]
+        if bad:
+            append("err", "[мониторинг] действия нельзя опрашивать циклически: " + ", ".join(bad)); return
+        state["monitor_names"] = names; state["monitoring"] = True
+        mon_status.config(text="●", foreground="#0a7d0a")
+        monitor_tick()
+
+    def monitor_stop():
+        state["monitoring"] = False; mon_status.config(text="○", foreground="#777")
+        aid = state.pop("monitor_after", None)
+        if aid:
+            try: root.after_cancel(aid)
+            except Exception: pass
+
+    def monitor_export():
+        if not state.get("monitor_rows"):
+            append("warn", "[мониторинг] данных пока нет."); return
+        p = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
+        if p:
+            with open(p, "w", encoding="utf-8-sig", newline="") as stream:
+                w = csv.writer(stream); w.writerow(["timestamp", "command", "value"])
+                w.writerows(state["monitor_rows"])
+            append("ok", f"[мониторинг] экспорт → {p}")
+
+    mon_buttons = ttk.Frame(mon_frame); mon_buttons.pack(fill="x")
+    ttk.Button(mon_buttons, text="Старт", command=monitor_start).pack(side="left")
+    ttk.Button(mon_buttons, text="Стоп", command=monitor_stop).pack(side="left", padx=3)
+    ttk.Button(mon_buttons, text="Экспорт CSV…", command=monitor_export).pack(side="right")
+    ttk.Button(mon_buttons, text="Очистить", command=lambda: (
+        mon_tree.delete(*mon_tree.get_children()), state["monitor_rows"].clear())).pack(side="right", padx=3)
 
     # ── лог: вкладки «Журнал» и «Сырые байты (hex)» ─────────────────────
     nb = ttk.Notebook(root); nb.pack(fill="both", expand=False)
@@ -1379,6 +1755,31 @@ def build_app(root, selftest=False):
                     append(*payload)
                 elif kind == "hex":
                     append_hex(payload)
+                elif kind == "reading":
+                    name, value, ts = payload
+                    if state.get("monitoring") and name in state.get("monitor_names", []):
+                        row = (ts, name, value)
+                        state["monitor_rows"].append(row)
+                        mon_tree.insert("", 0, values=row)
+                        while len(mon_tree.get_children()) > 500:
+                            mon_tree.delete(mon_tree.get_children()[-1])
+                elif kind == "scan_progress":
+                    index, total, name, value = payload
+                    scan_var.set(index)
+                    scan_label.config(text=f"{index}/{total} · {name}")
+                elif kind == "snapshot":
+                    values, mode = payload
+                    state["current_snapshot"] = values
+                    state["mode"] = mode
+                    refresh_snapshot_tree()
+                    main_nb.select(tab_lab)
+                elif kind == "batch_progress":
+                    index, total, source = payload
+                    batch_status.config(text=f"{index}/{total}: {source}")
+                elif kind == "batch_done":
+                    ok, done, message = payload
+                    batch_status.config(text=f"{message} · шагов {done}",
+                                        foreground="#0a7d0a" if ok else "#c47f00")
                 elif kind == "tele_log":
                     append(*payload)
                 elif kind == "tele_reading":
@@ -1396,22 +1797,6 @@ def build_app(root, selftest=False):
                         listen_status.config(text="○ не слушаю", foreground="#777")
                 elif kind == "session_file":
                     state["session_file"] = payload
-                elif kind == "profile":
-                    prof = state.setdefault("profile", {})
-                    prof.update(payload)
-                    state["readings"] = {k: v for k, v in prof.items()
-                                         if not str(v).startswith("<err:")}
-                    for _nm, _v in payload.items():             # заполнить поля панелей
-                        if _nm in panel_vars and not str(_v).startswith("<err:"):
-                            panel_vars[_nm].set(_v)
-                    profile_lbl.config(
-                        text=f"снимок: {len(prof)} параметров "
-                             f"· {datetime.datetime.now():%H:%M:%S}")
-                    append("ok", f"[профиль] обновлено {len(payload)} параметров "
-                                 f"(всего {len(prof)}). Можно «Профиль → файл…».")
-                elif kind == "progress":
-                    done, total = payload
-                    profile_lbl.config(text=f"чтение {done}/{total}…")
                 elif kind == "password":
                     cred, value = payload
                     pw_var.set(value)
@@ -1419,15 +1804,31 @@ def build_app(root, selftest=False):
                         cred_var.set(cred)
                     append("ok", f"[auto] Пароль из {cred} подставлен в поле "
                                  f"аутентификации ({value}).")
+                elif kind == "raw_result":
+                    raw = payload
+                    append("ok", f"[RAW] получено {len(raw)} байт")
+                    main_nb.select(tab_terminal)
+                elif kind == "sms_messages":
+                    sms_text.delete("1.0", "end")
+                    for item in payload:
+                        sms_text.insert("end", f"#{item.get('index')} {item.get('header')}\n{item.get('text')}\n\n")
+                    if not payload:
+                        sms_text.insert("end", "Непрочитанных SMS нет.")
+                    main_nb.select(tab_terminal)
                 elif kind == "status":
-                    st, port = payload
-                    state["connected"] = (st == "on")
-                    if st == "on":
-                        status_lbl.config(text=f"● подключено {port}", foreground="#0a7d0a")
+                    st, endpoint = payload
+                    state["connected"] = st in ("serial", "tcp", "sms")
+                    state["mode"] = st if state["connected"] else "off"
+                    if state["connected"]:
+                        names={"serial":"ОПТОПОРТ","tcp":"TCP","sms":"GSM/SMS"}
+                        status_lbl.config(text=f"● {names.get(st,st)} {endpoint}", foreground="#0a7d0a")
                         conn_btn.config(text="Отключить")
+                        transport_cb.state(["disabled"])
                     else:
                         status_lbl.config(text="● отключено", foreground="#b00")
                         conn_btn.config(text="Подключить")
+                        transport_cb.state(["!disabled"])
+                        update_transport_fields()
         except queue.Empty:
             pass
         root.after(80, pump)
@@ -1470,6 +1871,13 @@ def build_app(root, selftest=False):
     root.after(80, pump)
 
     def on_close():
+        state["monitoring"] = False
+        aid = state.pop("monitor_after", None)
+        if aid:
+            try:
+                root.after_cancel(aid)
+            except Exception:
+                pass
         s = state.get("tele_srv")
         if s:
             s.stop()
@@ -1487,7 +1895,8 @@ def run_selftest(port):
     app = build_app(root, selftest=True)
     task_q = app["task_q"]
     steps = [
-        {"op": "connect", "port": port, "baud": 9600, "framing": "auto"},
+        {"op": "connect", "transport": "serial", "port": port, "baud": 9600,
+         "framing": "auto", "bytesize": 8, "parity": "N", "stopbits": 1},
         {"op": "preflight"},
         {"op": "read", "name": "DEVICE_SN"},
         {"op": "read", "name": "VER_PO"},

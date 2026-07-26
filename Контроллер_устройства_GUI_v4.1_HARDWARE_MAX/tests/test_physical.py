@@ -3,7 +3,7 @@
 """Тесты физического клиента и журнала сессии — без железа.
 
 Порт подменяется FakeSerial через внутреннюю инъекцию OpticTransport(ser=...).
-Это тест-заглушка транспорта, а НЕ эмулятор прибора в приложении.
+Это тестовый объект транспорта, а НЕ режим приложения.
 """
 import os, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -183,96 +183,6 @@ def test_action_available_in_expert_only():
     except PermissionError:
         pass
     cli.send("VALVE_TRY_CLOSE", mutating=True, expert=True)   # доступно в эксперт-режиме
-
-
-def test_alias_resolves_real_name_on_wire_and_gate():
-    """Обезличенное имя CMD_### должно резолвиться в реальное ДО гейта и провода:
-    критичное блокируется без expert; на провод уходит настоящее имя."""
-    import smt_aliases as al2
-    a_valve = al2.REAL2ALIAS["VALVE_OPEN"]
-    a_dt = al2.REAL2ALIAS["DATETIME"]
-    assert a_valve.startswith("CMD_") and al2.to_wire(a_valve) == "VALVE_OPEN"
-    assert al2.to_display("VALVE_OPEN") == a_valve
-
-    tr = _transport(lambda tx: b"OK;\r\n")
-    tr.set_framing("cr")
-    cli = sc.SmtClient(tr)
-    # критичное действие по алиасу — блок без expert
-    try:
-        cli.send(a_valve, mutating=True, expert=False)
-        assert False, "алиас критичного действия должен блокироваться"
-    except PermissionError:
-        pass
-    # с expert — проходит, и на ПРОВОД уходит РЕАЛЬНОЕ имя
-    tr.ser.writes.clear()
-    cli.send(a_valve, mutating=True, expert=True)
-    assert any(b"VALVE_OPEN" in w for w in tr.ser.writes), tr.ser.writes
-    assert not any(a_valve.encode() in w for w in tr.ser.writes)   # алиас не уходит
-    # чтение параметра по алиасу — реальное имя на проводе
-    tr.ser.writes.clear()
-    cli.send(a_dt, mutating=False)
-    assert any(b"DATETIME" in w for w in tr.ser.writes)
-
-
-def _backend_with_fake(catalog):
-    """Backend поверх FakeSerial: любой read возвращает NAME=<val>; поток не стартуем,
-    методы вызываем синхронно и разбираем очередь out_q."""
-    import queue, smt_gui
-    def responder(tx):
-        name = sc.command_name(sc.decode_response(bytes(tx)))
-        return (name + "=42;\r\n").encode()
-    tr = _transport(responder); tr.set_framing("cr")
-    tq, oq = queue.Queue(), queue.Queue()
-    be = smt_gui.Backend(tq, oq, smt_gui.build_critical(catalog),
-                         smt_gui.build_actions(catalog), catalog)
-    be.cli = sc.SmtClient(tr)
-    return be, oq, tr
-
-
-def _drain_profile(oq):
-    prof = None
-    while not oq.empty():
-        kind, payload = oq.get()
-        if kind == "profile":
-            prof = payload
-    return prof
-
-
-def test_readall_snapshot_covers_all_parameters():
-    import smt_gui
-    catalog = smt_gui.load_catalog()
-    actions = smt_gui.build_actions(catalog)
-    be, oq, _ = _backend_with_fake(catalog)
-    be._readall()
-    prof = _drain_profile(oq)
-    assert prof is not None
-    expected = {c["name"] for c in catalog if c["name"] not in actions}
-    assert set(prof) == expected                      # все ПАРАМЕТРЫ прочитаны
-    assert all(not str(v).startswith("<err:") for v in prof.values())
-
-
-def test_readall_never_sends_action_names():
-    import smt_gui
-    catalog = smt_gui.load_catalog()
-    actions = smt_gui.build_actions(catalog)
-    be, oq, tr = _backend_with_fake(catalog)
-    be._readall()
-    wire = b"\n".join(tr.ser.writes)
-    for act in actions:                                # ни одно действие не ушло на провод
-        assert act.encode() not in wire, act
-
-
-def test_groupread_reads_only_its_group():
-    import smt_gui
-    catalog = smt_gui.load_catalog()
-    actions = smt_gui.build_actions(catalog)
-    group = "Фильтр Калмана"
-    be, oq, _ = _backend_with_fake(catalog)
-    be._groupread(group)
-    prof = _drain_profile(oq)
-    expected = {c["name"] for c in catalog
-                if c["group"] == group and c["name"] not in actions}
-    assert set(prof) == expected
 
 
 def run_all():

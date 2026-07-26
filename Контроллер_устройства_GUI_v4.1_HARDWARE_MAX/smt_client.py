@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Клиент физического прибора через оптический UART/RS-485.
+"""Клиент реального прибора через оптопорт, TCP-шлюз или GSM/SMS.
 
-Модуль специально не содержит эмуляторов. Главная задача транспорта — надёжно
-работать с реальной USB-оптоголовкой: безопасно определить кадрирование на
-команде чтения, снять оптическое эхо, дождаться полного ответа и пережить
-фрагментированную выдачу UART.
+В модуле нет эмуляторов. Основной транспорт работает с USB-оптоголовкой и
+поддерживает расширенную настройку serial-линии, автоматическое определение
+кадрирования, снятие оптического эха, сбор фрагментированного ответа и точный
+сырой обмен байтами. Дополнительно доступны реальные TCP- и GSM-транспорты.
 """
 from __future__ import annotations
 
@@ -14,17 +14,13 @@ import re
 import sys
 import threading
 import time
+import socket
 from typing import Callable, Optional
 
 try:
     import serial
 except ImportError:  # GUI покажет нормальную ошибку при попытке подключения
     serial = None
-
-try:
-    import smt_aliases as _aliases   # обезличенные имена (CMD_###) -> реальные
-except Exception:
-    _aliases = None
 
 BAUD = 9600
 
@@ -83,6 +79,15 @@ IMPERATIVE_ACTIONS = {
     "CLEAR_SABOTAG", "CLEAR_ARHIVE", "CLEAR_SN_SGM",
     "WARNING_CLEAR", "ALARM_CLEAR", "CRASH_CLEAR",
     "DEFAULT_SETTINGS", "RSTSMT", "COMMISSIONING",
+}
+
+# Любая императивная команда выполняет операцию на физическом устройстве. Даже
+# сервисные действия, которые кажутся безобидными (START/EXIT/READ_CALIB_LOG),
+# требуют явного экспертного подтверждения и отправляются только один раз.
+PROTECTED_WRITE |= IMPERATIVE_ACTIONS | {
+    "READ_CALIB_LOG", "EXIT", "READYTD", "READY_TO_DIALOG",
+    "ADD_DISC_ALARM", "ADD_DISC_CRASH", "CLEAR_COUNT", "CLEAR_QDF",
+    "CLEAR_MDM_CNT", "Modem_START", "START", "ADD_DISCREDITED_VOLUME",
 }
 
 # Имена-креденшлы: их ЗНАЧЕНИЕ не пишем в журнал сессии (маскируем).
@@ -211,6 +216,14 @@ class OpticTransport:
         idle_gap: Optional[float] = None,
         read_retries: Optional[int] = None,
         max_response: int = 65536,
+        bytesize: int = 8,
+        parity: str = "N",
+        stopbits: float = 1,
+        xonxoff: bool = False,
+        rtscts: bool = False,
+        dsrdtr: bool = False,
+        dtr: bool = False,
+        rts: bool = False,
         ser=None,
     ):
         # `ser` — внутренняя инъекция уже открытого порта (используется в тестах
@@ -232,6 +245,14 @@ class OpticTransport:
         self.idle_gap = max(0.03, float(idle_gap))
         self.read_retries = max(0, int(read_retries))
         self.max_response = max(256, int(max_response))
+        self.bytesize = int(bytesize)
+        self.parity = str(parity).upper()
+        self.stopbits = float(stopbits)
+        self.xonxoff = bool(xonxoff)
+        self.rtscts = bool(rtscts)
+        self.dsrdtr = bool(dsrdtr)
+        self.dtr_level = bool(dtr)
+        self.rts_level = bool(rts)
         self.frame: Optional[Callable[[str], bytes]] = None
         self.frame_name: Optional[str] = None
         self.last_tx = b""
@@ -247,18 +268,31 @@ class OpticTransport:
             self.ser = ser
             return
 
+        bytesize_map = {5: serial.FIVEBITS, 6: serial.SIXBITS,
+                        7: serial.SEVENBITS, 8: serial.EIGHTBITS}
+        parity_map = {"N": serial.PARITY_NONE, "E": serial.PARITY_EVEN,
+                      "O": serial.PARITY_ODD, "M": serial.PARITY_MARK,
+                      "S": serial.PARITY_SPACE}
+        stopbits_map = {1.0: serial.STOPBITS_ONE, 1.5: serial.STOPBITS_ONE_POINT_FIVE,
+                        2.0: serial.STOPBITS_TWO}
+        if self.bytesize not in bytesize_map:
+            raise TransportError("Размер слова должен быть 5, 6, 7 или 8 бит")
+        if self.parity not in parity_map:
+            raise TransportError("Чётность должна быть N/E/O/M/S")
+        if self.stopbits not in stopbits_map:
+            raise TransportError("Стоп-биты должны быть 1, 1.5 или 2")
         kwargs = dict(
             port=port,
             baudrate=self.baud,
-            bytesize=serial.EIGHTBITS,
-            parity=serial.PARITY_NONE,
-            stopbits=serial.STOPBITS_ONE,
+            bytesize=bytesize_map[self.bytesize],
+            parity=parity_map[self.parity],
+            stopbits=stopbits_map[self.stopbits],
             timeout=0.05,
             write_timeout=1.5,
             inter_byte_timeout=None,
-            xonxoff=False,
-            rtscts=False,
-            dsrdtr=False,
+            xonxoff=self.xonxoff,
+            rtscts=self.rtscts,
+            dsrdtr=self.dsrdtr,
         )
         try:
             if os.name != "nt":
@@ -270,10 +304,11 @@ class OpticTransport:
         except Exception as exc:
             raise TransportError(f"Не удалось открыть {port}: {exc}") from exc
 
-        # Не дёргать reset/boot-линии USB-UART при открытии.
-        for attr in ("dtr", "rts"):
+        # Уровни служебных линий задаются явно. По умолчанию оба выключены,
+        # чтобы USB-UART не дёргал reset/boot входы прибора при открытии.
+        for attr, level in (("dtr", self.dtr_level), ("rts", self.rts_level)):
             try:
-                setattr(self.ser, attr, False)
+                setattr(self.ser, attr, level)
             except Exception:
                 pass
         time.sleep(0.12)
@@ -393,19 +428,266 @@ class OpticTransport:
                     time.sleep(0.12)
             return last
 
+    def raw_exchange(self, payload: bytes, *, response_timeout: Optional[float] = None) -> bytes:
+        """Передать точные байты без кадрирования и вернуть сырой ответ.
+
+        Метод предназначен для диагностики неизвестных/двоичных расширений
+        протокола. Оптическое эхо здесь не удаляется, потому что пользователь
+        запросил именно сырой обмен.
+        """
+        if not isinstance(payload, (bytes, bytearray)):
+            raise TypeError("payload должен быть bytes")
+        data = bytes(payload)
+        with self._lock:
+            self._ensure_open()
+            old_timeout = self.response_timeout
+            if response_timeout is not None:
+                self.response_timeout = max(0.05, float(response_timeout))
+            started = time.monotonic()
+            try:
+                try:
+                    self.ser.reset_input_buffer()
+                    self.ser.write(data)
+                    self.ser.flush()
+                except Exception as exc:
+                    raise PortClosedError(f"Ошибка сырой записи в {self.port}: {exc}") from exc
+                raw = self._read_burst()
+            finally:
+                self.response_timeout = old_timeout
+            self.last_tx = data
+            self.last_raw_rx = self.last_rx = raw
+            self.last_echo_removed = False
+            self.last_latency_ms = int((time.monotonic() - started) * 1000)
+            self.last_attempts = 1
+            return raw
+
+    def line_description(self) -> str:
+        flow = []
+        if self.xonxoff: flow.append("XON/XOFF")
+        if self.rtscts: flow.append("RTS/CTS")
+        if self.dsrdtr: flow.append("DSR/DTR")
+        return (f"{self.port} · {self.baud} {self.bytesize}{self.parity}{self.stopbits:g}"
+                + (" · " + "+".join(flow) if flow else ""))
+
 
 class SmsTransport:
-    def send(self, cmd):
-        raise NotImplementedError("SMS-транспорт не входит в физическую версию оптопорта")
+    """Отправка команд через обычный GSM-модем с AT-интерфейсом.
+
+    Транспорт посылает SMS и возвращает ответ самого модема (`+CMGS`/`OK`). Ответ
+    удалённого устройства можно получить методом :meth:`receive_unread`. Повторы
+    отправки намеренно отсутствуют. При использовании через SmtClient экспертный
+    гейт работает так же, как для оптопорта.
+    """
+    def __init__(self, modem_port: str, phone: str, *, baud: int = 115200,
+                 response_timeout: float = 20.0, prefix: str = "", ser=None):
+        if ser is None and serial is None:
+            raise TransportError("Нужен pyserial: pip install pyserial")
+        if not phone:
+            raise TransportError("Не указан номер получателя SMS")
+        self.port, self.phone, self.baud = modem_port, phone, int(baud)
+        self.response_timeout, self.prefix = float(response_timeout), prefix
+        self._lock = threading.RLock()
+        self.ser = ser or serial.Serial(port=modem_port, baudrate=self.baud,
+                                        timeout=0.1, write_timeout=3)
+        self.frame_name = "sms-text"
+        self.last_tx = self.last_raw_rx = self.last_rx = b""
+        self.last_echo_removed = False; self.last_latency_ms = 0; self.last_attempts = 1
+        self._at("AT", timeout=3)
+        self._at("ATE0", timeout=3)
+        rep = self._at("AT+CMGF=1", timeout=3)
+        if b"ERROR" in rep.upper():
+            raise TransportError("GSM-модем не включил текстовый режим SMS")
+
+    @property
+    def is_open(self):
+        return bool(getattr(self.ser, "is_open", False))
+
+    def close(self):
+        try:
+            self.ser.close()
+        except Exception:
+            pass
+
+    def _read_until(self, *, timeout=None, prompt=False):
+        deadline = time.monotonic() + (self.response_timeout if timeout is None else timeout)
+        buf = bytearray(); last = None
+        while time.monotonic() < deadline:
+            waiting = int(getattr(self.ser, "in_waiting", 0) or 0)
+            chunk = self.ser.read(min(waiting, 4096)) if waiting else self.ser.read(1)
+            if chunk:
+                buf.extend(chunk); last = time.monotonic()
+                up = bytes(buf).upper()
+                if prompt and b">" in buf:
+                    break
+                if b"\r\nOK\r\n" in up or b"\r\nERROR\r\n" in up or b"+CMS ERROR:" in up:
+                    break
+            elif last is not None and time.monotonic() - last > 0.35:
+                break
+        return bytes(buf)
+
+    def _at(self, command, *, timeout=None, prompt=False):
+        try:
+            self.ser.reset_input_buffer()
+        except Exception:
+            pass
+        payload = (command + "\r").encode("ascii", "replace")
+        self.ser.write(payload); self.ser.flush()
+        return self._read_until(timeout=timeout, prompt=prompt)
+
+    def send(self, cmd: str, *, retry_safe: bool = False) -> bytes:
+        del retry_safe
+        text = self.prefix + str(cmd).strip("\r\n")
+        with self._lock:
+            started = time.monotonic()
+            prompt = self._at(f'AT+CMGS="{self.phone}"', timeout=8, prompt=True)
+            if b">" not in prompt:
+                raise TransportError("GSM-модем не выдал приглашение '>' для SMS")
+            payload = text.encode("utf-8") + b"\x1a"
+            self.last_tx = payload
+            self.ser.write(payload); self.ser.flush()
+            raw = self._read_until(timeout=self.response_timeout)
+            self.last_raw_rx = self.last_rx = raw
+            self.last_latency_ms = int((time.monotonic() - started) * 1000)
+            if b"ERROR" in raw.upper() or b"+CMS ERROR:" in raw.upper():
+                raise TransportError("Ошибка отправки SMS: " + decode_response(raw).strip())
+            return raw
+
+    def send_at(self, command: str, *, timeout: float = 5.0) -> bytes:
+        """Выполнить диагностическую AT-команду модема."""
+        with self._lock:
+            started = time.monotonic()
+            raw = self._at(str(command).strip(), timeout=timeout)
+            self.last_tx = (str(command).strip() + "\r").encode("ascii", "replace")
+            self.last_raw_rx = self.last_rx = raw
+            self.last_latency_ms = int((time.monotonic() - started) * 1000)
+            self.last_attempts = 1
+            return raw
+
+    def health_check(self) -> bytes:
+        return self.send_at("AT", timeout=3)
+
+    def receive_unread(self, *, delete: bool = False):
+        """Получить непрочитанные SMS: список dict(index, header, text)."""
+        with self._lock:
+            raw = self._at('AT+CMGL="REC UNREAD"', timeout=10)
+            text = decode_response(raw)
+            lines = [x.strip() for x in text.splitlines() if x.strip()]
+            out = []
+            for i, line in enumerate(lines):
+                if not line.startswith("+CMGL:"):
+                    continue
+                try:
+                    index = int(line.split(":", 1)[1].split(",", 1)[0].strip())
+                except Exception:
+                    index = -1
+                body = lines[i + 1] if i + 1 < len(lines) and not lines[i + 1].startswith("+") else ""
+                out.append({"index": index, "header": line, "text": body})
+                if delete and index >= 0:
+                    self._at(f"AT+CMGD={index}", timeout=5)
+            return out
 
 
 class TcpServerTransport:
-    def send(self, cmd):
-        raise NotImplementedError("GPRS-приём выполняет smt_server.py/вкладка Телеметрия")
+    """Командный TCP-транспорт request/response.
+
+    Для входящей GPRS-телеметрии по-прежнему используется smt_server.py. Этот
+    класс закрывает обратное направление: отправляет одну команду удалённому
+    TCP-шлюзу и собирает ответ до закрытия соединения или межбайтовой паузы.
+    """
+    def __init__(self, host: str, port: int, *, timeout: float = 3.0,
+                 idle_gap: float = 0.25, terminator: bytes = b"\r\n",
+                 max_response: int = 1024 * 1024):
+        self.host, self.port = host, int(port)
+        self.timeout, self.idle_gap = float(timeout), float(idle_gap)
+        self.terminator, self.max_response = terminator, int(max_response)
+        self.frame_name = "tcp"
+        self.last_tx = self.last_raw_rx = self.last_rx = b""
+        self.last_echo_removed = False; self.last_latency_ms = 0; self.last_attempts = 1
+        self._lock = threading.RLock(); self._open = True
+
+    @property
+    def is_open(self):
+        return self._open
+
+    def close(self):
+        self._open = False
+
+    def send(self, cmd: str, *, retry_safe: bool = False) -> bytes:
+        del retry_safe
+        if not self._open:
+            raise PortClosedError("TCP-транспорт закрыт")
+        payload = str(cmd).strip("\r\n").encode("utf-8") + self.terminator
+        with self._lock:
+            started = time.monotonic(); buf = bytearray(); last = None
+            try:
+                with socket.create_connection((self.host, self.port), timeout=self.timeout) as sock:
+                    sock.settimeout(min(0.2, self.timeout)); sock.sendall(payload)
+                    try:
+                        sock.shutdown(socket.SHUT_WR)
+                    except OSError:
+                        pass
+                    deadline = time.monotonic() + self.timeout
+                    while time.monotonic() < deadline and len(buf) < self.max_response:
+                        try:
+                            chunk = sock.recv(min(4096, self.max_response - len(buf)))
+                        except socket.timeout:
+                            if last is not None and time.monotonic() - last >= self.idle_gap:
+                                break
+                            continue
+                        if not chunk:
+                            break
+                        buf.extend(chunk); last = time.monotonic()
+            except OSError as exc:
+                raise TransportError(f"TCP {self.host}:{self.port}: {exc}") from exc
+            self.last_tx = payload
+            self.last_raw_rx = self.last_rx = bytes(buf)
+            self.last_latency_ms = int((time.monotonic() - started) * 1000)
+            return self.last_rx
+
+    def probe(self, probe_cmd: str = "DevInfo") -> bytes:
+        return self.send(probe_cmd, retry_safe=True)
+
+    def raw_exchange(self, payload: bytes, *, response_timeout: Optional[float] = None) -> bytes:
+        if not self._open:
+            raise PortClosedError("TCP-транспорт закрыт")
+        if not isinstance(payload, (bytes, bytearray)):
+            raise TypeError("payload должен быть bytes")
+        data = bytes(payload)
+        timeout = self.timeout if response_timeout is None else float(response_timeout)
+        with self._lock:
+            started = time.monotonic(); buf = bytearray(); last = None
+            try:
+                with socket.create_connection((self.host, self.port), timeout=timeout) as sock:
+                    sock.settimeout(min(0.2, timeout)); sock.sendall(data)
+                    try:
+                        sock.shutdown(socket.SHUT_WR)
+                    except OSError:
+                        pass
+                    deadline = time.monotonic() + timeout
+                    while time.monotonic() < deadline and len(buf) < self.max_response:
+                        try:
+                            chunk = sock.recv(min(4096, self.max_response - len(buf)))
+                        except socket.timeout:
+                            if last is not None and time.monotonic() - last >= self.idle_gap:
+                                break
+                            continue
+                        if not chunk:
+                            break
+                        buf.extend(chunk); last = time.monotonic()
+            except OSError as exc:
+                raise TransportError(f"TCP {self.host}:{self.port}: {exc}") from exc
+            self.last_tx = data
+            self.last_raw_rx = self.last_rx = bytes(buf)
+            self.last_latency_ms = int((time.monotonic() - started) * 1000)
+            self.last_attempts = 1
+            return self.last_rx
+
+    def line_description(self) -> str:
+        return f"TCP {self.host}:{self.port}"
 
 
 class SmtClient:
-    def __init__(self, transport: OpticTransport):
+    def __init__(self, transport):
         self.t = transport
 
     def send(self, cmd: str, *, retry_safe: bool = False, expert: bool = False,
@@ -417,12 +699,7 @@ class SmtClient:
         ИЗМЕНЯЮЩИЕ операции (`VALVE_OPEN`, `CLEAR_SABOTAG`, `SERVER_URL=…`)
         блокируются, пока не передан expert=True — живой второй рубеж поверх гейта GUI.
         Чтение защищённого параметра (get, например `VALVE`) разрешено всегда.
-        Повтор допустим только для чтения; запись/действие не повторяются никогда.
-
-        Если пришло обезличенное имя (`CMD_###`), оно резолвится в реальное ДО
-        проверок и отправки — гейт и провод всегда работают с настоящим именем."""
-        if _aliases is not None:
-            cmd = _aliases.to_wire(cmd)
+        Повтор допустим только для чтения; запись/действие не повторяются никогда."""
         name = command_name(cmd)
         mut = mutating if mutating is not None else ("=" in cmd)
         if mut and name in PROTECTED_WRITE and not expert:
@@ -467,7 +744,8 @@ def main():
         if "--send" in sys.argv:
             cmd = sys.argv[sys.argv.index("--send") + 1]
             try:
-                raw = cli.send(cmd)
+                mutating = "=" in cmd or command_name(cmd) in IMPERATIVE_ACTIONS
+                raw = cli.send(cmd, expert=("--expert" in sys.argv), mutating=mutating)
                 print(f">> {cmd}\n<< {raw!r}")
             except PermissionError as exc:
                 print(exc)
