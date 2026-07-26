@@ -88,15 +88,12 @@ try:
 except Exception:
     tele_store_mod = None
 
-# Креды уровней доступа для Auth-scan (только ЧТЕНИЕ). Пароль может быть НЕ дефолтным —
-# читаем действующее значение (находка F7), не подставляя 123456.
-SECRET_READS = [
-    ("PASSWORD_PROVIDER",    "пароль провайдера (=%s, открытым текстом) — высший"),
-    ("PASWORD_PROVID_VALUE", "числовое представление/проверка пароля"),
-    ("PASSWORD_OMEGA",       "пароль omega (может быть маскирован ******)"),
-    ("PASSWORD_OMEGA2",      "сервисный код omega (=%04x)"),
-    ("MAGIC",                "сервисная разблокировка"),
-    ("ENABLE_OMEGA",         "статус omega-доступа"),
+# Безопасная диагностика механизма доступа. Сами PASSWORD_* автоматически не
+# читаются: исследованная прошивка способна вернуть секрет открытым текстом.
+ACCESS_DIAGNOSTICS = [
+    ("PASWORD_PROVID_VALUE", "служебный параметр Provider; не является индикатором текущей сессии"),
+    ("ENABLE_OMEGA",         "флаг механизма Omega"),
+    ("EVENT_OMEGA",          "события механизма Omega"),
 ]
 MASK_MARKERS = ("****", "xxxx", "----")
 
@@ -105,11 +102,9 @@ TELE_PARAMS = ["Volume", "VOLUME_GLOB", "VOLUME_INST", "VOLUME_COMMIS", "VOLUME_
                "ArcNumRecords", "COUNT_SESSION", "ERROR_SESSION", "SERVER_URL",
                "STATUS_SYSTEM", "STATUS_ALARM", "DEVICE_SN"]
 
-# Команды, меняющие учётные показания. Их запись выполняется отдельной штатной
-# Provider-процедурой: подтверждённая авторизация -> SET -> read-back.
-# CLEAR_ARHIVE является отдельной операцией и никогда не запускается автоматически.
+# Команды учётных показаний. Возможность записи определяется F1/F2 конкретной
+# команды и фактически активным уровнем в прошивке.
 READING_COMMANDS = {"Volume", "VOLUME_GLOB", "VOLUME_COMMIS", "VOLUME_DISC"}
-PROVIDER_AUTH_TTL = 15 * 60
 TELEMETRY_DB_PATH = os.path.join(HERE, "sessions", "telemetry.sqlite3")
 
 
@@ -318,11 +313,14 @@ def classify_secret(value):
     return "открытым текстом"
 
 
-# Уровни доступа (байт 0x20000D62 / флаги 0x2000B1B0), см. отчёт §8bis.
-LEVELS = ["Гость", "Провайдер (П)", "Omega (О)", "Заводской (f)"]
-# Учётные данные для аутентификации на уровень (пресетные имена команд).
-AUTH_CREDS = ["PASSWORD_PROVIDER", "PASSWORD_OMEGA", "ENABLE_OMEGA",
-              "PASSWORD_FABRIC", "MAGIC", "PASSWORD_OMEGA2"]
+# Подтверждённые прошивкой уровни: F1/Provider хранится как байт 0x66 ('f'),
+# F2/Omega — как 0x55 ('U'). Отдельный уровень Factory таблицами прав не задан.
+LEVELS = ["Не определён", "Provider (F1 · f)", "Omega (F2 · U)"]
+AUTH_LEVELS = {
+    "Provider": ("provider", "PASSWORD_PROVIDER"),
+    "Omega": ("omega", "PASSWORD_OMEGA"),
+}
+AUTH_CREDS = [item[1] for item in AUTH_LEVELS.values()]
 
 # Пресеты значений для enum/статусных команд (значение до пробела — отправляется).
 ENUM_OPTS = {
@@ -373,15 +371,12 @@ def build_actions(catalog):
 
 
 def access_at_level(cmd, level):
-    """Доступ команды на выбранном уровне (по её флагам П/О). Возвращает
-    ('чтение+запись'|'чтение'|'нет', can_read, can_write)."""
-    col = cmd["prov"] if level in ("Провайдер (П)", "Заводской (f)") else \
-          cmd["user"] if level == "Omega (О)" else None
-    if col is None:                       # Гость — публичное чтение по гейту прибора
-        return ("гость: публичное чтение (по гейту прибора)", True, False)
-    r = col[:2] != "00" or col[1] == "1"
-    w = col.endswith("1") and col != "0100"
-    txt = {"0101": "чтение+запись", "0100": "чтение", "0000": "нет"}.get(col, col)
+    """Права команды по таблице F1/F2 для текущего уровня."""
+    col = cmd["prov"] if level == "Provider (F1 · f)" else \
+          cmd["user"] if level == "Omega (F2 · U)" else None
+    if col is None:
+        return ("уровень не подтверждён", True, False)
+    txt = {"0101": "чтение+запись", "0100": "только чтение", "0000": "нет доступа"}.get(col, col)
     return (txt, col in ("0101", "0100"), col == "0101")
 
 
@@ -404,11 +399,12 @@ class Backend(threading.Thread):
         self.critical = critical or set()
         self.actions = actions or set()
         self.catalog = list(catalog or [])
+        self.catalog_map = {item.get("name"): item for item in self.catalog}
         self._echo_noted = False
         self.recorder = None
         self.mode = "off"
         self.cancel_event = threading.Event()
-        self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
+        self.auth_state = {"level": "unknown", "verified": False, "verified_at": 0.0}
 
     def cancel_current(self):
         self.cancel_event.set()
@@ -438,15 +434,15 @@ class Backend(threading.Thread):
                 elif op == "read":
                     self._read(task["name"])
                 elif op == "write":
-                    self._send(f"{task['name']}={task['val']}", task.get("expert", False))
-                elif op == "write_reading_provider":
-                    self._write_reading_provider(task)
-                elif op == "clear_archive_provider":
-                    self._clear_archive_provider(task)
+                    self._write_catalog(task)
+                elif op == "write_verified":
+                    self._write_verified(task)
+                elif op == "action":
+                    self._action_catalog(task)
                 elif op == "send":
                     self._send(task["text"], task.get("expert", False))
                 elif op == "auth":
-                    self._auth(task["cred"], task["value"])
+                    self._auth(task["level"], task["value"])
                 elif op == "passport":
                     self._passport()
                 elif op == "authscan":
@@ -596,7 +592,7 @@ class Backend(threading.Thread):
             pass
         self.cli = None
         self.mode = "off"
-        self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
+        self.auth_state = {"level": "unknown", "verified": False, "verified_at": 0.0}
         self.post("auth_state", dict(self.auth_state))
 
     def _tx(self, cmd, retry_safe=False, expert=False, mutating=None, kind="read"):
@@ -675,14 +671,6 @@ class Backend(threading.Thread):
             self._read(name)
             return
         critical = name in self.critical
-        if name == "CLEAR_ARHIVE":
-            raise PermissionError(
-                "CLEAR_ARHIVE доступна только отдельной Provider-операцией с проверкой ArcNumRecords=0")
-        if kind == "write" and name in READING_COMMANDS:
-            raise PermissionError(
-                f"{name}=… меняет учётные показания. Используй контролируемую кнопку "
-                "«Записать показание (Provider)»: подтверждённая авторизация, SET и read-back. "
-                "Очистка архива выполняется отдельно.")
         if critical and not expert:
             self.log("warn", f"[заблокировано] '{name}' — критичная команда ({kind}). "
                              "Включи «Экспертный режим» для фактической отправки на прибор.")
@@ -699,146 +687,107 @@ class Backend(threading.Thread):
         raw, val = self._tx(name, retry_safe=True, mutating=False, kind="service-read")
         return pretty(val) if val not in (None, "") else ""
 
-    def _provider_is_verified(self):
-        if not self.auth_state.get("verified") or self.auth_state.get("level") != "provider":
-            return False
-        return time.time() - float(self.auth_state.get("verified_at") or 0.0) <= PROVIDER_AUTH_TTL
+    def _active_access(self):
+        if not self.auth_state.get("verified"):
+            return None
+        level = self.auth_state.get("level")
+        return level if level in ("provider", "omega") else None
 
-    def _require_provider(self, *, expert=False):
-        if not expert:
-            raise PermissionError("Операция требует Экспертный режим")
-        if not self._provider_is_verified():
-            self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
-            self.post("auth_state", dict(self.auth_state))
-            raise PermissionError(
-                "Уровень Provider не подтверждён или истёк. Выполни штатную авторизацию заново")
+    def _require_catalog_access(self, name, operation, *, expert=False):
+        item = self.catalog_map.get(name)
+        if item is None:
+            raise KeyError(f"{name}: команда отсутствует в каталоге")
+        level = self._active_access()
+        if level is None:
+            raise PermissionError("Сначала предъяви пароль Provider или Omega на текущем подключении")
+        column = item.get("prov") if level == "provider" else item.get("user")
+        allowed = column == "0101" if operation in ("write", "action") else column in ("0100", "0101")
+        if not allowed:
+            label = "F1/Provider" if level == "provider" else "F2/Omega"
+            raise PermissionError(f"{name}: операция {operation} запрещена таблицей {label} ({column})")
+        if name in self.critical and not expert:
+            raise PermissionError(f"{name}: критическая операция требует Экспертный режим")
+        return level, column
 
-    def _audit_service(self, *, kind, name, before="", after="", operator="", reason=""):
-        if not self.recorder:
-            return
-        try:
-            self.recorder.record(
-                kind=kind, name=name, cmd=name,
-                value={"before": before, "after": after,
-                       "operator": operator or "не указан", "reason": reason or "не указана"},
-                ok=True, expert=True, critical=True,
-            )
-        except Exception:
-            pass
+    def _write_catalog(self, task):
+        name = str(task.get("name") or "").strip()
+        value = str(task.get("val") or "").strip()
+        self._require_catalog_access(name, "write", expert=task.get("expert", False))
+        self._send(f"{name}={value}", task.get("expert", False))
 
-    def _write_reading_provider(self, task):
-        """Штатная запись показания после подтверждённой Provider-авторизации.
+    def _action_catalog(self, task):
+        name = str(task.get("name") or "").strip()
+        self._require_catalog_access(name, "action", expert=task.get("expert", False))
+        self._send(name, task.get("expert", False))
 
-        Архив прибора не очищается. После единственной команды SET выполняется
-        обязательный read-back; результат и основание операции попадают в журнал
-        сессии, при этом пароль Provider не сохраняется.
-        """
-        self._require_provider(expert=task.get("expert", False))
-        name = str(task.get("name") or "Volume").strip()
-        if name not in READING_COMMANDS:
-            raise ValueError(f"{name}: не является командой учётных показаний")
+    def _write_verified(self, task):
+        """Один SET с необязательным read-back; права берутся из F1/F2."""
+        name = str(task.get("name") or "").strip()
+        self._require_catalog_access(name, "write", expert=task.get("expert", False))
         target = parse_reading(task.get("val", ""))
         target_text = format(target, "f")
-
-        operator = str(task.get("operator") or "").strip()
-        reason = str(task.get("reason") or "").strip()
-        if not operator or not reason:
-            raise ValueError("Для сервисной записи обязательны оператор и причина")
-
-        self.log("warn", f"[Provider] {name}: штатная запись {target_text}; архив не изменяется")
-        before = self._read_value_quiet(name)
-        parse_reading(before)
-        device_sn = self._read_value_quiet("DEVICE_SN")
-        arc_before = self._read_value_quiet("ArcNumRecords")
-
-        self._tx(f"{name}={target_text}", retry_safe=False, expert=True,
-                 mutating=True, kind="reading-set")
-        after = self._read_value_quiet(name)
-        actual = parse_reading(after)
-        tolerance = max(abs(target) * Decimal("0.000000001"), Decimal("0.000001"))
-        if abs(actual - target) > tolerance:
-            raise RuntimeError(f"read-back не совпал: ожидалось {target}, прибор вернул {actual}")
-
+        verify = bool(task.get("verify", True))
+        level = self._active_access() or "unknown"
+        self.log("warn", f"[{level}] отправка: {name}={target_text}")
+        raw, _ = self._tx(f"{name}={target_text}", retry_safe=False,
+                          expert=task.get("expert", False), mutating=True, kind="reading-set")
+        after = ""
+        verified = False
+        if verify:
+            after = self._read_value_quiet(name)
+            actual = parse_reading(after)
+            tolerance = max(abs(target) * Decimal("0.000000001"), Decimal("0.000001"))
+            if abs(actual - target) > tolerance:
+                raise RuntimeError(f"read-back не совпал: ожидалось {target}, прибор вернул {actual}")
+            verified = True
+            self.log("ok", f"[SET] {name}={after}; read-back совпал")
+        else:
+            self.log("ok", f"[SET] {name}={target_text}; отправлено без read-back")
+        shown = after or target_text
         result = {
-            "device_sn": device_sn, "command": name, "old_value": before,
-            "new_value": after, "archive_count_before": arc_before,
-            "archive_count_after": arc_before, "archive_changed": False,
-            "operator": operator, "reason": reason,
+            "command": name, "requested_value": target_text, "new_value": shown,
+            "readback": verify, "verified": verified, "access_level": level,
+            "response_bytes": len(raw or b""),
             "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
         }
-        self._audit_service(kind="provider-write", name=name, before=before, after=after,
-                            operator=operator, reason=reason)
-        self.log("ok", f"[Provider] {name}: {before} → {after}; "
-                       f"ArcNumRecords не изменялся ({arc_before or '—'})")
-        self.post("reading", (name, after, datetime.datetime.now().isoformat(timespec="seconds")))
+        self.post("reading", (name, shown, result["timestamp"]))
         self.post("reading_write_done", result)
 
-    def _clear_archive_provider(self, task):
-        """Отдельно очистить измерительный архив после Provider-подтверждения."""
-        self._require_provider(expert=task.get("expert", False))
-        operator = str(task.get("operator") or "").strip()
-        reason = str(task.get("reason") or "").strip()
-        if not operator or not reason:
-            raise ValueError("Для очистки архива обязательны оператор и причина")
-        device_sn = self._read_value_quiet("DEVICE_SN")
-        arc_before = self._read_value_quiet("ArcNumRecords")
-        self._tx("CLEAR_ARHIVE", retry_safe=False, expert=True,
-                 mutating=True, kind="archive-clear")
-        arc_after = ""
-        for attempt in range(4):
-            if attempt:
-                time.sleep(0.25)
-            arc_after = self._read_value_quiet("ArcNumRecords")
-            try:
-                if int(Decimal(str(arc_after).replace(",", "."))) == 0:
-                    break
-            except (InvalidOperation, ValueError):
-                pass
-        else:
-            raise RuntimeError(
-                f"CLEAR_ARHIVE отправлена, но очистка не подтверждена: ArcNumRecords={arc_after!r}")
-        result = {
-            "device_sn": device_sn, "archive_count_before": arc_before,
-            "archive_count_after": arc_after, "operator": operator, "reason": reason,
-            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
-        }
-        self._audit_service(kind="archive-clear", name="CLEAR_ARHIVE",
-                            before=arc_before, after=arc_after,
-                            operator=operator, reason=reason)
-        self.log("ok", f"[Provider] измерительный архив очищен: {arc_before or '—'} → {arc_after}")
-        self.post("archive_clear_done", result)
-
-    def _auth(self, cred, value):
-        self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
+    def _auth(self, level, value):
+        self.auth_state = {"level": "unknown", "verified": False, "verified_at": 0.0}
         self.post("auth_state", dict(self.auth_state))
-        if cred == "PASSWORD_PROVIDER" and self.mode == "sms":
-            raise RuntimeError(
-                "Подтверждённая Provider-авторизация по SMS недоступна: SMS асинхронен, "
-                "а текущая операция требует немедленного PASWORD_PROVID_VALUE read-back")
-        cmd = f"{cred}={value}" if value != "" else cred
-        self.log("ok", f"[auth] Предъявление учётных данных: {cred} …")
-        raw, val = self._tx(cmd, retry_safe=False, expert=True, mutating=True, kind="auth")
-        self.log("io", f">> {cred}=•••\n<< ответ получен ({len(raw)} байт; значение скрыто)")
-        if cred == "PASSWORD_PROVIDER":
-            if sc.response_has_auth_error(raw):
-                raise PermissionError("Прибор отклонил пароль Provider")
-            probe_raw, probe_val = self._tx(
-                "PASWORD_PROVID_VALUE", retry_safe=True, mutating=False, kind="auth-verify")
-            if not sc.provider_probe_ok(probe_val):
-                raise PermissionError(
-                    "Provider не подтверждён: PASWORD_PROVID_VALUE не вернула допустимый ответ")
+        level = str(level or "").strip().lower()
+        command = getattr(sc, "ACCESS_AUTH_COMMANDS", {}).get(level)
+        if command is None:
+            raise ValueError("Поддерживаются только Provider и Omega")
+        value = str(value or "")
+        if not value:
+            raise ValueError(f"Пароль {level} не задан")
+        if level == "provider" and len(value) != 6:
+            raise ValueError("Пароль Provider должен содержать ровно 6 символов")
+        self.log("ok", f"[auth] Предъявление пароля {level}: {command} …")
+        raw, _ = self._tx(f"{command}={value}", retry_safe=False, expert=True,
+                          mutating=True, kind="auth")
+        self.log("io", f">> {command}=•••\n<< ответ получен ({len(raw)} байт; пароль скрыт)")
+        if self.mode == "sms":
             self.auth_state = {
-                "level": "provider", "verified": True,
-                "verified_at": time.time(), "probe": pretty(probe_val),
+                "level": "unknown", "verified": False, "verified_at": 0.0,
+                "sms_sent": True, "requested_level": level,
             }
             self.post("auth_state", dict(self.auth_state))
-            self.log("ok", "[auth] Уровень Provider подтверждён командой PASWORD_PROVID_VALUE "
-                           f"на {PROVIDER_AUTH_TTL // 60} минут.")
-        else:
-            self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
-            self.post("auth_state", dict(self.auth_state))
-            self.log("warn", "[auth] Учётные данные отправлены, но автоматическая проверка "
-                             "реализована только для Provider.")
+            self.log("warn", "[auth] SMS передано модему; активный уровень прибора нельзя "
+                             "подтвердить без связанного ответного SMS.")
+            return
+        if not sc.auth_response_ok(raw):
+            raise PermissionError(f"Прибор отклонил или не подтвердил пароль {level}")
+        self.auth_state = {
+            "level": level, "verified": True, "verified_at": time.time(),
+            "verified_by": command,
+        }
+        self.post("auth_state", dict(self.auth_state))
+        label = "Provider / F1 ('f')" if level == "provider" else "Omega / F2 ('U')"
+        self.log("ok", f"[auth] Прибор принял пароль: активен {label}. "
+                       "Каждая следующая команда дополнительно проверяется прошивкой.")
 
     def _passport(self):
         self.log("ok", "[*] Снятие паспорта с текущего транспорта…")
@@ -855,18 +804,13 @@ class Backend(threading.Thread):
         self.log("ok", f"[*] Паспорт завершён: ответы {ok}/{len(sc.PASSPORT)}.")
 
     def _authscan(self):
-        self.log("ok", "[*] Auth-scan — чтение доступных учётных параметров:")
-        plain = False
-        for name, desc in SECRET_READS:
-            raw, val = self._tx(name, retry_safe=True, mutating=False, kind="read")
-            status = classify_secret(val)
+        self.log("ok", "[*] Диагностика доступа без чтения PASSWORD_*:")
+        for name, desc in ACCESS_DIAGNOSTICS:
+            raw, val = self._tx(name, retry_safe=True, mutating=False, kind="access-diagnostic")
             shown = repr(pretty(val)) if val else "—"
-            self.log("io", f"    {name:<22}= {shown:<18} [{status}]  · {desc}")
-            plain |= status == "открытым текстом"
-        if plain:
-            self.log("ok", "[OK] Прибор отдал хотя бы один действующий креденшл открытым текстом.")
-        else:
-            self.log("warn", "[!] Креды не отданы или маскированы текущей прошивкой/уровнем.")
+            self.log("io", f"    {name:<22}= {shown:<18} · {desc}")
+        self.log("warn", "[access] Текущий уровень не имеет отдельной команды чтения; "
+                         "он устанавливается ответом на PASSWORD_PROVIDER/PASSWORD_OMEGA.")
 
     def _tele_read(self):
         self.log("ok", "[тел] Снятие текущих параметров по физическому оптопорту…")
@@ -892,8 +836,10 @@ class Backend(threading.Thread):
             name = item["name"]
             if name in self.actions:
                 # Действия нельзя безопасно "прочитать": голое имя запускает операцию.
-                # Они входят в снимок как доступная возможность, но не выполняются.
                 values[name] = "<action: не выполнялось>"
+            elif name in getattr(sc, "SECRET_NAMES", set()):
+                # Полный снимок не извлекает PASSWORD_*/APN_PASSWORD автоматически.
+                values[name] = "<secret: пропущено>"
             else:
                 try:
                     raw, val = self._tx(name, retry_safe=True, mutating=False, kind="scan")
@@ -939,9 +885,9 @@ class Backend(threading.Thread):
             elif step.kind == "read":
                 self._read(step.name)
             elif step.kind == "write":
-                self._send(f"{step.name}={step.value}", expert)
+                self._write_catalog({"name": step.name, "val": step.value, "expert": expert})
             elif step.kind == "action":
-                self._send(step.name, expert)
+                self._action_catalog({"name": step.name, "expert": expert})
             done += 1
         self.post("batch_done", (True, done, "Выполнено"))
         self.log("ok", f"[batch] завершено: {done}/{len(steps)}")
@@ -1014,13 +960,14 @@ def build_app(root, selftest=False):
     task_q, out_q = queue.Queue(), queue.Queue()
     backend = Backend(task_q, out_q, critical, actions, catalog); backend.start()
 
-    root.title("Контроллер устройства 4.4 PROVIDER SERVICE · 158 команд")
+    root.title("Контроллер устройства 4.6 ACCESS LEVELS FIX · 158 команд")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
              "mode": "off", "current_snapshot": {}, "loaded_snapshot": {},
              "monitoring": False, "monitor_rows": [],
-             "provider_verified": False, "provider_verified_at": 0.0}
+             "access_level": "unknown", "access_verified": False,
+             "access_verified_at": 0.0}
     settings = load_settings()
 
     # ── шапка: реальные транспорты ─────────────────────────────────────
@@ -1176,21 +1123,23 @@ def build_app(root, selftest=False):
 
     # ── второй ряд: уровень доступа / аутентификация / экспертный режим ──
     top2 = ttk.Frame(root, padding=(6, 0, 6, 6)); top2.pack(fill="x")
-    ttk.Label(top2, text="Уровень:").pack(side="left")
+    ttk.Label(top2, text="Активный уровень:").pack(side="left")
     level_var = tk.StringVar(value=LEVELS[0])
-    ttk.Combobox(top2, textvariable=level_var, values=LEVELS, state="readonly",
-                 width=15).pack(side="left", padx=(2, 12))
-    ttk.Label(top2, text="Логин:").pack(side="left")
-    cred_var = tk.StringVar(value=AUTH_CREDS[0])
-    ttk.Combobox(top2, textvariable=cred_var, values=AUTH_CREDS, state="readonly",
-                 width=18).pack(side="left", padx=2)
+    level_cb = ttk.Combobox(top2, textvariable=level_var, values=LEVELS, state="disabled",
+                            width=20)
+    level_cb.pack(side="left", padx=(2, 12))
+    ttk.Label(top2, text="Вход:").pack(side="left")
+    auth_level_var = tk.StringVar(value="Provider")
+    ttk.Combobox(top2, textvariable=auth_level_var, values=list(AUTH_LEVELS),
+                 state="readonly", width=10).pack(side="left", padx=2)
     pw_var = tk.StringVar()
     ttk.Entry(top2, textvariable=pw_var, width=12, show="•").pack(side="left", padx=2)
 
     def do_auth():
-        task_q.put({"op": "auth", "cred": cred_var.get(), "value": pw_var.get()})
-    ttk.Button(top2, text="Аутентифицировать", command=do_auth).pack(side="left", padx=6)
-    auth_lbl = ttk.Label(top2, text="○ Provider не подтверждён", foreground="#777")
+        level_code, _command = AUTH_LEVELS[auth_level_var.get()]
+        task_q.put({"op": "auth", "level": level_code, "value": pw_var.get()})
+    ttk.Button(top2, text="Предъявить пароль", command=do_auth).pack(side="left", padx=6)
+    auth_lbl = ttk.Label(top2, text="○ уровень не подтверждён", foreground="#777")
     auth_lbl.pack(side="left", padx=(2, 8))
 
     expert_var = tk.BooleanVar(value=False)
@@ -1314,15 +1263,15 @@ def build_app(root, selftest=False):
     prot_note = ttk.Label(io, text="", foreground="#c0392b", wraplength=360, justify="left")
     prot_note.grid(row=4, column=0, columnspan=3, sticky="w")
 
-    provider_box = ttk.LabelFrame(right, text="Provider · сервисная работа с показаниями", padding=6)
-    provider_box.pack(fill="x", pady=(0, 6))
-    ttk.Label(provider_box, foreground="#8a4b08", wraplength=360, justify="left",
-              text="Запись выполняется только после подтверждённой Provider-авторизации: "
-                   "SET → read-back. Архив не очищается автоматически. CLEAR_ARHIVE вынесена "
-                   "в отдельную операцию с самостоятельным подтверждением.").pack(anchor="w")
-    clear_archive_btn = ttk.Button(provider_box, text="Очистить измерительный архив отдельно")
-    clear_archive_btn.pack(fill="x", pady=(6, 0))
-    provider_box.pack_forget()
+    reading_box = ttk.LabelFrame(right, text="Запись показаний", padding=6)
+    reading_box.pack(fill="x", pady=(0, 6))
+    ttk.Label(reading_box, foreground="#8a4b08", wraplength=360, justify="left",
+              text="SET доступен только когда таблица F1/F2 разрешает запись для "
+                   "подтверждённого уровня. Прошивка повторно проверяет право сама.").pack(anchor="w")
+    reading_readback_var = tk.BooleanVar(value=True)
+    ttk.Checkbutton(reading_box, text="Проверить значение чтением после SET",
+                    variable=reading_readback_var).pack(anchor="w", pady=(6, 0))
+    reading_box.pack_forget()
 
     free = ttk.LabelFrame(right, text="Свободная команда (сырой протокол)", padding=6)
     free.pack(fill="x")
@@ -1339,7 +1288,7 @@ def build_app(root, selftest=False):
     _qa = [
         ("Пре-флайт", lambda: task_q.put({"op": "preflight"})),
         ("Паспорт", lambda: task_q.put({"op": "passport"})),
-        ("Auth-scan", lambda: task_q.put({"op": "authscan"})),
+        ("Диагностика доступа", lambda: task_q.put({"op": "authscan"})),
         ("Показания", lambda: [task_q.put({"op": "read", "name": n}) for n in
                                ("Volume", "VOLUME_GLOB", "VOLUME_INST", "VOLUME_COMMIS")]),
     ]
@@ -1368,22 +1317,26 @@ def build_app(root, selftest=False):
         det_txt.configure(state="disabled")
         typ = c["type"] or ""
         is_action = c["name"] in actions
-        can_r, can_w, can_a = directions(c, is_action)
-        hint_lbl.config(text=f"Тип: {typ}  ·  доступ П={c['prov']} О={c['user']}  ·  "
-                             + ("действие (кнопка «Выполнить»)" if is_action
-                                else "работает в обе стороны: чтение и запись"))
+        dir_r, dir_w, dir_a = directions(c, is_action)
+        _acc_text, access_r, access_w = access_at_level(c, level_var.get())
+        can_r = dir_r and (access_r or level_var.get() == "Не определён")
+        can_w = dir_w and access_w
+        can_a = dir_a and access_w
+        expert_ok = state["expert"] or c["name"] not in critical
+        hint_lbl.config(text=f"Тип: {typ}  ·  F1={c['prov']} F2={c['user']}  ·  "
+                             + ("действие" if is_action else "чтение/запись по матрице доступа"))
         opts = value_options(c)
         opt_cb.config(values=opts); opt_cb.set("")
         now_btn.grid() if "дата" in typ else now_btn.grid_remove()
         read_btn.state(["!disabled"] if can_r else ["disabled"])
-        write_btn.state(["!disabled"] if can_w else ["disabled"])
-        act_btn.state(["!disabled"] if can_a else ["disabled"])
+        write_btn.state(["!disabled"] if can_w and expert_ok else ["disabled"])
+        act_btn.state(["!disabled"] if can_a and expert_ok else ["disabled"])
         if c["name"] in READING_COMMANDS:
-            write_btn.config(text="Записать показание (Provider)")
-            provider_box.pack(fill="x", pady=(0, 6), before=free)
+            write_btn.config(text="Записать (SET)")
+            reading_box.pack(fill="x", pady=(0, 6), before=free)
         else:
             write_btn.config(text="Записать (set)")
-            provider_box.pack_forget()
+            reading_box.pack_forget()
         val_ent.state(["disabled"] if is_action else ["!disabled"])
         if c["name"] in critical:
             if state["expert"]:
@@ -1407,84 +1360,32 @@ def build_app(root, selftest=False):
             return
         name = state["selected"]["name"]
         if name in READING_COMMANDS:
-            if not state["expert"]:
-                messagebox.showwarning("Запись показаний", "Включи Экспертный режим.")
-                return
-            if not state.get("provider_verified"):
-                messagebox.showwarning(
-                    "Запись показаний",
-                    "Сначала выполни PASSWORD_PROVIDER и дождись статуса «Provider подтверждён».")
-                return
             new_value = val_var.get().strip()
             try:
                 new_value = reading_text(new_value)
             except ValueError as exc:
                 messagebox.showerror("Запись показаний", str(exc))
                 return
-            operator = simpledialog.askstring(
-                "Оператор", "Укажи имя/идентификатор уполномоченного оператора:",
-                initialvalue=os.environ.get("USERNAME") or os.environ.get("USER") or "",
-                parent=root)
-            if not operator:
-                append("warn", "[Provider] запись отменена: оператор не указан.")
+            verify = bool(reading_readback_var.get())
+            detail = "с read-back" if verify else "без read-back"
+            if not messagebox.askyesno(
+                    "Запись показаний",
+                    f"Отправить {name}={new_value} {detail}?\n\n"
+                    f"Активный уровень: {level_var.get()}. Архив не изменяется.", parent=root):
                 return
-            reason = simpledialog.askstring(
-                "Основание записи", "Укажи служебную причину изменения показания:", parent=root)
-            if not reason:
-                append("warn", "[Provider] запись отменена: причина не указана.")
-                return
-            confirmation = simpledialog.askstring(
-                "Подтверждение Provider-записи",
-                f"Будет отправлено {name}={new_value}, затем выполнен read-back. "
-                "Архив прибора не очищается.\n\nДля подтверждения введи: ЗАПИСАТЬ",
-                parent=root)
-            if confirmation != "ЗАПИСАТЬ":
-                append("warn", "[Provider] операция отменена: подтверждение записи не введено.")
-                return
-            task_q.put({"op": "write_reading_provider", "name": name, "val": new_value,
-                        "expert": state["expert"], "operator": operator, "reason": reason})
+            task_q.put({"op": "write_verified", "name": name, "val": new_value,
+                        "expert": state["expert"], "verify": verify})
             return
         task_q.put({"op": "write", "name": name,
                     "val": val_var.get(), "expert": state["expert"]})
 
-    def do_clear_archive():
-        if not state["expert"]:
-            messagebox.showwarning("Очистка архива", "Включи Экспертный режим.")
-            return
-        if not state.get("provider_verified"):
-            messagebox.showwarning(
-                "Очистка архива",
-                "Сначала выполни PASSWORD_PROVIDER и дождись подтверждения уровня Provider.")
-            return
-        operator = simpledialog.askstring(
-            "Оператор", "Укажи имя/идентификатор уполномоченного оператора:",
-            initialvalue=os.environ.get("USERNAME") or os.environ.get("USER") or "",
-            parent=root)
-        if not operator:
-            return
-        reason = simpledialog.askstring(
-            "Основание очистки", "Укажи служебную причину очистки измерительного архива:",
-            parent=root)
-        if not reason:
-            return
-        confirmation = simpledialog.askstring(
-            "Безвозвратная очистка архива",
-            "Будет отправлена CLEAR_ARHIVE и затем проверено ArcNumRecords=0.\n\n"
-            "Для подтверждения введи: ОЧИСТИТЬ",
-            parent=root)
-        if confirmation != "ОЧИСТИТЬ":
-            append("warn", "[Provider] очистка архива отменена.")
-            return
-        task_q.put({"op": "clear_archive_provider", "expert": state["expert"],
-                    "operator": operator, "reason": reason})
     def do_action():
         if state["selected"]:
-            task_q.put({"op": "send", "text": state["selected"]["name"],
+            task_q.put({"op": "action", "name": state["selected"]["name"],
                         "expert": state["expert"]})
     read_btn.config(command=do_read)
     write_btn.config(command=do_write)
     act_btn.config(command=do_action)
-    clear_archive_btn.config(command=do_clear_archive)
 
     # ── вкладка «Транспорт · RAW · SMS» ────────────────────────────────
     ttk.Label(tab_terminal, wraplength=1160, foreground="#555", justify="left",
@@ -1756,8 +1657,8 @@ def build_app(root, selftest=False):
     ttk.Label(tab_hist, wraplength=1150, foreground="#555", justify="left",
               text="История показывает только реальные данные прибора из дампа W25Q64: "
                    "чекпоинт 0x7FE000/0x7FC000, главный архив до 0x128000 и аудит 0x15E000. "
-                   "Provider-запись показаний не очищает архив автоматически. CLEAR_ARHIVE "
-                   "доступна отдельной подтверждаемой операцией; локальный журнал корректировок не ведётся."
+                   "Запись параметров и CLEAR_ARHIVE являются отдельными командами. "
+                   "Их доступность определяется активным уровнем F1/F2 и проверяется прошивкой."
               ).pack(anchor="w")
     hctl = ttk.Frame(tab_hist); hctl.pack(fill="x", pady=4)
     ttk.Button(hctl, text="Загрузить дамп…", command=lambda: hist_load()).pack(side="left")
@@ -2174,21 +2075,29 @@ READ LCD_TIME
                                         foreground="#0a7d0a" if ok else "#c47f00")
                 elif kind == "reading_write_done":
                     state.setdefault("readings", {})[payload.get("command", "Volume")] = payload.get("new_value", "")
-                    append("ok", "[Provider] показание записано и подтверждено read-back; "
-                                 "измерительный архив не очищался.")
-                elif kind == "archive_clear_done":
-                    main_nb.select(tab_hist)
-                    append("ok", "[Provider] CLEAR_ARHIVE подтверждена: ArcNumRecords=0.")
-                elif kind == "auth_state":
-                    verified = bool(payload.get("verified")) and payload.get("level") == "provider"
-                    state["provider_verified"] = verified
-                    state["provider_verified_at"] = payload.get("verified_at", 0.0)
-                    if verified:
-                        level_var.set("Провайдер (П)")
-                        auth_lbl.config(text="● Provider подтверждён (15 мин)", foreground="#0a7d0a")
+                    if payload.get("verified"):
+                        append("ok", "[SET] выполнен; read-back совпал.")
                     else:
-                        level_var.set("Гость")
-                        auth_lbl.config(text="○ Provider не подтверждён", foreground="#777")
+                        append("ok", "[SET] отправлен без read-back.")
+                elif kind == "auth_state":
+                    level = payload.get("level", "unknown")
+                    verified = bool(payload.get("verified")) and level in ("provider", "omega")
+                    state["access_level"] = level if verified else "unknown"
+                    state["access_verified"] = verified
+                    state["access_verified_at"] = payload.get("verified_at", 0.0)
+                    if verified and level == "provider":
+                        level_var.set("Provider (F1 · f)")
+                        auth_lbl.config(text="● Provider принят прибором", foreground="#0a7d0a")
+                    elif verified and level == "omega":
+                        level_var.set("Omega (F2 · U)")
+                        auth_lbl.config(text="● Omega принят прибором", foreground="#0a7d0a")
+                    elif payload.get("sms_sent"):
+                        level_var.set("Не определён")
+                        auth_lbl.config(text="◐ пароль отправлен по SMS", foreground="#c47f00")
+                    else:
+                        level_var.set("Не определён")
+                        auth_lbl.config(text="○ уровень не подтверждён", foreground="#777")
+                    on_select()
                 elif kind == "tele_log":
                     append(*payload)
                 elif kind == "tele_reading":
@@ -2208,12 +2117,8 @@ READ LCD_TIME
                 elif kind == "session_file":
                     state["session_file"] = payload
                 elif kind == "password":
-                    cred, value = payload
-                    pw_var.set(value)
-                    if cred in AUTH_CREDS:
-                        cred_var.set(cred)
-                    append("ok", f"[auto] Значение из {cred} подставлено в поле "
-                                 "аутентификации (в журнале скрыто).")
+                    cred, _value = payload
+                    append("warn", f"[access] {cred} вернул секрет; значение не подставлено и не показано.")
                 elif kind == "raw_result":
                     raw = payload
                     append("ok", f"[RAW] получено {len(raw)} байт")
@@ -2235,10 +2140,11 @@ READ LCD_TIME
                         conn_btn.config(text="Отключить")
                         transport_cb.state(["disabled"])
                     else:
-                        state["provider_verified"] = False
-                        state["provider_verified_at"] = 0.0
-                        auth_lbl.config(text="○ Provider не подтверждён", foreground="#777")
-                        level_var.set("Гость")
+                        state["access_level"] = "unknown"
+                        state["access_verified"] = False
+                        state["access_verified_at"] = 0.0
+                        auth_lbl.config(text="○ уровень не подтверждён", foreground="#777")
+                        level_var.set("Не определён")
                         status_lbl.config(text="● отключено", foreground="#b00")
                         conn_btn.config(text="Подключить")
                         transport_cb.state(["!disabled"])

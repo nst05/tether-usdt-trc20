@@ -101,6 +101,11 @@ AUTH_ERROR_MARKERS = (
     "ОШИБ", "ОТКАЗ", "НЕВЕР", "ЗАПРЕЩ",
 )
 
+ACCESS_AUTH_COMMANDS = {
+    "provider": "PASSWORD_PROVIDER",
+    "omega": "PASSWORD_OMEGA",
+}
+
 
 def response_has_auth_error(raw) -> bool:
     """Есть ли в ответе явный отказ аутентификации/доступа."""
@@ -111,46 +116,55 @@ def response_has_auth_error(raw) -> bool:
     return any(marker in upper for marker in AUTH_ERROR_MARKERS)
 
 
-def provider_probe_ok(value) -> bool:
-    """Проверка ответа provider-only команды PASWORD_PROVID_VALUE.
+def auth_response_ok(raw) -> bool:
+    """Принял ли прибор команду предъявления пароля по своему ответу.
 
-    Каталог протокола помечает эту команду как доступную провайдеру и
-    недоступную обычному пользовательскому уровню. Поэтому непустой ответ без
-    явного отказа используется как штатное подтверждение уровня Provider.
+    В исследованной прошивке нет отдельной команды чтения текущего уровня.
+    Поэтому подтверждением служит только ответ самой PASSWORD_* без маркеров
+    отказа. PASWORD_PROVID_VALUE является параметром и для проверки сессии не
+    используется.
     """
-    if value is None:
+    if raw is None:
         return False
-    text = str(value).strip()
-    if not text:
-        return False
-    upper = text.upper()
-    return not any(marker in upper for marker in AUTH_ERROR_MARKERS)
+    if isinstance(raw, (bytes, bytearray)):
+        text = decode_response(bytes(raw)).strip()
+    else:
+        text = str(raw).strip()
+    return bool(text) and not response_has_auth_error(raw)
 
 
-def authenticate_provider(client, password: str) -> dict:
-    """Штатно авторизоваться как Provider и проверить уровень чтением.
+def authenticate_access(client, level: str, password: str) -> dict:
+    """Предъявить штатный пароль Provider или Omega.
 
-    Функция не подбирает и не извлекает пароль: принимает только явно переданный
-    оператором пароль, отправляет PASSWORD_PROVIDER и затем читает
-    PASWORD_PROVID_VALUE. Возвращает метаданные подтверждённой сессии.
+    Функция не подбирает пароль и не обходит прошивку. Для Provider прошивка
+    ожидает ровно шесть символов. Успех определяется ответом самой команды;
+    окончательное применение прав проверяется прибором на каждой последующей
+    команде по F1/F2.
     """
+    level = str(level or "").strip().lower()
+    if level not in ACCESS_AUTH_COMMANDS:
+        raise ValueError("Поддерживаются только уровни provider и omega")
     password = str(password or "")
     if not password:
-        raise ValueError("Пароль Provider не задан")
-    raw = client.send(f"PASSWORD_PROVIDER={password}", expert=True, mutating=True)
-    if response_has_auth_error(raw):
-        raise PermissionError("Прибор отклонил пароль Provider")
-    probe = client.get("PASWORD_PROVID_VALUE")
-    if not provider_probe_ok(probe):
-        raise PermissionError(
-            "Уровень Provider не подтверждён командой PASWORD_PROVID_VALUE")
+        raise ValueError(f"Пароль {level} не задан")
+    if level == "provider" and len(password) != 6:
+        raise ValueError("Пароль Provider должен содержать ровно 6 символов")
+    command = ACCESS_AUTH_COMMANDS[level]
+    raw = client.send(f"{command}={password}", expert=True, mutating=True)
+    if not auth_response_ok(raw):
+        raise PermissionError(f"Прибор не подтвердил уровень {level}")
     return {
-        "level": "provider",
+        "level": level,
+        "accepted": True,
         "verified": True,
-        "probe": str(probe),
+        "verified_by": command,
         "verified_at": time.time(),
     }
 
+
+def authenticate_provider(client, password: str) -> dict:
+    """Совместимая обёртка штатной Provider-аутентификации."""
+    return authenticate_access(client, "provider", password)
 
 def command_name(cmd: str) -> str:
     """Имя команды из строки `NAME`, `NAME=value`, `{NAME}`, `/?NAME!`."""

@@ -28,10 +28,7 @@ CANDIDATE_HINTS = (
     "ch340", "cp210", "ftdi", "usb serial",
 )
 
-SECRET_READS = [
-    "PASSWORD_PROVIDER", "PASWORD_PROVID_VALUE", "PASSWORD_OMEGA",
-    "PASSWORD_OMEGA2", "MAGIC", "ENABLE_OMEGA",
-]
+ACCESS_DIAGNOSTICS = ["PASWORD_PROVID_VALUE", "ENABLE_OMEGA", "EVENT_OMEGA"]
 MASK_MARKERS = ("****", "xxxx", "----")
 
 
@@ -116,13 +113,14 @@ def main():
             print(hexdump("RX", transport.last_raw_rx))
 
         if args.auth_scan:
-            print("\n[*] Auth-scan:")
-            for name in SECRET_READS:
+            print("\n[*] Диагностика доступа без чтения PASSWORD_*:")
+            for name in ACCESS_DIAGNOSTICS:
                 try:
                     value = client.get(name)
                     print(f"    {name:<22} = {value!r:<20} [{classify(value)}]")
                 except Exception as exc:
                     print(f"    {name:<22} = <err:{exc}>")
+            print("    Текущий уровень напрямую не читается; PASSWORD_* проверяется по ответу команды.")
         return 0
     except Exception as exc:
         print(f"[FAIL] {exc}")

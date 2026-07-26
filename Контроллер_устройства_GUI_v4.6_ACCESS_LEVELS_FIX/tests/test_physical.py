@@ -199,31 +199,39 @@ if __name__ == "__main__":
     sys.exit(0 if run_all() else 1)
 
 
-def test_provider_authentication_uses_provider_only_probe():
+def test_provider_authentication_uses_password_response_only():
     class FakeClient:
         def __init__(self):
             self.sent = []
         def send(self, cmd, **kwargs):
             self.sent.append((cmd, kwargs))
             return b"OK;\r\n"
-        def get(self, name):
-            assert name == "PASWORD_PROVID_VALUE"
-            return "provider-ok"
     cli = FakeClient()
-    result = sc.authenticate_provider(cli, "secret")
+    result = sc.authenticate_access(cli, "provider", "123456")
     assert result["verified"] is True
-    assert cli.sent[0][0] == "PASSWORD_PROVIDER=secret"
+    assert result["level"] == "provider"
+    assert cli.sent[0][0] == "PASSWORD_PROVIDER=123456"
     assert cli.sent[0][1]["expert"] is True
 
 
-def test_provider_authentication_rejects_failed_probe():
+def test_provider_authentication_requires_six_chars_and_no_probe():
     class FakeClient:
         def send(self, cmd, **kwargs):
             return b"OK;\r\n"
-        def get(self, name):
-            return ""
     try:
-        sc.authenticate_provider(FakeClient(), "secret")
+        sc.authenticate_access(FakeClient(), "provider", "short")
+        assert False, "ожидался ValueError"
+    except ValueError:
+        pass
+
+
+def test_authentication_rejects_device_error():
+    class FakeClient:
+        def send(self, cmd, **kwargs):
+            return b"ERROR: WRONG PASSWORD;\r\n"
+    try:
+        sc.authenticate_access(FakeClient(), "omega", "1")
         assert False, "ожидался PermissionError"
     except PermissionError:
         pass
+

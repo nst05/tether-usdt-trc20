@@ -1,0 +1,1585 @@
+{
+  "count": 158,
+  "commands": [
+    {
+      "name": "ALL_SGM_TIME_ERR",
+      "type": "цел",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Суммарное число ошибок датчика по времени",
+      "handler": "sub_0800672C",
+      "protected_write": false
+    },
+    {
+      "name": "CLEAR_SN_SGM",
+      "type": "действие",
+      "group": "Датчик и температура",
+      "prov": "0000",
+      "user": "0100",
+      "desc": "Сбросить серийник датчика",
+      "handler": "sub_0800E8F4",
+      "protected_write": true
+    },
+    {
+      "name": "CNT_MEAS_COMMIS",
+      "type": "цел",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Число измерений при вводе в эксплуатацию",
+      "handler": "sub_08009820",
+      "protected_write": false
+    },
+    {
+      "name": "CNT_MEAS_TEMP",
+      "type": "цел",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Регистр измерений температуры",
+      "handler": "sub_0800BD48",
+      "protected_write": false
+    },
+    {
+      "name": "ERR_SGM_CNT_LONG",
+      "type": "цел",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0000",
+      "desc": "Ошибка: регистр долго не меняется",
+      "handler": "sub_0800E810",
+      "protected_write": false
+    },
+    {
+      "name": "ERR_SGM_PER_FAST",
+      "type": "цел",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Ошибка: период импульса слишком **короткий** (быстро)",
+      "handler": "sub_0800E1AC",
+      "protected_write": false
+    },
+    {
+      "name": "ERR_SGM_PER_LONG",
+      "type": "цел",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Ошибка: период слишком **длинный**",
+      "handler": "sub_0800C4AC",
+      "protected_write": false
+    },
+    {
+      "name": "ERR_SGM_PER_SHORT",
+      "type": "цел",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Ошибка: период короткий",
+      "handler": "sub_0800C590",
+      "protected_write": false
+    },
+    {
+      "name": "ERR_SGM_TIME_LONG",
+      "type": "цел (сек)",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Ошибка: слишком долго нет данных от датчика",
+      "handler": "sub_0800E9E4",
+      "protected_write": false
+    },
+    {
+      "name": "EXT_MAX_TEMP",
+      "type": "f (°C)",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Внешняя (среды) макс. температура",
+      "handler": "sub_08009AB8",
+      "protected_write": false
+    },
+    {
+      "name": "EXT_MIN_TEMP",
+      "type": "f (°C)",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Внешняя мин. температура",
+      "handler": "sub_0800B9C8",
+      "protected_write": false
+    },
+    {
+      "name": "MANUAL_LUT",
+      "type": "цел/флаг",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Ручная таблица коррекции (LUT) вместо автоматической",
+      "handler": "sub_0800C3C4",
+      "protected_write": false
+    },
+    {
+      "name": "Max_Temp",
+      "type": "f (°C)",
+      "group": "Датчик и температура",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Верхний рабочий предел температуры",
+      "handler": "sub_08007610",
+      "protected_write": false
+    },
+    {
+      "name": "Min_Temp",
+      "type": "f (°C)",
+      "group": "Датчик и температура",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Нижний рабочий предел температуры",
+      "handler": "sub_08007714",
+      "protected_write": false
+    },
+    {
+      "name": "READ_CALIB_LOG",
+      "type": "действие",
+      "group": "Датчик и температура",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Прочитать журнал калибровки датчика",
+      "handler": "sub_08006404",
+      "protected_write": false
+    },
+    {
+      "name": "SELF_BORDER",
+      "type": "f",
+      "group": "Датчик и температура",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Порог собственного (нулевого) сигнала датчика/батареи",
+      "handler": "sub_0800A190",
+      "protected_write": false
+    },
+    {
+      "name": "SN_SGM_E",
+      "type": "строка/цел",
+      "group": "Датчик и температура",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Серийный номер датчика",
+      "handler": "sub_08009440",
+      "protected_write": false
+    },
+    {
+      "name": "TEMP_ENV_MAX_CRASH",
+      "type": "f (°C)",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Макс. температура среды → CRASH",
+      "handler": "sub_0800DFF4",
+      "protected_write": false
+    },
+    {
+      "name": "TEMP_ENV_MIN_CRASH",
+      "type": "f (°C)",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Мин. температура среды → CRASH",
+      "handler": "sub_0800C208",
+      "protected_write": false
+    },
+    {
+      "name": "TEMP_ENV_PER_CRASH",
+      "type": "цел (сек)",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Длительность выхода температуры среды за порог",
+      "handler": "sub_0800E0CC",
+      "protected_write": false
+    },
+    {
+      "name": "TIME_MEAS_EX_TEMP",
+      "type": "цел (сек)",
+      "group": "Датчик и температура",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Период измерения внешней температуры",
+      "handler": "sub_0800BE38",
+      "protected_write": false
+    },
+    {
+      "name": "Test_GasLMesTime",
+      "type": "цел",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Тест: время измерения потока",
+      "handler": "sub_080087A0",
+      "protected_write": false
+    },
+    {
+      "name": "Test_GasRecTime",
+      "type": "цел",
+      "group": "Датчик и температура",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Тест: время записи потока",
+      "handler": "sub_08010C08",
+      "protected_write": false
+    },
+    {
+      "name": "VERS_SGM",
+      "type": "строка",
+      "group": "Датчик и температура",
+      "prov": "0000",
+      "user": "0000",
+      "desc": "Версия датчика (только внутреннее)",
+      "handler": "sub_08010668",
+      "protected_write": false
+    },
+    {
+      "name": "ARCHIVE",
+      "type": "чтение",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Выгрузка архива",
+      "handler": "sub_0800B400",
+      "protected_write": false
+    },
+    {
+      "name": "ArcNumRecords",
+      "type": "цел",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Число записей в архиве",
+      "handler": "sub_080081D4",
+      "protected_write": false
+    },
+    {
+      "name": "CLEAR_ARHIVE",
+      "type": "действие",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Очистить архив",
+      "handler": "sub_0800A8C0",
+      "protected_write": true
+    },
+    {
+      "name": "DATETIME",
+      "type": "дата",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Прочитать/установить дату и время (RTC)",
+      "handler": "sub_08005BC0",
+      "protected_write": true
+    },
+    {
+      "name": "DEFAULT_SETTINGS",
+      "type": "действие",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Сброс к заводским настройкам",
+      "handler": "sub_08010B08",
+      "protected_write": true
+    },
+    {
+      "name": "DEVICE_SN",
+      "type": "строка",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0000",
+      "user": "0000",
+      "desc": "Заводской серийный номер прибора (`HF8A88INML8DA98K`)",
+      "handler": "sub_08008964",
+      "protected_write": false
+    },
+    {
+      "name": "DevInfo",
+      "type": "чтение",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0000",
+      "desc": "Сводная информация о приборе",
+      "handler": "sub_080078B0",
+      "protected_write": false
+    },
+    {
+      "name": "ENABLE_SWITCH_MENU",
+      "type": "флаг",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Разрешить листание меню",
+      "handler": "sub_08009F38",
+      "protected_write": false
+    },
+    {
+      "name": "EVENT_SYSTEM_EN",
+      "type": "флаг",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Включить регистрацию системных событий",
+      "handler": "sub_0800C7D4",
+      "protected_write": false
+    },
+    {
+      "name": "EXIT",
+      "type": "действие",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Выйти из режима/сеанса",
+      "handler": "sub_08031098",
+      "protected_write": false
+    },
+    {
+      "name": "HW_VERSION",
+      "type": "строка",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Версия аппаратуры",
+      "handler": "sub_08008CBC",
+      "protected_write": false
+    },
+    {
+      "name": "KONTRAST",
+      "type": "цел",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Контраст ЖК-экрана",
+      "handler": "sub_0800F60C",
+      "protected_write": false
+    },
+    {
+      "name": "LCD_MENU",
+      "type": "цел/enum",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Текущий пункт/структура меню экрана",
+      "handler": "sub_08009038",
+      "protected_write": false
+    },
+    {
+      "name": "LCD_PARAM",
+      "type": "цел",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Набор параметров, выводимых на экран",
+      "handler": "sub_0800F3DC",
+      "protected_write": false
+    },
+    {
+      "name": "LCD_TIME",
+      "type": "цел (сек)",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Время подсветки/автогашения экрана",
+      "handler": "sub_0800B8E0",
+      "protected_write": false
+    },
+    {
+      "name": "MEMORY_STACK",
+      "type": "чтение",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Диагностика стека/памяти задач",
+      "handler": "sub_0800F50C",
+      "protected_write": false
+    },
+    {
+      "name": "MOTO_INFO",
+      "type": "чтение",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Информация о приводе/моточасах актуатора",
+      "handler": "sub_0800959C",
+      "protected_write": false
+    },
+    {
+      "name": "NUMBER_BOARD",
+      "type": "строка/цел",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0000",
+      "user": "0101",
+      "desc": "Номер платы",
+      "handler": "sub_08009E46",
+      "protected_write": false
+    },
+    {
+      "name": "NUMBER_BOARD2",
+      "type": "строка/цел",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0000",
+      "user": "0101",
+      "desc": "Номер платы (вариант 2)",
+      "handler": "sub_08006FCE",
+      "protected_write": false
+    },
+    {
+      "name": "OPTIC_TIME",
+      "type": "цел (сек)",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Тайм-аут активности оптопорта",
+      "handler": "sub_0800BB8C",
+      "protected_write": false
+    },
+    {
+      "name": "RESERVED_INT",
+      "type": "цел",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Резервное целочисленное поле",
+      "handler": "sub_08008404",
+      "protected_write": false
+    },
+    {
+      "name": "TEL_BAT_REPLACE",
+      "type": "флаг",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Признак «пора менять батарею» (в телеметрию)",
+      "handler": "sub_0800C90C",
+      "protected_write": false
+    },
+    {
+      "name": "TIME_BAT_REPLACE",
+      "type": "дата",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Дата последней замены батарей",
+      "handler": "sub_0800CBE4",
+      "protected_write": false
+    },
+    {
+      "name": "TIME_ZONE",
+      "type": "цел",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Часовой пояс",
+      "handler": "sub_0800E778",
+      "protected_write": true
+    },
+    {
+      "name": "TestMode",
+      "type": "флаг",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Тестовый режим (сервис)",
+      "handler": "sub_08005D94",
+      "protected_write": false
+    },
+    {
+      "name": "VER_PO",
+      "type": "строка",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Версия ПО (прошивки)",
+      "handler": "sub_080080E4",
+      "protected_write": false
+    },
+    {
+      "name": "WaitingTimeLCD",
+      "type": "цел (сек)",
+      "group": "Дисплей / сервис / питание",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Тайм-аут ожидания на экране",
+      "handler": "sub_0800B6F0",
+      "protected_write": false
+    },
+    {
+      "name": "ENABLE_OMEGA",
+      "type": "флаг",
+      "group": "Доступ / пароли",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Флаг механизма Omega; это параметр, а не команда входа.",
+      "handler": "sub_0800FDEC",
+      "protected_write": true
+    },
+    {
+      "name": "EVENT_OMEGA",
+      "type": "чтение",
+      "group": "Доступ / пароли",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "События уровня omega",
+      "handler": "sub_08010930",
+      "protected_write": true
+    },
+    {
+      "name": "MAGIC",
+      "type": "строка/цел",
+      "group": "Доступ / пароли",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Сервисный параметр разблокировки Omega; точная последовательность зависит от прошивки.",
+      "handler": "sub_0800E5E8",
+      "protected_write": true
+    },
+    {
+      "name": "PASSWORD_FABRIC",
+      "type": "строка",
+      "group": "Доступ / пароли",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Служебная команда с историческим именем. Отдельный уровень Factory в таблице F1/F2 и байте доступа не подтверждён.",
+      "handler": "sub_0800E318",
+      "protected_write": true
+    },
+    {
+      "name": "PASSWORD_OMEGA",
+      "type": "строка",
+      "group": "Доступ / пароли",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Предъявление учётного значения уровня Omega (F2, внутренний байт 0x55 / U). Формат зависит от версии прошивки.",
+      "handler": "sub_0800FD0C",
+      "protected_write": true
+    },
+    {
+      "name": "PASSWORD_OMEGA2",
+      "type": "строка",
+      "group": "Доступ / пароли",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Дополнительный сервисный код Omega; не используется GUI как самостоятельное подтверждение уровня.",
+      "handler": "sub_0800F760",
+      "protected_write": true
+    },
+    {
+      "name": "PASSWORD_PROVIDER",
+      "type": "строка",
+      "group": "Доступ / пароли",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Предъявление 6-символьного пароля уровня Provider (F1, внутренний байт 0x66 / f). При чтении прошивка может раскрыть сохранённый секрет.",
+      "handler": "sub_0800B580",
+      "protected_write": true
+    },
+    {
+      "name": "PASWORD_PROVID_VALUE",
+      "type": "строка",
+      "group": "Доступ / пароли",
+      "prov": "0101",
+      "user": "0000",
+      "desc": "Служебное числовое поле Provider. Не является достоверной командой чтения текущего уровня доступа.",
+      "handler": "sub_0800E330",
+      "protected_write": false
+    },
+    {
+      "name": "READYTD",
+      "type": "действие",
+      "group": "Доступ / пароли",
+      "prov": "0000",
+      "user": "0101",
+      "desc": "Короткая форма готовности к диалогу",
+      "handler": "sub_0800EFAC",
+      "protected_write": false
+    },
+    {
+      "name": "READY_TO_DIALOG",
+      "type": "действие",
+      "group": "Доступ / пароли",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Готовность к сеансу обмена (рукопожатие)",
+      "handler": "sub_08005588",
+      "protected_write": false
+    },
+    {
+      "name": "CNT_VALVE_MIN",
+      "type": "цел",
+      "group": "Исполнительный механизм (актуатор)",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Регистр срабатываний актуатора (ресурс/износ)",
+      "handler": "sub_0800DB44",
+      "protected_write": true
+    },
+    {
+      "name": "EN_MDM_CHNG_VLV",
+      "type": "флаг",
+      "group": "Исполнительный механизм (актуатор)",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "**Разрешить модему/серверу менять актуатор** (удалённое перекрытие)",
+      "handler": "sub_0800CFA0",
+      "protected_write": true
+    },
+    {
+      "name": "VALVE",
+      "type": "enum",
+      "group": "Исполнительный механизм (актуатор)",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Прочитать/задать состояние актуатора (`Lock_OPEN`/`Lock_CLOSE`)",
+      "handler": "sub_0800DE74",
+      "protected_write": true
+    },
+    {
+      "name": "VALVE_AUTO_CONTROL",
+      "type": "флаг",
+      "group": "Исполнительный механизм (актуатор)",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Автоматическое управление актуатором (закрытие по авариям)",
+      "handler": "sub_0800DC1C",
+      "protected_write": true
+    },
+    {
+      "name": "VALVE_CLOSE_REV_P",
+      "type": "флаг/f",
+      "group": "Исполнительный механизм (актуатор)",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Закрывать при обратном давлении/потоке",
+      "handler": "sub_0800DD90",
+      "protected_write": true
+    },
+    {
+      "name": "VALVE_DELAY_BEFORE_OPEN",
+      "type": "цел (сек)",
+      "group": "Исполнительный механизм (актуатор)",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Задержка перед открытием",
+      "handler": "sub_0800D75C",
+      "protected_write": false
+    },
+    {
+      "name": "VALVE_DELAY_TRY_OPEN",
+      "type": "цел (сек)",
+      "group": "Исполнительный механизм (актуатор)",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Задержка между попытками открыть",
+      "handler": "sub_0800D870",
+      "protected_write": true
+    },
+    {
+      "name": "VALVE_MIN",
+      "type": "цел",
+      "group": "Исполнительный механизм (актуатор)",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Минимальный интервал между срабатываниями",
+      "handler": "sub_0800D960",
+      "protected_write": false
+    },
+    {
+      "name": "VALVE_OPEN",
+      "type": "действие",
+      "group": "Исполнительный механизм (актуатор)",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Открыть актуатор",
+      "handler": "sub_0800E6AC",
+      "protected_write": true
+    },
+    {
+      "name": "VALVE_TIME",
+      "type": "цел (мс)",
+      "group": "Исполнительный механизм (актуатор)",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Длительность импульса привода",
+      "handler": "sub_0800D664",
+      "protected_write": false
+    },
+    {
+      "name": "ADD_DISC_ALARM",
+      "type": "действие",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Пометить объём недостоверным по ALARM",
+      "handler": "sub_0800AE3C",
+      "protected_write": true
+    },
+    {
+      "name": "ADD_DISC_CRASH",
+      "type": "действие",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Пометить объём недостоверным по CRASH",
+      "handler": "sub_08004BCA",
+      "protected_write": true
+    },
+    {
+      "name": "ALARM_CLEAR",
+      "type": "действие",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Сбросить тревоги",
+      "handler": "sub_0800CE80",
+      "protected_write": true
+    },
+    {
+      "name": "BAN_OPEN_CASE",
+      "type": "флаг",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Признак/запрет вскрытия корпуса (детект вмешательствоа)",
+      "handler": "sub_08010D00",
+      "protected_write": true
+    },
+    {
+      "name": "CLEAR_SABOTAG",
+      "type": "`v1;v2`",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Сбросить флаги вмешательства (`0x20000278+0x49B/+0x49C`)",
+      "handler": "sub_0800F22C",
+      "protected_write": true
+    },
+    {
+      "name": "COMMISSIONING",
+      "type": "действие/дата",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Ввод в эксплуатацию (фиксация стартового состояния)",
+      "handler": "sub_0800BAB0",
+      "protected_write": true
+    },
+    {
+      "name": "CRASH_CLEAR",
+      "type": "действие",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Сбросить аварии",
+      "handler": "sub_0800DF4C",
+      "protected_write": true
+    },
+    {
+      "name": "DATE_VERIFIC",
+      "type": "дата",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0000",
+      "desc": "Дата последней калибровки",
+      "handler": "sub_08009E00",
+      "protected_write": true
+    },
+    {
+      "name": "DATE_VERIFIC_NEXT",
+      "type": "дата",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Дата следующей калибровки",
+      "handler": "sub_08009CE4",
+      "protected_write": true
+    },
+    {
+      "name": "DATE_WORK",
+      "type": "дата",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Дата ввода в работу",
+      "handler": "sub_08010A18",
+      "protected_write": false
+    },
+    {
+      "name": "EVENT_ALARM_EN",
+      "type": "флаг",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Включить регистрацию событий ALARM",
+      "handler": "sub_08010B08",
+      "protected_write": false
+    },
+    {
+      "name": "EVENT_CRASH_EN",
+      "type": "флаг",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Включить регистрацию событий CRASH",
+      "handler": "sub_0800C670",
+      "protected_write": false
+    },
+    {
+      "name": "EVENT_WARNING_EN",
+      "type": "флаг",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Включить регистрацию событий WARNING",
+      "handler": "sub_0800BC64",
+      "protected_write": false
+    },
+    {
+      "name": "RTC_CALIB",
+      "type": "цел",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Калибровка хода часов RTC (компенсация ухода кварца)",
+      "handler": "sub_0800F830",
+      "protected_write": true
+    },
+    {
+      "name": "RTC_OUTPUT_CALIB",
+      "type": "цел",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Калибровочный выход RTC (проверка точности)",
+      "handler": "sub_0800FED0",
+      "protected_write": true
+    },
+    {
+      "name": "STATUS_ALARM",
+      "type": "hex",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Слово тревог (ALARM)",
+      "handler": "sub_0800B0D8",
+      "protected_write": false
+    },
+    {
+      "name": "STATUS_CRASH",
+      "type": "hex",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Слово аварий (CRASH)",
+      "handler": "sub_08009F38",
+      "protected_write": false
+    },
+    {
+      "name": "STATUS_SYSTEM",
+      "type": "hex",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Слово состояния системы (чтение флагов)",
+      "handler": "sub_08009E8C",
+      "protected_write": false
+    },
+    {
+      "name": "STATUS_WARNING",
+      "type": "hex",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Слово предупреждений (WARNING)",
+      "handler": "sub_08009ED4",
+      "protected_write": false
+    },
+    {
+      "name": "WARNING_CLEAR",
+      "type": "действие",
+      "group": "Сервис и защита от вмешательства",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Сбросить предупреждения",
+      "handler": "sub_0800CD44",
+      "protected_write": true
+    },
+    {
+      "name": "AUTO_5MODE_FALSE",
+      "type": "флаг",
+      "group": "Прочее / служебное",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Отключить авто-5-режим",
+      "handler": "sub_08005F38",
+      "protected_write": false
+    },
+    {
+      "name": "AUTO_SWITCH_MODE",
+      "type": "флаг",
+      "group": "Прочее / служебное",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Автопереключение режима работы",
+      "handler": "sub_08011190",
+      "protected_write": false
+    },
+    {
+      "name": "CLEAR_COUNT",
+      "type": "действие",
+      "group": "Прочее / служебное",
+      "prov": "0000",
+      "user": "0000",
+      "desc": "Сброс регистров (внутреннее)",
+      "handler": "sub_0800FB24",
+      "protected_write": false
+    },
+    {
+      "name": "CLEAR_QDF",
+      "type": "действие",
+      "group": "Прочее / служебное",
+      "prov": "0000",
+      "user": "0101",
+      "desc": "Сброс дельта-потока",
+      "handler": "sub_08010E28",
+      "protected_write": false
+    },
+    {
+      "name": "CLOSED",
+      "type": "enum/статус",
+      "group": "Прочее / служебное",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Статус «закрыто» (актуатор/сессия)",
+      "handler": "sub_08004E7C",
+      "protected_write": false
+    },
+    {
+      "name": "GET_GROUP_INFO",
+      "type": "чтение",
+      "group": "Прочее / служебное",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Информация о группе параметров (для выгрузки)",
+      "handler": "sub_08006C20",
+      "protected_write": false
+    },
+    {
+      "name": "LOCK_STATE",
+      "type": "enum",
+      "group": "Прочее / служебное",
+      "prov": "0000",
+      "user": "0100",
+      "desc": "Состояние блокировки/актуатора (чтение)",
+      "handler": "sub_08008B54",
+      "protected_write": false
+    },
+    {
+      "name": "RSTSMT",
+      "type": "действие",
+      "group": "Прочее / служебное",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Перезагрузка прибора (reset)",
+      "handler": "sub_0800A680",
+      "protected_write": true
+    },
+    {
+      "name": "APN_ADDRESS",
+      "type": "строка",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "APN оператора (точка доступа GPRS)",
+      "handler": "sub_080074F0",
+      "protected_write": true
+    },
+    {
+      "name": "APN_LOGIN",
+      "type": "строка",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Логин APN",
+      "handler": "sub_08007980",
+      "protected_write": true
+    },
+    {
+      "name": "APN_PASSWORD",
+      "type": "строка",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Пароль APN",
+      "handler": "sub_08007AB0",
+      "protected_write": true
+    },
+    {
+      "name": "BALANCE_PHONE",
+      "type": "строка",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Номер/USSD запроса баланса SIM",
+      "handler": "sub_08007FE4",
+      "protected_write": false
+    },
+    {
+      "name": "CLEAR_MDM_CNT",
+      "type": "действие",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Сбросить регистры модема",
+      "handler": "sub_0800A9A4",
+      "protected_write": false
+    },
+    {
+      "name": "COUNT_BAT_REPLACE",
+      "type": "цел",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Регистр замен батарей (в этой группе как телеметрия)",
+      "handler": "sub_0800CAAC",
+      "protected_write": false
+    },
+    {
+      "name": "COUNT_FAIL_SIM",
+      "type": "цел",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Регистр сбоев SIM",
+      "handler": "sub_0800E2DC",
+      "protected_write": false
+    },
+    {
+      "name": "COUNT_FAIL_SPEED",
+      "type": "цел",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Регистр сбоев по скорости",
+      "handler": "sub_0800E434",
+      "protected_write": false
+    },
+    {
+      "name": "COUNT_SESSION",
+      "type": "цел",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Регистр сессий связи",
+      "handler": "sub_0800AA90",
+      "protected_write": false
+    },
+    {
+      "name": "ERROR_2_SESSION",
+      "type": "цел",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Регистр ошибок 2-го типа",
+      "handler": "sub_0800AC58",
+      "protected_write": false
+    },
+    {
+      "name": "ERROR_3_SESSION",
+      "type": "цел",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Регистр ошибок 3-го типа",
+      "handler": "sub_0800AD44",
+      "protected_write": false
+    },
+    {
+      "name": "ERROR_SESSION",
+      "type": "цел",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Регистр ошибок сессии",
+      "handler": "sub_0800AB78",
+      "protected_write": false
+    },
+    {
+      "name": "GET_GSM_INFO",
+      "type": "чтение",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Информация о сети GSM (уровень, оператор)",
+      "handler": "sub_0800AE3C",
+      "protected_write": false
+    },
+    {
+      "name": "MDM_SPEED",
+      "type": "цел",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Скорость обмена с модемом (бод)",
+      "handler": "sub_0800605C",
+      "protected_write": false
+    },
+    {
+      "name": "MODE_TRANSFER",
+      "type": "enum",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Режим передачи (расписание/по событию)",
+      "handler": "sub_08006C80",
+      "protected_write": false
+    },
+    {
+      "name": "Modem_LOG",
+      "type": "чтение",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Журнал работы модема",
+      "handler": "sub_0800E34C",
+      "protected_write": false
+    },
+    {
+      "name": "Modem_START",
+      "type": "действие",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Запустить модем/сессию связи",
+      "handler": "sub_08007B98",
+      "protected_write": false
+    },
+    {
+      "name": "RS485_ENABLE",
+      "type": "флаг",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Включить интерфейс RS-485",
+      "handler": "sub_080053E8",
+      "protected_write": false
+    },
+    {
+      "name": "SERVER_URL",
+      "type": "строка",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Адрес основного сервера телеметрии (`server.example.net:PORT_1`)",
+      "handler": "sub_080072A4",
+      "protected_write": true
+    },
+    {
+      "name": "SERVER_URL2",
+      "type": "строка",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Адрес резервного сервера (`:PORT_2`)",
+      "handler": "sub_080073D4",
+      "protected_write": true
+    },
+    {
+      "name": "START",
+      "type": "действие",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0000",
+      "desc": "Запуск сессии/цикла связи",
+      "handler": "sub_0800696C",
+      "protected_write": false
+    },
+    {
+      "name": "Server_MT",
+      "type": "строка/цел",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Параметры сервера МТ (маршрут/режим)",
+      "handler": "sub_08006380",
+      "protected_write": false
+    },
+    {
+      "name": "TYPE_DEVICE2",
+      "type": "цел",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Тип устройства (вариант 2)",
+      "handler": "sub_08008A48",
+      "protected_write": false
+    },
+    {
+      "name": "VER_PROTOCOL",
+      "type": "строка",
+      "group": "Связь: GSM / RS-485 / сервер",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Версия протокола обмена",
+      "handler": "sub_0800E514",
+      "protected_write": false
+    },
+    {
+      "name": "ADD_DISCREDITED_VOLUME",
+      "type": "действие",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Добавить объём в «недостоверный» накопитель",
+      "handler": "sub_080061D0",
+      "protected_write": true
+    },
+    {
+      "name": "DQF_CRC",
+      "type": "hex",
+      "group": "Значения и накопители",
+      "prov": "0000",
+      "user": "0101",
+      "desc": "CRC блока дельта-потока (целостность)",
+      "handler": "sub_0800A09E",
+      "protected_write": false
+    },
+    {
+      "name": "ENABLE_DISCREDITED_VOLUME",
+      "type": "флаг",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Включить обработка недостоверного объёма",
+      "handler": "sub_08006130",
+      "protected_write": true
+    },
+    {
+      "name": "GAS_DAY",
+      "type": "цел",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Расчётный «рабочий день» — час суток, с которого начинаются итоговые сутки",
+      "handler": "sub_08007E9C",
+      "protected_write": false
+    },
+    {
+      "name": "GAS_RANGE",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Диапазон потокомера (калибровка датчика)",
+      "handler": "sub_08006A68",
+      "protected_write": true
+    },
+    {
+      "name": "GAS_REC_TIME",
+      "type": "цел (сек)",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Период записи потока в архив",
+      "handler": "sub_08006648",
+      "protected_write": false
+    },
+    {
+      "name": "KFACTOR",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Поправочный коэффициент пересчёта импульсов в объём",
+      "handler": "sub_080096F8",
+      "protected_write": true
+    },
+    {
+      "name": "N_GAS_REC",
+      "type": "цел",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Номер/число записей потока",
+      "handler": "sub_0800C9E0",
+      "protected_write": false
+    },
+    {
+      "name": "N_GasLMesTime",
+      "type": "цел",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Число измерений за период",
+      "handler": "sub_080084DC",
+      "protected_write": false
+    },
+    {
+      "name": "PABS",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Абсолютное давление — приведение объёма к стандартным условиям (корректор)",
+      "handler": "sub_08008D18",
+      "protected_write": true
+    },
+    {
+      "name": "QFL_LIMIT",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Предел потока для срабатывания защиты",
+      "handler": "sub_080099DC",
+      "protected_write": false
+    },
+    {
+      "name": "QGL_MAX",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Максимальный поток (верхняя граница шкалы)",
+      "handler": "sub_08008FF4",
+      "protected_write": false
+    },
+    {
+      "name": "QGL_MIN",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Минимальный порог потока (ниже — не считать/предупреждение)",
+      "handler": "sub_08008F10",
+      "protected_write": false
+    },
+    {
+      "name": "QMAX_MULTIPLIER_UP",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Множитель верхнего порога Qmax",
+      "handler": "sub_080098F8",
+      "protected_write": false
+    },
+    {
+      "name": "QMAX_OFF_PER_S",
+      "type": "цел (сек)",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Время для **снятия** реакции по Qmax",
+      "handler": "sub_08007860",
+      "protected_write": false
+    },
+    {
+      "name": "QMAX_ON_PER_S",
+      "type": "цел (сек)",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Время превышения Qmax для **включения** реакции (защита от перегруза)",
+      "handler": "sub_0800781C",
+      "protected_write": false
+    },
+    {
+      "name": "Q_NegLimit",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Предел обратного потока",
+      "handler": "sub_0800CF50",
+      "protected_write": false
+    },
+    {
+      "name": "Q_PosLimit",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0101",
+      "desc": "Верхний предел прямого потока",
+      "handler": "sub_08008E18",
+      "protected_write": false
+    },
+    {
+      "name": "QdF",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0000",
+      "user": "0000",
+      "desc": "Служебное дельта-потока (только внутреннее чтение)",
+      "handler": "sub_0800ED20",
+      "protected_write": false
+    },
+    {
+      "name": "REV_FL_OFF_PER_S",
+      "type": "цел (сек)",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0100",
+      "desc": "Время для снятия реакции по обратному потоку",
+      "handler": "sub_0800D448",
+      "protected_write": false
+    },
+    {
+      "name": "REV_FL_ON_PER_S",
+      "type": "цел (сек)",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Время обратного потока для **срабатывания** (реверс среды = аварийно)",
+      "handler": "sub_08008888",
+      "protected_write": false
+    },
+    {
+      "name": "TEMP_GAS_MAX_CRASH",
+      "type": "f (°C)",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Макс. температура среды → авария CRASH",
+      "handler": "sub_0800C008",
+      "protected_write": false
+    },
+    {
+      "name": "TEMP_GAS_MIN_CRASH",
+      "type": "f (°C)",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Мин. температура среды → авария CRASH",
+      "handler": "sub_0800BF28",
+      "protected_write": false
+    },
+    {
+      "name": "TEMP_GAS_PER_CRASH",
+      "type": "цел (сек)",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Длительность выхода температуры за порог до CRASH",
+      "handler": "sub_0800C10C",
+      "protected_write": false
+    },
+    {
+      "name": "VALVE_CLOSE_Q_PH",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "Порог потока, при котором закрыть актуатор",
+      "handler": "sub_0800D0B0",
+      "protected_write": false
+    },
+    {
+      "name": "VOLUME_COMMIS",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0100",
+      "user": "0000",
+      "desc": "Объём на момент ввода в эксплуатацию (стартовое показание)",
+      "handler": "sub_08006FBC",
+      "protected_write": true
+    },
+    {
+      "name": "VOLUME_DISC",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0101",
+      "desc": "«Недостоверный» объём — счёт при нарушении/вмешательстве (защита от вмешательства, §8ter)",
+      "handler": "sub_08008304",
+      "protected_write": true
+    },
+    {
+      "name": "VOLUME_GLOB",
+      "type": "f/цел",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0000",
+      "desc": "Глобальный (полный) накопленный объём",
+      "handler": "sub_0800FA30",
+      "protected_write": true
+    },
+    {
+      "name": "VOLUME_INST",
+      "type": "f",
+      "group": "Значения и накопители",
+      "prov": "0101",
+      "user": "0000",
+      "desc": "Мгновенный объём/поток в текущий момент",
+      "handler": "sub_0800A014",
+      "protected_write": true
+    },
+    {
+      "name": "Volume",
+      "type": "f/цел",
+      "group": "Значения и накопители",
+      "prov": "0000",
+      "user": "0100",
+      "desc": "**Показания** — накопленный объём (то, что на экране). Хранится ×10000",
+      "handler": "sub_08006B48",
+      "protected_write": true
+    },
+    {
+      "name": "EN_KALMAN_FILTER",
+      "type": "флаг",
+      "group": "Фильтр Калмана",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Включить/выключить сглаживающий фильтр Калмана",
+      "handler": "sub_0800A3E0",
+      "protected_write": false
+    },
+    {
+      "name": "KALMAN_BORDER_H",
+      "type": "f",
+      "group": "Фильтр Калмана",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Верхняя граница срабатывания фильтра",
+      "handler": "sub_0800A598",
+      "protected_write": false
+    },
+    {
+      "name": "KALMAN_BORDER_L",
+      "type": "f",
+      "group": "Фильтр Калмана",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Нижняя граница фильтра",
+      "handler": "sub_0800B1B4",
+      "protected_write": false
+    },
+    {
+      "name": "KALMAN_COUNTER",
+      "type": "цел",
+      "group": "Фильтр Калмана",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Регистр итераций/окно фильтра",
+      "handler": "sub_0800C2E4",
+      "protected_write": false
+    },
+    {
+      "name": "KALMAN_K",
+      "type": "f",
+      "group": "Фильтр Калмана",
+      "prov": "0100",
+      "user": "0100",
+      "desc": "Коэффициент усиления фильтра (K)",
+      "handler": "sub_0800A4C0",
+      "protected_write": false
+    }
+  ]
+}
