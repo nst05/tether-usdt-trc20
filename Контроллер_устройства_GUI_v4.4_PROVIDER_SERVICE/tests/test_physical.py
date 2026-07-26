@@ -151,6 +151,7 @@ def test_session_records_and_masks_secret():
         blob = open(rec.jsonl_path, encoding="utf-8").read()
         assert "123456" not in blob                 # секрет не сохранён
         assert "•••" in blob                        # значение замаскировано
+        assert "31 32 33 34 35 36" not in blob      # секрет не остаётся и в hex
         csv_text = open(csv_path, encoding="utf-8").read()
         assert "Volume" in csv_text and "1.28" in csv_text
         assert "123456" not in csv_text             # маска и в CSV
@@ -196,3 +197,33 @@ def run_all():
 
 if __name__ == "__main__":
     sys.exit(0 if run_all() else 1)
+
+
+def test_provider_authentication_uses_provider_only_probe():
+    class FakeClient:
+        def __init__(self):
+            self.sent = []
+        def send(self, cmd, **kwargs):
+            self.sent.append((cmd, kwargs))
+            return b"OK;\r\n"
+        def get(self, name):
+            assert name == "PASWORD_PROVID_VALUE"
+            return "provider-ok"
+    cli = FakeClient()
+    result = sc.authenticate_provider(cli, "secret")
+    assert result["verified"] is True
+    assert cli.sent[0][0] == "PASSWORD_PROVIDER=secret"
+    assert cli.sent[0][1]["expert"] is True
+
+
+def test_provider_authentication_rejects_failed_probe():
+    class FakeClient:
+        def send(self, cmd, **kwargs):
+            return b"OK;\r\n"
+        def get(self, name):
+            return ""
+    try:
+        sc.authenticate_provider(FakeClient(), "secret")
+        assert False, "ожидался PermissionError"
+    except PermissionError:
+        pass

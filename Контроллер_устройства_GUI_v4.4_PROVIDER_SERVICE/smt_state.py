@@ -110,6 +110,53 @@ def parse_archive(data, base=0x40, end=0x128000, stride=REC):
     return recs
 
 
+
+def analyse_timeline(records, tolerance=1e-9):
+    """Enrich parsed history with objective integrity/sequence anomalies.
+
+    The function does not guess consumption limits. It flags only verifiable
+    inconsistencies: mirrored value mismatch, time rollback, index rollback and
+    accumulated-volume decrease. Returns (enriched_records, summary).
+    """
+    out = []
+    previous = None
+    counters = {"copy_mismatch": 0, "time_back": 0, "index_back": 0,
+                "volume_back": 0, "anomalies": 0}
+    for source in records:
+        row = dict(source)
+        marks = []
+        copy_value = row.get("volume_copy")
+        volume = row.get("volume")
+        integrity_ok = True
+        if copy_value is not None and volume is not None:
+            integrity_ok = abs(float(volume) - float(copy_value)) <= tolerance
+            if not integrity_ok:
+                marks.append("копия показания не совпала")
+                counters["copy_mismatch"] += 1
+        if previous is not None:
+            if row.get("unixtime") and previous.get("unixtime") and row["unixtime"] < previous["unixtime"]:
+                marks.append("время назад")
+                counters["time_back"] += 1
+            if row.get("index") is not None and previous.get("index") is not None and row["index"] < previous["index"]:
+                marks.append("индекс назад")
+                counters["index_back"] += 1
+            if volume is not None and previous.get("volume") is not None and float(volume) < float(previous["volume"]) - tolerance:
+                marks.append("показание уменьшилось")
+                counters["volume_back"] += 1
+        row["integrity_ok"] = integrity_ok
+        row["anomaly"] = "; ".join(marks)
+        counters["anomalies"] += bool(marks)
+        out.append(row)
+        previous = row
+    summary = dict(counters)
+    summary["count"] = len(out)
+    summary["first_datetime"] = out[0].get("datetime") if out else None
+    summary["last_datetime"] = out[-1].get("datetime") if out else None
+    summary["first_volume"] = out[0].get("volume") if out else None
+    summary["last_volume"] = out[-1].get("volume") if out else None
+    summary["delta_volume"] = (float(out[-1]["volume"]) - float(out[0]["volume"])) if len(out) >= 2 else 0.0
+    return out, summary
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)

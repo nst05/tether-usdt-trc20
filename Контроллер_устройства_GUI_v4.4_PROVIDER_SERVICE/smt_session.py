@@ -92,6 +92,7 @@ class SessionRecorder:
             shown_val = "•••" if value not in (None, "") else value
             if "=" in cmd:
                 shown_cmd = cmd.split("=", 1)[0] + "=•••"
+            tx = rx_raw = rx_clean = b""
         entry = {
             "type": "exchange", "ts": ts, "kind": kind, "name": name,
             "cmd": shown_cmd, "value": shown_val,

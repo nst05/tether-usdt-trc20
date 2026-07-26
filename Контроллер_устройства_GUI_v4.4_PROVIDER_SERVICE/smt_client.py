@@ -93,8 +93,63 @@ PROTECTED_WRITE |= IMPERATIVE_ACTIONS | {
 # Имена-креденшлы: их ЗНАЧЕНИЕ не пишем в журнал сессии (маскируем).
 SECRET_NAMES = {
     "PASSWORD_PROVIDER", "PASSWORD_OMEGA", "PASSWORD_OMEGA2", "PASSWORD_FABRIC",
-    "MAGIC", "ENABLE_OMEGA", "EVENT_OMEGA", "APN_PASSWORD",
+    "PASWORD_PROVID_VALUE", "MAGIC", "ENABLE_OMEGA", "EVENT_OMEGA", "APN_PASSWORD",
 }
+
+AUTH_ERROR_MARKERS = (
+    "ERROR", "DENIED", "FAIL", "WRONG", "INVALID", "UNAUTHORIZED",
+    "ОШИБ", "ОТКАЗ", "НЕВЕР", "ЗАПРЕЩ",
+)
+
+
+def response_has_auth_error(raw) -> bool:
+    """Есть ли в ответе явный отказ аутентификации/доступа."""
+    if raw is None:
+        return True
+    text = decode_response(raw if isinstance(raw, (bytes, bytearray)) else str(raw).encode("utf-8"))
+    upper = text.upper()
+    return any(marker in upper for marker in AUTH_ERROR_MARKERS)
+
+
+def provider_probe_ok(value) -> bool:
+    """Проверка ответа provider-only команды PASWORD_PROVID_VALUE.
+
+    Каталог протокола помечает эту команду как доступную провайдеру и
+    недоступную обычному пользовательскому уровню. Поэтому непустой ответ без
+    явного отказа используется как штатное подтверждение уровня Provider.
+    """
+    if value is None:
+        return False
+    text = str(value).strip()
+    if not text:
+        return False
+    upper = text.upper()
+    return not any(marker in upper for marker in AUTH_ERROR_MARKERS)
+
+
+def authenticate_provider(client, password: str) -> dict:
+    """Штатно авторизоваться как Provider и проверить уровень чтением.
+
+    Функция не подбирает и не извлекает пароль: принимает только явно переданный
+    оператором пароль, отправляет PASSWORD_PROVIDER и затем читает
+    PASWORD_PROVID_VALUE. Возвращает метаданные подтверждённой сессии.
+    """
+    password = str(password or "")
+    if not password:
+        raise ValueError("Пароль Provider не задан")
+    raw = client.send(f"PASSWORD_PROVIDER={password}", expert=True, mutating=True)
+    if response_has_auth_error(raw):
+        raise PermissionError("Прибор отклонил пароль Provider")
+    probe = client.get("PASWORD_PROVID_VALUE")
+    if not provider_probe_ok(probe):
+        raise PermissionError(
+            "Уровень Provider не подтверждён командой PASWORD_PROVID_VALUE")
+    return {
+        "level": "provider",
+        "verified": True,
+        "probe": str(probe),
+        "verified_at": time.time(),
+    }
 
 
 def command_name(cmd: str) -> str:

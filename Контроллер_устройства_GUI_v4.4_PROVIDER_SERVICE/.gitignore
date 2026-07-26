@@ -1,6 +1,6 @@
 __pycache__/
 *.pyc
+.pytest_cache/
 sessions/*
 !sessions/README.txt
 .smt_optic_gui.json
-.pytest_cache/
