@@ -1232,8 +1232,26 @@ ENDIF
     status_bar = ttk.Frame(status_frame); status_bar.pack(fill="x")
     ttk.Button(status_bar, text="Считать статусы",
                command=lambda: task_q.put({"op": "read_status"})).pack(side="left")
-    ttk.Button(status_bar, text="Очистить",
+    ttk.Button(status_bar, text="Очистить вид",
                command=lambda: _status_clear()).pack(side="left", padx=4)
+
+    def _do_clear_all_alarms():
+        if not state["expert"]:
+            messagebox.showwarning("Сброс тревог", "Включи Экспертный режим.")
+            return
+        if not messagebox.askyesno(
+                "Сброс всех тревог",
+                "Отправить на прибор:\n"
+                "  WARNING_CLEAR\n  ALARM_CLEAR\n  CRASH_CLEAR\n\n"
+                "Все активные флаги будут сброшены. Продолжить?",
+                parent=root):
+            return
+        for cmd in ("WARNING_CLEAR", "ALARM_CLEAR", "CRASH_CLEAR"):
+            task_q.put({"op": "send", "text": cmd, "expert": True})
+        root.after(1500, lambda: task_q.put({"op": "read_status"}))
+
+    ttk.Button(status_bar, text="Сбросить все тревоги",
+               command=_do_clear_all_alarms).pack(side="left", padx=6)
     status_summary_lbl = ttk.Label(status_bar, text="—", foreground="#555")
     status_summary_lbl.pack(side="left", padx=10)
 
