@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smt-device-controller"
+version = "4.5.4"
+description = "GUI/CLI controller for a physical SMT device over Serial, TCP and GSM/SMS"
+readme = "README_GUI.md"
+requires-python = ">=3.10"
+dependencies = ["pyserial>=3.5"]
+
+[project.scripts]
+smt-controller = "smt_gui:main"
+smt-cli = "smt_cli:main"
+smt-telemetry-server = "smt_server:main"
+smt-diagnostic = "smt_diagnostic_viewer:main"
+
+[tool.setuptools]
+packages = ["smt_core"]
+py-modules = [
+  "smt_backend", "smt_cli", "smt_client", "smt_eventlog", "smt_firmware",
+  "smt_gui", "smt_gui_support", "smt_logging", "smt_diagnostics", "smt_diagnostic_viewer", "smt_server", "smt_session",
+  "smt_smart", "smt_state", "smt_telemetry", "smt_telemetry_store", "smt_tools",
+  "optic_preflight",
+]
+
+[tool.setuptools.package-data]
+"*" = ["smt_commands.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.coverage.run]
+branch = true
+source = [
+  "smt_core", "smt_backend", "smt_client", "smt_eventlog", "smt_firmware",
+  "smt_gui", "smt_gui_support", "smt_logging", "smt_diagnostics", "smt_diagnostic_viewer", "smt_server", "smt_session",
+  "smt_smart", "smt_state", "smt_telemetry", "smt_telemetry_store", "smt_tools",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+exclude = ["sessions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501", "E701", "E702", "E741", "E402", "SIM115", "F405"]
+
+[tool.ruff.lint.per-file-ignores]
+"smt_gui.py" = ["I001"]
+
+[tool.mypy]
+python_version = "3.10"
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+exclude = "sessions"
+
+[tool.setuptools.data-files]
+"." = ["smt_commands.json"]

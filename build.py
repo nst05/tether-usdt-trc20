@@ -2,10 +2,10 @@
 Build script — компилирует CRM в исполняемый файл.
 Запуск:  python build.py
 """
-import subprocess
-import sys
 import os
 import shutil
+import subprocess
+import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 

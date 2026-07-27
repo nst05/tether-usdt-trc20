@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+"""Тесты физического клиента и журнала сессии — без железа.
+
+Порт подменяется FakeSerial через внутреннюю инъекцию OpticTransport(ser=...).
+Это тестовый объект транспорта, а НЕ режим приложения.
+"""
+import os
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+
+import smt_client as sc
+import smt_session as ssn
+
+
+class FakeSerial:
+    """Мини-порт: на каждый write() кладёт ответ от responder(tx) в буфер чтения."""
+    def __init__(self, responder):
+        self.responder = responder
+        self.is_open = True
+        self._rx = bytearray()
+        self.writes = []
+        self.dtr = False
+        self.rts = False
+
+    @property
+    def in_waiting(self):
+        return len(self._rx)
+
+    def read(self, n):
+        if not self._rx:
+            return b""
+        n = min(n, len(self._rx))
+        out = bytes(self._rx[:n]); del self._rx[:n]
+        return out
+
+    def write(self, b):
+        self.writes.append(bytes(b))
+        self._rx.extend(self.responder(bytes(b)) or b"")
+        return len(b)
+
+    def flush(self): pass
+    def reset_input_buffer(self): self._rx.clear()
+    def reset_output_buffer(self): pass
+    def close(self): self.is_open = False
+
+
+def _transport(responder):
+    return sc.OpticTransport("FAKE", 9600, idle_gap=0.03,
+                             response_timeout=0.4, read_retries=1, ser=FakeSerial(responder))
+
+
+# ─────────────────────────── тесты транспорта ─────────────────────────── #
+def test_command_name_and_protected():
+    assert sc.command_name("SERVER_URL=1.2.3.4:1") == "SERVER_URL"
+    assert sc.command_name("{VALVE_OPEN}") == "VALVE_OPEN"
+    assert sc.command_name("/?DevInfo!") == "DevInfo"
+    assert sc.is_protected("VALVE_OPEN")
+    assert sc.is_protected("WARNING_CLEAR")
+    assert sc.is_protected("SERVER_URL=x")
+    assert not sc.is_protected("STATUS_SYSTEM")     # статус — не критичная запись
+
+
+def test_framing_detect_via_devinfo():
+    def responder(tx):
+        return b"DevInfo=SIM;\r\n" if tx == b"DevInfo\r" else b""
+    tr = _transport(responder)
+    name, resp = tr.detect_framing("DevInfo")
+    assert name == "cr"
+    assert b"DevInfo=SIM" in resp
+
+
+def test_echo_stripped_but_value_preserved():
+    # эхо = точная копия отправленных байтов; после него — настоящий ответ
+    payload = b"DevInfo\r"
+    raw = b"DevInfo\r" + b"DevInfo=SIM;\r\n"
+    clean, removed = sc.strip_optical_echo("DevInfo", payload, raw)
+    assert removed is True
+    assert clean.startswith(b"DevInfo=SIM")
+    # без эха: NAME=value НЕ должен срезаться
+    clean2, removed2 = sc.strip_optical_echo("DevInfo", payload, b"DevInfo=SIM;")
+    assert removed2 is False and clean2 == b"DevInfo=SIM;"
+
+
+def test_fragmented_response_assembled():
+    # ответ выдаётся двумя фрагментами — сборка по межбайтовой паузе
+    chunks = [b"Volume=1.2", b"8;\r\n"]
+    def responder(tx):
+        # первый write — вернуть оба фрагмента (буфер отдаст их частями через read)
+        return b"".join(chunks)
+    tr = _transport(responder)
+    tr.set_framing("cr")
+    raw = tr.send("Volume", retry_safe=True)
+    assert sc.value_of(raw, name="Volume") == "1.28"
+
+
+def test_read_retries_but_write_never():
+    calls = {"n": 0}
+    def responder(tx):
+        calls["n"] += 1
+        return b""                                   # никогда не отвечаем
+    tr = _transport(responder)
+    tr.set_framing("cr")
+    cli = sc.SmtClient(tr)
+    # чтение: retry_safe → 1 + read_retries(1) = 2 попытки
+    calls["n"] = 0
+    cli.send("Volume", retry_safe=True, mutating=False)
+    assert calls["n"] == 2, calls["n"]
+    # запись: повтор запрещён даже при retry_safe=True
+    calls["n"] = 0
+    cli.send("LCD_TIME=5", retry_safe=True, mutating=True, expert=False)
+    assert calls["n"] == 1, calls["n"]
+
+
+def test_protected_gate_write_and_action():
+    tr = _transport(lambda tx: b"OK;\r\n")
+    tr.set_framing("cr")
+    cli = sc.SmtClient(tr)
+    # запись критичного параметра без expert — отказ
+    try:
+        cli.send("SERVER_URL=1.2.3.4:1", mutating=True, expert=False)
+        raise AssertionError("ожидался PermissionError")
+    except PermissionError:
+        pass
+    # действие (без '=') тоже критично и блокируется
+    try:
+        cli.send("VALVE_OPEN", mutating=True, expert=False)
+        raise AssertionError("ожидался PermissionError для действия")
+    except PermissionError:
+        pass
+    # с expert=True — проходит
+    cli.send("VALVE_OPEN", mutating=True, expert=True)
+    # ЧТЕНИЕ защищённого имени (get) — разрешено без expert
+    cli.send("VALVE", mutating=False)               # не должно бросать
+
+
+# ─────────────────────────── тесты журнала ─────────────────────────── #
+def test_session_records_and_masks_secret():
+    with tempfile.TemporaryDirectory() as d:
+        rec = ssn.SessionRecorder(d)
+        rec.header(port="FAKE", baud=9600, framing="cr", devinfo="SIM")
+        rec.record(kind="read", name="Volume", cmd="Volume", value="1.28",
+                   rx_raw=b"Volume=1.28;", latency_ms=12, ok=True)
+        rec.record(kind="auth", name="PASSWORD_PROVIDER", cmd="PASSWORD_PROVIDER=123456",
+                   value="123456", secret=True, expert=True, critical=True)
+        csv_path = os.path.join(d, "out.csv")
+        n = rec.export_csv(csv_path)
+        rec.close()
+        assert n == 2, n
+        blob = open(rec.jsonl_path, encoding="utf-8").read()
+        assert "123456" not in blob                 # секрет не сохранён
+        assert "•••" in blob                        # значение замаскировано
+        assert "31 32 33 34 35 36" not in blob      # секрет не остаётся и в hex
+        csv_text = open(csv_path, encoding="utf-8").read()
+        assert "Volume" in csv_text and "1.28" in csv_text
+        assert "123456" not in csv_text             # маска и в CSV
+
+
+def test_imperative_actions_route_as_action():
+    """Критичные действия (в т.ч. с опечаткой/пропуском в каталоге) должны
+    классифицироваться как ДЕЙСТВИЕ, а не чтение, и требовать экспертного режима."""
+    import smt_gui as gui
+    catalog = gui.load_catalog()
+    actions = gui.build_actions(catalog)
+    for name in ("VALVE_TRY_CLOSE", "CLEAR_SABOTAG", "VALVE_OPEN"):
+        assert name in actions, f"{name} не в множестве действий"
+        nm, kind = gui.classify_send(name, actions)     # «голое» имя
+        assert kind == "action", f"{name} уехал как {kind}, а не action"
+        assert nm in sc.PROTECTED_WRITE                  # значит будет за expert-гейтом
+    # чтение параметра-имени (не императив) остаётся чтением
+    nm, kind = gui.classify_send("VALVE", actions)       # состояние актуатора — read
+    assert kind == "read"
+
+
+def test_action_available_in_expert_only():
+    """Действие блокируется без expert и проходит с expert (доступно в эксперт-режиме)."""
+    tr = _transport(lambda tx: b"OK;\r\n")
+    tr.set_framing("cr")
+    cli = sc.SmtClient(tr)
+    try:
+        cli.send("VALVE_TRY_CLOSE", mutating=True, expert=False)
+        raise AssertionError("должно блокироваться без expert")
+    except PermissionError:
+        pass
+    cli.send("VALVE_TRY_CLOSE", mutating=True, expert=True)   # доступно в эксперт-режиме
+
+
+def run_all():
+    fns = [g for n, g in sorted(globals().items()) if n.startswith("test_") and callable(g)]
+    ok = 0
+    for fn in fns:
+        fn(); print(f"  PASS {fn.__name__}"); ok += 1
+    print(f"ИТОГО: {ok}/{len(fns)} тестов прошли")
+    return ok == len(fns)
+
+
+if __name__ == "__main__":
+    sys.exit(0 if run_all() else 1)
+
+
+def test_provider_authentication_uses_password_response_only():
+    class FakeClient:
+        def __init__(self):
+            self.sent = []
+        def send(self, cmd, **kwargs):
+            self.sent.append((cmd, kwargs))
+            return b"OK;\r\n"
+    cli = FakeClient()
+    result = sc.authenticate_provider(cli, "123456")
+    assert result["verified"] is True
+    assert result["verified_by"] == "PASSWORD_PROVIDER"
+    assert cli.sent[0][0] == "PASSWORD_PROVIDER=123456"
+    assert cli.sent[0][1]["expert"] is True
+
+
+def test_provider_authentication_rejects_explicit_error():
+    class FakeClient:
+        def send(self, cmd, **kwargs):
+            return b"ERROR;\r\n"
+    try:
+        sc.authenticate_provider(FakeClient(), "123456")
+        raise AssertionError("ожидался PermissionError")
+    except PermissionError:
+        pass
+
+
+def test_provider_authentication_requires_six_symbols():
+    class FakeClient:
+        def send(self, cmd, **kwargs):
+            raise AssertionError("send must not be called")
+    try:
+        sc.authenticate_provider(FakeClient(), "secret7")
+        raise AssertionError("ожидался ValueError")
+    except ValueError:
+        pass
+
+
+def test_omega_authentication_uses_password_response_only():
+    class FakeClient:
+        def __init__(self):
+            self.sent = []
+        def send(self, cmd, **kwargs):
+            self.sent.append((cmd, kwargs))
+            return b"OK;\r\n"
+    cli = FakeClient()
+    result = sc.authenticate_omega(cli, "42")
+    assert result["level"] == "omega"
+    assert result["verified"] is True
+    assert cli.sent[0][0] == "PASSWORD_OMEGA=42"
+
+
+
+
+def test_value_of_named_response_never_uses_foreign_field():
+    raw = b"STATUS=OK;OTHER=123;"
+    assert sc.value_of(raw, name="Volume") is None
+    assert sc.value_of(raw) == "123"
+
+
+def test_empty_and_protocol_auth_errors_are_rejected():
+    assert sc.response_has_auth_error(b"") is True
+    assert sc.response_has_auth_error(b"INCORRECT_PASSWORD\r\n") is True
+    assert sc.response_has_auth_error(b"ACCESS_DENIED\r\n") is True
+    assert sc.response_has_auth_error(b"OK\r\n") is False
+
+
+def test_bare_imperative_is_mutating_without_caller_hint():
+    tr = _transport(lambda tx: b"OK;\r\n")
+    tr.set_framing("cr")
+    cli = sc.SmtClient(tr)
+    try:
+        cli.send("CLEAR_ARHIVE", expert=False)
+        raise AssertionError("голое действие должно пройти через экспертный гейт")
+    except PermissionError:
+        pass
+    cli.send("CLEAR_ARHIVE", expert=True)
+
+
+def test_read_burst_continues_while_bytes_arrive_after_soft_timeout():
+    import time
+
+    class SlowSerial:
+        def __init__(self):
+            self.is_open = True
+            self.parts = [b"A", b"B", b"C"]
+            self.dtr = self.rts = False
+        @property
+        def in_waiting(self):
+            return 0
+        def read(self, n):
+            time.sleep(0.035)
+            return self.parts.pop(0) if self.parts else b""
+        def write(self, b): return len(b)
+        def flush(self): pass
+        def reset_input_buffer(self): pass
+        def reset_output_buffer(self): pass
+        def close(self): self.is_open = False
+
+    tr = sc.OpticTransport("SLOW", ser=SlowSerial(), response_timeout=0.05,
+                           idle_gap=0.03, read_retries=0)
+    assert tr._read_burst() == b"ABC"
+    assert tr.last_read_truncated is False
+
+
+def test_session_file_names_are_unique_within_same_second():
+    with tempfile.TemporaryDirectory() as d:
+        a = ssn.SessionRecorder(d)
+        b = ssn.SessionRecorder(d)
+        try:
+            assert a.jsonl_path != b.jsonl_path
+            assert a.log_path != b.log_path
+        finally:
+            a.close(); b.close()

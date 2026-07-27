@@ -1,0 +1,14 @@
+v4.5.4 DIAGNOSTIC LOG — release check
+
+[PASS] 57/57 automated tests under virtual X display
+[PASS] Python compileall
+[PASS] GUI starts and creates diagnostic JSONL/LOG
+[PASS] command catalog contains 158 entries
+[PASS] command catalog SHA-256 unchanged from v4.5.3
+[PASS] Serial/TCP/SMS/RAW interfaces remain present
+[PASS] full diagnostic recorder writes unmasked values and complete bytes
+[PASS] diagnostic CSV export
+[PASS] offline diagnostic viewer and summary
+[PASS] package metadata version 4.5.4
+
+Hardware validation: NOT PERFORMED (no physical device/modem available).
