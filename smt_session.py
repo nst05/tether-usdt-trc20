@@ -30,6 +30,14 @@ def _hx(b) -> str:
 
 
 class SessionRecorder:
+    """Потокобезопасный журнал одной физической сессии (JSONL + LOG)."""
+
+    def __enter__(self) -> SessionRecorder:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     def __init__(self, folder: str, mask_secrets: bool = True):
         self.folder = folder
         self.mask_secrets = mask_secrets

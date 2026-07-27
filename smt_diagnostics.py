@@ -56,6 +56,12 @@ def _jsonable(value: Any) -> Any:
 class DiagnosticRecorder:
     """Потокобезопасный append-only журнал одного запуска программы."""
 
+    def __enter__(self) -> DiagnosticRecorder:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     def __init__(
         self,
         folder: str,

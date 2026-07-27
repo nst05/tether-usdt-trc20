@@ -198,8 +198,11 @@ def build_app(root, selftest=False):
                     "sms_prefix":sms_prefix_var.get(),"sms_timeout":float(sms_timeout_var.get())}
         except ValueError:
             messagebox.showerror("Подключение","Проверь числовые параметры транспорта."); return
-        saved={k:v for k,v in selected.items() if k!="op"}; saved["transport"]=label
-        save_settings(saved); task_q.put(selected)
+        saved={k:v for k,v in selected.items() if k!="op"}
+        merged = load_settings()
+        merged.update(saved)
+        merged["transport"] = label
+        save_settings(merged); task_q.put(selected)
     conn_btn.config(command=do_connect)
     update_transport_fields()
 
@@ -388,7 +391,7 @@ def build_app(root, selftest=False):
         det_txt.insert("end", f"Группа: {c['group']}\n")
         det_txt.insert("end", f"Доступ  П={c['prov']} ({access_human(c['prov'])})  "
                               f"О={c['user']} ({access_human(c['user'])})\n")
-        acc, _, can_w = access_at_level(c, level_var.get())
+        acc, _, can_w_access = access_at_level(c, level_var.get())
         det_txt.insert("end", f"На уровне «{level_var.get()}»: {acc}\n")
         det_txt.insert("end", f"Обработчик: {c['handler']}\n")
         det_txt.insert("end", f"\n{clean_desc(c['desc'])}\n")
@@ -396,7 +399,7 @@ def build_app(root, selftest=False):
         det_txt.configure(state="disabled")
         typ = c["type"] or ""
         is_action = c["name"] in actions
-        can_r, can_w, can_a = directions(c, is_action)
+        can_r, can_w_dir, can_a = directions(c, is_action)
         hint_lbl.config(text=f"Тип: {typ}  ·  доступ П={c['prov']} О={c['user']}  ·  "
                              + ("действие (кнопка «Выполнить»)" if is_action
                                 else "работает в обе стороны: чтение и запись"))
@@ -404,7 +407,7 @@ def build_app(root, selftest=False):
         opt_cb.config(values=opts); opt_cb.set("")
         now_btn.grid() if "дата" in typ else now_btn.grid_remove()
         read_btn.state(["!disabled"] if can_r else ["disabled"])
-        write_btn.state(["!disabled"] if can_w else ["disabled"])
+        write_btn.state(["!disabled"] if (can_w_dir and can_w_access) else ["disabled"])
         act_btn.state(["!disabled"] if can_a else ["disabled"])
         if c["name"] in READING_COMMANDS:
             write_btn.config(text="Записать напрямую (Provider)")
@@ -825,7 +828,7 @@ def build_app(root, selftest=False):
                 base, recs = state_mod.parse_dump(data)
                 for r in recs:
                     t = r['datetime'].strftime('%Y-%m-%d %H:%M') if r['datetime'] else '—'
-                    ok = r['valid'] and abs(r['volume'] - r['volume_copy']) < 1e-9
+                    ok = r['valid'] and abs(r['volume'] - r['volume_copy']) <= 1e-9
                     cp_tree.insert("", "end",
                                    values=(r['index'], t, f"{r['volume']:.6f}",
                                            f"{r['temp1']:.2f}", f"{r['temp2']:.2f}",
@@ -882,7 +885,7 @@ def build_app(root, selftest=False):
             w.writerow(["section", "index", "datetime_utc", "value", "temp1", "temp2", "code", "note"])
             for r in state.get("history_checkpoint", []):
                 dt = r["datetime"].isoformat(sep=" ") if r.get("datetime") else ""
-                ok = r.get("valid") and abs(r.get("volume", 0) - r.get("volume_copy", 0)) < 1e-9
+                ok = r.get("valid") and abs(r.get("volume", 0) - r.get("volume_copy", 0)) <= 1e-9
                 w.writerow(["checkpoint", r.get("index"), dt, r.get("volume"),
                             r.get("temp1"), r.get("temp2"), "", "integrity=ok" if ok else "integrity=bad"])
             for r in state.get("history_archive", []):
@@ -1223,116 +1226,123 @@ READ LCD_TIME
         try:
             while True:
                 kind, payload = out_q.get_nowait()
-                if kind == "log":
-                    append(*payload)
-                elif kind == "hex":
-                    append_hex(payload)
-                elif kind == "reading":
-                    name, value, ts = payload
-                    if state.get("monitoring") and name in state.get("monitor_names", []):
-                        row = (ts, name, value)
-                        state["monitor_rows"].append(row)
-                        mon_tree.insert("", 0, values=row)
-                        while len(mon_tree.get_children()) > 500:
-                            mon_tree.delete(mon_tree.get_children()[-1])
-                elif kind == "scan_progress":
-                    index, total, name, value = payload
-                    scan_var.set(index)
-                    scan_label.config(text=f"{index}/{total} · {name}")
-                elif kind == "snapshot":
-                    values, mode = payload
-                    state["current_snapshot"] = values
-                    state["mode"] = mode
-                    refresh_snapshot_tree()
-                    main_nb.select(tab_lab)
-                elif kind == "batch_progress":
-                    index, total, source = payload
-                    batch_status.config(text=f"{index}/{total}: {source}")
-                elif kind == "batch_done":
-                    ok, done, message = payload
-                    batch_status.config(text=f"{message} · шагов {done}",
-                                        foreground="#0a7d0a" if ok else "#c47f00")
-                elif kind == "reading_write_done":
-                    state.setdefault("readings", {})[payload.get("command", "Volume")] = payload.get("new_value", "")
-                    if payload.get("verified"):
-                        append("ok", "[Provider] прямой SET выполнен; read-back совпал.")
-                    else:
-                        append("ok", "[Provider] прямой SET отправлен без read-back.")
-                elif kind == "auth_state":
-                    level = payload.get("level", "guest")
-                    verified = bool(payload.get("verified"))
-                    state["provider_verified"] = verified and level == "provider"
-                    state["provider_verified_at"] = payload.get("verified_at", 0.0)
-                    if verified and level == "provider":
-                        level_var.set("Провайдер (П)")
-                        auth_lbl.config(text="● Provider подтверждён", foreground="#0a7d0a")
-                    elif verified and level == "omega":
-                        level_var.set("Omega (О)")
-                        auth_lbl.config(text="● Omega подтверждён", foreground="#0a7d0a")
-                    else:
-                        level_var.set("Гость")
-                        auth_lbl.config(text="○ уровень не подтверждён", foreground="#777")
-                elif kind == "tele_log":
-                    append(*payload)
-                elif kind == "tele_reading":
-                    state["readings"] = payload
-                    append("ok", "[тел] показания сняты — можно «Собрать пакет».")
-                elif kind == "tele_rx":
-                    raw, rep, ip, n = payload
-                    tele_in.delete("1.0", "end"); tele_in.insert("1.0", raw)
-                    _tele_render(rep)
-                    refresh_telemetry_db()
-                    main_nb.select(tab_tele)
-                    append("ok", f"[приём] пакет от {ip}: {n} записей → ACK DATA ACCEPT:{n}")
-                elif kind == "tele_state":
-                    if payload == "off":
-                        state["tele_srv"] = None
-                        listen_status.config(text="○ не слушаю", foreground="#777")
-                elif kind == "diag_event":
-                    state["diagnostic_events"].append(payload)
-                    if diag_matches(payload):
-                        diag_render_event(payload)
-                        with contextlib.suppress(Exception):
-                            diag_tree.see(str(payload.get("seq", "")))
-                    diag_count_lbl.config(text=f"{len(state['diagnostic_events'])} событий")
-                elif kind == "session_file":
-                    state["session_file"] = payload
-                elif kind == "password":
-                    cred, value = payload
-                    pw_var.set(value)
-                    if cred in AUTH_CREDS:
-                        cred_var.set(cred)
-                    append("ok", f"[auto] Значение из {cred} подставлено в поле "
-                                 "аутентификации (в журнале скрыто).")
-                elif kind == "raw_result":
-                    raw = payload
-                    append("ok", f"[RAW] получено {len(raw)} байт")
-                    main_nb.select(tab_terminal)
-                elif kind == "sms_messages":
-                    sms_text.delete("1.0", "end")
-                    for item in payload:
-                        sms_text.insert("end", f"#{item.get('index')} {item.get('header')}\n{item.get('text')}\n\n")
-                    if not payload:
-                        sms_text.insert("end", "Непрочитанных SMS нет.")
-                    main_nb.select(tab_terminal)
-                elif kind == "status":
-                    st, endpoint = payload
-                    state["connected"] = st in ("serial", "tcp", "sms")
-                    state["mode"] = st if state["connected"] else "off"
-                    if state["connected"]:
-                        names={"serial":"ОПТОПОРТ","tcp":"TCP","sms":"GSM/SMS"}
-                        status_lbl.config(text=f"● {names.get(st,st)} {endpoint}", foreground="#0a7d0a")
-                        conn_btn.config(text="Отключить")
-                        transport_cb.state(["disabled"])
-                    else:
-                        state["provider_verified"] = False
-                        state["provider_verified_at"] = 0.0
-                        auth_lbl.config(text="○ Provider не подтверждён", foreground="#777")
-                        level_var.set("Гость")
-                        status_lbl.config(text="● отключено", foreground="#b00")
-                        conn_btn.config(text="Подключить")
-                        transport_cb.state(["!disabled"])
-                        update_transport_fields()
+                try:
+                    if kind == "log":
+                        append(*payload)
+                    elif kind == "hex":
+                        append_hex(payload)
+                    elif kind == "reading":
+                        name, value, ts = payload
+                        if state.get("monitoring") and name in state.get("monitor_names", []):
+                            row = (ts, name, value)
+                            state["monitor_rows"].append(row)
+                            if len(state["monitor_rows"]) > 500:
+                                state["monitor_rows"] = state["monitor_rows"][-500:]
+                            mon_tree.insert("", 0, values=row)
+                            while len(mon_tree.get_children()) > 500:
+                                mon_tree.delete(mon_tree.get_children()[-1])
+                    elif kind == "scan_progress":
+                        index, total, name, value = payload
+                        scan_var.set(index)
+                        scan_label.config(text=f"{index}/{total} · {name}")
+                    elif kind == "snapshot":
+                        values, mode = payload
+                        state["current_snapshot"] = values
+                        state["mode"] = mode
+                        refresh_snapshot_tree()
+                        main_nb.select(tab_lab)
+                    elif kind == "batch_progress":
+                        index, total, source = payload
+                        batch_status.config(text=f"{index}/{total}: {source}")
+                    elif kind == "batch_done":
+                        ok, done, message = payload
+                        batch_status.config(text=f"{message} · шагов {done}",
+                                            foreground="#0a7d0a" if ok else "#c47f00")
+                    elif kind == "reading_write_done":
+                        state.setdefault("readings", {})[payload.get("command", "Volume")] = payload.get("new_value", "")
+                        if payload.get("verified"):
+                            append("ok", "[Provider] прямой SET выполнен; read-back совпал.")
+                        else:
+                            append("ok", "[Provider] прямой SET отправлен без read-back.")
+                    elif kind == "auth_state":
+                        level = payload.get("level", "guest")
+                        verified = bool(payload.get("verified"))
+                        state["provider_verified"] = verified and level == "provider"
+                        state["provider_verified_at"] = payload.get("verified_at", 0.0)
+                        if verified and level == "provider":
+                            level_var.set("Провайдер (П)")
+                            auth_lbl.config(text="● Provider подтверждён", foreground="#0a7d0a")
+                        elif verified and level == "omega":
+                            level_var.set("Omega (О)")
+                            auth_lbl.config(text="● Omega подтверждён", foreground="#0a7d0a")
+                        else:
+                            level_var.set("Гость")
+                            auth_lbl.config(text="○ уровень не подтверждён", foreground="#777")
+                    elif kind == "tele_log":
+                        append(*payload)
+                    elif kind == "tele_reading":
+                        state["readings"] = payload
+                        append("ok", "[тел] показания сняты — можно «Собрать пакет».")
+                    elif kind == "tele_rx":
+                        raw, rep, ip, n = payload
+                        tele_in.delete("1.0", "end"); tele_in.insert("1.0", raw)
+                        _tele_render(rep)
+                        refresh_telemetry_db()
+                        main_nb.select(tab_tele)
+                        append("ok", f"[приём] пакет от {ip}: {n} записей → ACK DATA ACCEPT:{n}")
+                    elif kind == "tele_state":
+                        if payload == "off":
+                            state["tele_srv"] = None
+                            listen_status.config(text="○ не слушаю", foreground="#777")
+                    elif kind == "diag_event":
+                        state["diagnostic_events"].append(payload)
+                        if diag_matches(payload):
+                            diag_render_event(payload)
+                            with contextlib.suppress(Exception):
+                                diag_tree.see(str(payload.get("seq", "")))
+                        diag_count_lbl.config(text=f"{len(state['diagnostic_events'])} событий")
+                    elif kind == "session_file":
+                        state["session_file"] = payload
+                    elif kind == "password":
+                        cred, value = payload
+                        pw_var.set(value)
+                        if cred in AUTH_CREDS:
+                            cred_var.set(cred)
+                        append("ok", f"[auto] Значение из {cred} подставлено в поле "
+                                     "аутентификации (в журнале скрыто).")
+                    elif kind == "raw_result":
+                        raw = payload
+                        append("ok", f"[RAW] получено {len(raw)} байт")
+                        main_nb.select(tab_terminal)
+                    elif kind == "sms_messages":
+                        sms_text.delete("1.0", "end")
+                        for item in payload:
+                            sms_text.insert("end", f"#{item.get('index')} {item.get('header')}\n{item.get('text')}\n\n")
+                        if not payload:
+                            sms_text.insert("end", "Непрочитанных SMS нет.")
+                        main_nb.select(tab_terminal)
+                    elif kind == "status":
+                        st, endpoint = payload
+                        state["connected"] = st in ("serial", "tcp", "sms")
+                        state["mode"] = st if state["connected"] else "off"
+                        if state["connected"]:
+                            names={"serial":"ОПТОПОРТ","tcp":"TCP","sms":"GSM/SMS"}
+                            status_lbl.config(text=f"● {names.get(st,st)} {endpoint}", foreground="#0a7d0a")
+                            conn_btn.config(text="Отключить")
+                            transport_cb.state(["disabled"])
+                        else:
+                            monitor_stop()
+                            state["provider_verified"] = False
+                            state["provider_verified_at"] = 0.0
+                            auth_lbl.config(text="○ Provider не подтверждён", foreground="#777")
+                            level_var.set("Гость")
+                            status_lbl.config(text="● отключено", foreground="#b00")
+                            conn_btn.config(text="Подключить")
+                            transport_cb.state(["!disabled"])
+                            update_transport_fields()
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
         except queue.Empty:
             pass
         root.after(80, pump)
@@ -1436,8 +1446,10 @@ READ LCD_TIME
         if s:
             s.stop()
         task_q.put({"op": "quit"})
+        backend.join(timeout=2.0)
         diagnostic.emit("gui", "window.close", status="ok")
-        root.after(150, lambda: (diagnostic.close(), root.destroy()))
+        diagnostic.close()
+        root.destroy()
     root.protocol("WM_DELETE_WINDOW", on_close)
 
     return {"root": root, "task_q": task_q, "log": log, "state": state}
@@ -1476,7 +1488,11 @@ def run_selftest(port):
 def main():
     configure_logging()
     if "--selftest" in sys.argv:
-        run_selftest(sys.argv[sys.argv.index("--selftest") + 1]); return
+        idx = sys.argv.index("--selftest")
+        if idx + 1 >= len(sys.argv):
+            print("--selftest requires a port argument", file=sys.stderr)
+            return
+        run_selftest(sys.argv[idx + 1]); return
     try:
         import tkinter as tk
     except Exception as e:

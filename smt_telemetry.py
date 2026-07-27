@@ -38,7 +38,8 @@ def build_telemetry_packet(readings):
     body = "{V;1;1;" + rec + "}"
     inner = body[1:-1].encode("latin1")
     sn = str(readings.get("DEVICE_SN") or "")
-    id64 = "".join(f"{ord(ch):02X}" for ch in sn[:8]).ljust(16, "0")[:16] or "0123456789ABCDEF"
+    hex_sn = "".join(f"{ord(ch):02X}" for ch in sn[:8])
+    id64 = hex_sn.ljust(16, "0")[:16] if hex_sn else "0123456789ABCDEF"
     if srv is None:
         return body
     c1 = srv.crc16(inner, *srv.CRC16_VARIANTS["XMODEM"])
@@ -162,6 +163,7 @@ def tele_send(host, port, data, out_q, diagnostic=None):
         started_ns = __import__("time").perf_counter_ns()
         if diagnostic is not None:
             diagnostic.emit("telemetry", "send.start", status="start", details={"host": host, "port": port, "data": data})
+        s = None
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(3)
             s.connect((host, port)); s.sendall(data)
@@ -170,7 +172,6 @@ def tele_send(host, port, data, out_q, diagnostic=None):
                 ack = s.recv(256)
             except TimeoutError:
                 ack = b""
-            s.close()
             duration_ms = (__import__("time").perf_counter_ns() - started_ns) / 1_000_000
             if diagnostic is not None:
                 diagnostic.emit("telemetry", "send.end", status="ok", duration_ms=duration_ms, details={"host": host, "port": port, "data": data, "ack": ack})
@@ -181,4 +182,8 @@ def tele_send(host, port, data, out_q, diagnostic=None):
             if diagnostic is not None:
                 diagnostic.emit("telemetry", "send.end", status="error", duration_ms=duration_ms, details={"host": host, "port": port, "data": data}, error=e)
             out_q.put(("tele_log", ("err", f"[отправка] ошибка: {e}")))
+        finally:
+            if s is not None:
+                with contextlib.suppress(Exception):
+                    s.close()
     threading.Thread(target=worker, daemon=True).start()

@@ -49,9 +49,17 @@ def authenticate_omega(client, password: str) -> dict:
 
 
 class SmtClient:
-    def __init__(self, transport: CommandTransport, diagnostic=None):
+    """Высокоуровневый клиент для работы с физическим прибором SMT."""
+
+    def __init__(self, transport: CommandTransport, diagnostic: object = None) -> None:
         self.t = transport
         self.diagnostic = diagnostic
+
+    def __enter__(self) -> SmtClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.t.close()
 
     def send(self, cmd: str, *, retry_safe: bool = False, expert: bool = False,
              mutating: bool | None = None):
@@ -107,11 +115,14 @@ class SmtClient:
                 })
         return raw
 
-    def get(self, name: str):
-        return value_of(self.t.send(name, retry_safe=True), name=name)
+    def get(self, name: str) -> str | None:
+        """Безопасное чтение параметра через единую точку отправки."""
+        raw = self.send(name, retry_safe=True, mutating=False)
+        return value_of(raw, name=name)
 
-    def get_all(self, delay: float = 0.05):
-        out = {}
+    def get_all(self, delay: float = 0.05) -> dict[str, str | None]:
+        """Снять паспорт — прочитать все штатные параметры прибора."""
+        out: dict[str, str | None] = {}
         for name in PASSPORT:
             try:
                 out[name] = self.get(name)

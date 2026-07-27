@@ -73,21 +73,10 @@ def _auth_ok(report: dict[str, Any]) -> int | None:
     return 1 if any(bool(x.get("match")) for x in checks) else 0
 
 
-def _previous_record(con: sqlite3.Connection, id64: str, device_datetime: str = "") -> sqlite3.Row | None:
-    """Последняя хронологически предшествующая запись устройства.
-
-    При пустой метке времени сохраняется прежний fallback по порядку вставки.
-    """
+def _previous_record(con: sqlite3.Connection, id64: str) -> sqlite3.Row | None:
+    """Последняя запись устройства по порядку вставки (для межпакетных аномалий)."""
     if not id64:
         return None
-    if device_datetime:
-        return con.execute(
-            """SELECT r.accumulator, r.device_datetime, r.flag
-               FROM records r JOIN packets p ON p.id=r.packet_id
-               WHERE p.id64=? AND r.device_datetime<>'' AND r.device_datetime<=?
-               ORDER BY r.device_datetime DESC, p.id DESC, r.seq DESC LIMIT 1""",
-            (id64, device_datetime),
-        ).fetchone()
     return con.execute(
         """SELECT r.accumulator, r.device_datetime, r.flag
            FROM records r JOIN packets p ON p.id=r.packet_id
@@ -124,14 +113,16 @@ def ingest(path: str, raw: bytes, report: dict[str, Any], *,
             acc = item.get("accumulator")
             record_dt = str(item.get("dt") or "")
             flag = item.get("flag")
-            previous = _previous_record(con, id64, record_dt)
+            previous = _previous_record(con, id64)
             prev_acc = previous["accumulator"] if previous else None
             prev_dt = previous["device_datetime"] if previous else ""
             marks: list[str] = []
-            if prev_acc is not None and acc is not None and int(acc) < int(prev_acc):
+            out_of_order = bool(prev_dt and record_dt and record_dt < prev_dt)
+            if out_of_order:
+                if prev_acc is not None and acc is not None and int(acc) >= int(prev_acc):
+                    marks.append("время вернулось назад")
+            elif prev_acc is not None and acc is not None and int(acc) < int(prev_acc):
                 marks.append("накопитель уменьшился")
-            if prev_dt and record_dt and record_dt < prev_dt:
-                marks.append("время вернулось назад")
             if flag not in (None, 0, "0"):
                 marks.append(f"флаг={flag}")
             anomaly = "; ".join(marks)

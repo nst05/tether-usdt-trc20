@@ -75,8 +75,13 @@ def load_settings():
         logger.debug("Не удалось загрузить настройки %s", SETTINGS_PATH, exc_info=exc)
         return {}
 
-def save_settings(data):
+def save_settings(data: dict, *, merge: bool = True) -> None:
+    """Сохранить настройки, объединяя с существующими по умолчанию."""
     try:
+        if merge:
+            existing = load_settings()
+            existing.update(data)
+            data = existing
         tmp = SETTINGS_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as stream:
             json.dump(data, stream, ensure_ascii=False, indent=2)

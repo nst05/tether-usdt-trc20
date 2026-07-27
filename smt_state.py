@@ -123,7 +123,9 @@ def parse_dump(data, forced=None):
     recs = []
     for i in range(NREC):
         off = base + i * REC
-        if _u32(data, off) == 0xFFFFFFFF:      # пустой слот кольца
+        if off + REC > len(data):
+            break
+        if _u32(data, off) == 0xFFFFFFFF:
             continue
         recs.append(parse_record(data, off))
     return base, recs
@@ -133,7 +135,8 @@ def parse_archive(data, base=DEFAULT_PROFILE.main_archive_start,
                   end=DEFAULT_PROFILE.main_archive_end, stride=REC):
     """Главный архив: заголовок впереди (время +0x00, индекс +0x08, показания +0x0C)."""
     recs = []
-    for o in range(base, min(end, len(data)) - stride, stride):
+    read_width = 0x30
+    for o in range(base, min(end, len(data)) - read_width, stride):
         ts = _u32(data, o)
         if ts == 0xFFFFFFFF or not (MIN_UNIX_TS < ts < MAX_UNIX_TS):
             continue
@@ -233,7 +236,7 @@ def main():
     print(f"{'#':>3} {'время (UTC)':<19} {'показания':>12} {'t1':>7} {'t2':>7} {'вал.':>5}")
     for r in recs:
         t = r['datetime'].strftime('%Y-%m-%d %H:%M') if r['datetime'] else '—'
-        ok = 'да' if (r['valid'] and abs(r['volume'] - r['volume_copy']) < 1e-9) else 'НЕТ'
+        ok = 'да' if (r['valid'] and abs(r['volume'] - r['volume_copy']) <= COPY_TOLERANCE) else 'НЕТ'
         print(f"{r['index']:>3} {t:<19} {r['volume']:>12.6f} "
               f"{r['temp1']:>7.2f} {r['temp2']:>7.2f} {ok:>5}")
     if recs:

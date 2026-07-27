@@ -151,6 +151,12 @@ class OpticTransport:
         except Exception as exc:
             logger.debug("Не удалось очистить serial-буфер при открытии", exc_info=exc)
 
+    def __enter__(self) -> OpticTransport:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     @property
     def is_open(self) -> bool:
         return bool(getattr(self.ser, "is_open", False))
@@ -198,7 +204,8 @@ class OpticTransport:
             self._ensure_open()
             try:
                 waiting = int(getattr(self.ser, "in_waiting", 0) or 0)
-                chunk = self.ser.read(min(waiting, 4096)) if waiting else self.ser.read(1)
+                to_read = min(waiting, 4096, self.max_response - len(buf)) if waiting else 1
+                chunk = self.ser.read(to_read)
             except Exception as exc:
                 raise PortClosedError(f"Ошибка чтения {self.port}: {exc}") from exc
             if chunk:
@@ -350,15 +357,23 @@ class SmsTransport:
         if b"ERROR" in rep.upper():
             raise TransportError("GSM-модем не включил текстовый режим SMS")
 
+    def __enter__(self) -> SmsTransport:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     @property
-    def is_open(self):
+    def is_open(self) -> bool:
         return bool(getattr(self.ser, "is_open", False))
 
-    def close(self):
-        try:
-            self.ser.close()
-        except Exception as exc:
-            logger.debug("Ошибка при закрытии GSM-модема", exc_info=exc)
+    def close(self) -> None:
+        with self._lock:
+            try:
+                if self.ser and self.ser.is_open:
+                    self.ser.close()
+            except Exception as exc:
+                logger.debug("Ошибка при закрытии GSM-модема", exc_info=exc)
 
     def _read_until(self, *, timeout=None, prompt=False):
         deadline = time.monotonic() + (self.response_timeout if timeout is None else timeout)
@@ -402,6 +417,9 @@ class SmsTransport:
                 raise TransportError("Ошибка отправки SMS: " + decode_response(raw).strip())
             return raw
 
+    def probe(self, probe_cmd: str = "DevInfo") -> bytes:
+        return self.send(probe_cmd)
+
     def send_at(self, command: str, *, timeout: float = 5.0) -> bytes:
         """Выполнить диагностическую AT-команду модема."""
         with self._lock:
@@ -430,7 +448,7 @@ class SmsTransport:
                     index = int(line.split(":", 1)[1].split(",", 1)[0].strip())
                 except Exception:
                     index = -1
-                body = lines[i + 1] if i + 1 < len(lines) and not lines[i + 1].startswith("+") else ""
+                body = lines[i + 1] if i + 1 < len(lines) and not lines[i + 1].startswith("+CMGL:") else ""
                 out.append({"index": index, "header": line, "text": body})
                 if delete and index >= 0:
                     self._at(f"AT+CMGD={index}", timeout=5)
@@ -455,11 +473,17 @@ class TcpServerTransport:
         self.last_echo_removed = False; self.last_latency_ms = 0; self.last_attempts = 1
         self._lock = threading.RLock(); self._open = True
 
+    def __enter__(self) -> TcpServerTransport:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     @property
-    def is_open(self):
+    def is_open(self) -> bool:
         return self._open
 
-    def close(self):
+    def close(self) -> None:
         self._open = False
 
     def send(self, cmd: str, *, retry_safe: bool = False) -> bytes:

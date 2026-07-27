@@ -419,10 +419,10 @@ class Backend(threading.Thread):
         self.post("reading_write_done", result)
 
     def _auth(self, cred, value):
-        self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
-        self.post("auth_state", dict(self.auth_state))
         if cred == "PASSWORD_PROVIDER" and len(str(value)) != 6:
             raise ValueError("Пароль Provider должен содержать ровно 6 символов")
+        self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
+        self.post("auth_state", dict(self.auth_state))
         cmd = f"{cred}={value}" if value != "" else cred
         self.log("ok", f"[auth] Предъявление учётных данных: {cred} …")
         raw, val = self._tx(cmd, retry_safe=False, expert=True, mutating=True, kind="auth")
@@ -546,10 +546,14 @@ class Backend(threading.Thread):
             self.post("batch_progress", (i, len(steps), step.source))
             if step.kind == "sleep":
                 deadline = time.monotonic() + step.delay_ms / 1000.0
+                cancelled = False
                 while time.monotonic() < deadline:
                     if self.cancel_event.is_set():
+                        cancelled = True
                         break
                     time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+                if cancelled:
+                    continue
             elif step.kind == "read":
                 self._read(step.name)
             elif step.kind == "write":

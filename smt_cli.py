@@ -244,7 +244,7 @@ def main(argv=None):
             })
         if args.send:
             name = sc.command_name(args.send)
-            if args.provider_password:
+            if args.provider_password and args.set_reading is None:
                 require_provider(cli, args)
             mutating = sc.is_mutating_command(args.send)
             raw = cli.send(args.send, expert=args.expert, mutating=mutating)

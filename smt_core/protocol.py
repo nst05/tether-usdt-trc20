@@ -1,4 +1,9 @@
-"""Кадрирование и разбор текстового протокола SMT."""
+"""Кадрирование и разбор текстового протокола SMT.
+
+Четыре режима кадрирования (CR, CRLF, brace, IEC), декодирование ответов
+с каскадным fallback (UTF-8 → CP1251 → Latin-1), снятие оптического эхо,
+извлечение значений из пар ``NAME=value`` и распознавание ошибок авторизации.
+"""
 from __future__ import annotations
 
 __all__ = [
@@ -74,7 +79,7 @@ def strip_optical_echo(command: str, payload: bytes, raw: bytes) -> tuple[bytes,
             if after.startswith(b"="):
                 break
             if after[:1] in (b"\r", b"\n", b"}", b"!", b"/"):
-                data = after
+                data = after[1:]
                 removed = True
                 continue
         break
