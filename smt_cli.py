@@ -180,7 +180,7 @@ def set_reading_provider(cli, tr, args):
 def main(argv=None):
     configure_logging()
     diagnostic = DiagnosticRecorder(
-        os.path.join(HERE, "diagnostics"), application="cli", version="4.7.0")
+        os.path.join(HERE, "diagnostics"), application="cli", version="4.8.0")
     tr = None
     try:
         args = parser_build().parse_args(argv)

@@ -40,13 +40,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.7.0",
+        diag_folder, application="gui", version="4.8.0",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.7.0 · 160 команд · LOOP/IF/STORE")
+    root.title("Контроллер устройства 4.8.0 · 160 команд · LOOP/IF/STORE")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
