@@ -1,5 +1,5 @@
 {
- "count": 158,
+ "count": 160,
  "commands": [
   {
    "name": "ALL_SGM_TIME_ERR",
@@ -1580,6 +1580,26 @@
    "desc": "Коэффициент усиления фильтра (K)",
    "handler": "sub_0800A4C0",
    "protected_write": false
+  },
+  {
+   "name": "VALVE_OPEN_FORCE",
+   "type": "действие",
+   "group": "Исполнительный механизм (актуатор)",
+   "prov": "0101",
+   "user": "0100",
+   "desc": "Принудительно открыть актуатор (игнорировать блокировки)",
+   "handler": "sub_0800E6AC",
+   "protected_write": true
+  },
+  {
+   "name": "VALVE_TRY_CLOSE",
+   "type": "действие",
+   "group": "Исполнительный механизм (актуатор)",
+   "prov": "0101",
+   "user": "0100",
+   "desc": "Закрыть актуатор (попытка)",
+   "handler": "sub_0800E6AC",
+   "protected_write": true
   }
  ]
 }

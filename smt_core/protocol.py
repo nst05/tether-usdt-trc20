@@ -17,7 +17,8 @@ from collections.abc import Callable
 AUTH_ERROR_MARKERS = (
     "ERROR", "DENIED", "FAIL", "WRONG", "INVALID", "UNAUTHORIZED",
     "INCORRECT_PASSWORD", "INCORRECT_VALUE", "ACCESS_DENIED", "ERROR_COMMAND",
-    "NAK", "ОШИБ", "ОТКАЗ", "НЕВЕР", "ЗАПРЕЩ",
+    "NAK", "BUSY",
+    "ОШИБ", "ОТКАЗ", "НЕВЕР", "ЗАПРЕЩ",
 )
 
 FRAMINGS: dict[str, Callable[[str], bytes]] = {
@@ -93,21 +94,28 @@ def _contains_named_response(command: str, raw: bytes) -> bool:
     name = command.strip()
     return bool(re.search(r"(?:^|[\r\n{;])\s*" + re.escape(name) + r"\s*=", text, re.I))
 
+_VAL_CHUNK = r"(?:(?!;\s*[A-Za-zА-Яа-я_]\w*\s*=)[^\r\n}])*"
+
 def value_of(resp: bytes, name: str | None = None):
-    """Извлечь значение из `NAME=value;`, устойчиво к нескольким строкам."""
+    """Извлечь значение из ``NAME=value;``, устойчиво к нескольким строкам.
+
+    Прошивка возвращает как простые ``NAME=123;``, так и многозначные ответы
+    ``NAME=v1;v2;v3;``  (архивы, статусы, мульти-параметры). Мульти-значения
+    (числовые после ``;``) сохраняются, а граница между разными параметрами
+    ``NAME1=x;NAME2=y`` корректно разделяется.
+    """
     text = decode_response(resp).strip("\x00 \t\r\n")
     if not text:
         return None
     if name:
-        matches = re.findall(re.escape(name) + r"\s*=\s*([^;\r\n}]*)", text, flags=re.I)
+        pat = re.escape(name) + r"\s*=\s*(" + _VAL_CHUNK + ")"
+        matches = re.findall(pat, text, flags=re.I)
         if matches:
-            return matches[-1].strip()
-        # При запросе конкретного имени нельзя подставлять значение чужого поля.
+            return matches[-1].strip().rstrip(";").strip()
         return None
-    # Без конкретного имени последняя пара name=value остаётся полезным fallback.
-    matches = re.findall(r"[A-Za-zА-Яа-я0-9_]+\s*=\s*([^;\r\n}]*)", text)
+    matches = re.findall(r"[A-Za-zА-Яа-я0-9_]+\s*=\s*(" + _VAL_CHUNK + ")", text)
     if matches:
-        return matches[-1].strip()
+        return matches[-1].strip().rstrip(";").strip()
     return text.strip(";\r\n{} ") or None
 
 

@@ -394,7 +394,7 @@ class Backend(threading.Thread):
         self.post("reading", (name, shown, datetime.datetime.now().isoformat(timespec="seconds")))
         self.log("io", f">> {name}\n<< {self._fmt(name, raw, val)}")
 
-    _VALVE_COMMANDS = {"VALVE_OPEN", "VALVE_CLOSE", "VALVE"}
+    _VALVE_COMMANDS = {"VALVE_OPEN", "VALVE_OPEN_FORCE", "VALVE_TRY_CLOSE", "VALVE"}
     _VALVE_READBACK = ["VALVE", "LOCK_STATE", "CLOSED"]
 
     def _send(self, text, expert):

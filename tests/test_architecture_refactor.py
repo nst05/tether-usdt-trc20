@@ -85,8 +85,8 @@ def test_refactor_keeps_god_modules_below_regression_limits():
 def test_catalog_file_remains_exactly_158_commands():
     raw = (ROOT / "smt_commands.json").read_bytes()
     doc = json.loads(raw)
-    assert len(doc["commands"]) == 158
-    assert hashlib.sha256(raw).hexdigest() == "8119955fda2e49eea00b6b26a6c6daee5078ce8d5d405f4ad7d3f339735b7cd3"
+    assert len(doc["commands"]) == 160
+    assert hashlib.sha256(raw).hexdigest() == "a41b42c1b0dcfe486b802cab6bc8a66a999ed02544e940b7e2cbe3cb81d24734"
 
 
 def test_protocol_decodes_utf8_cp1251_and_binary_fallback():

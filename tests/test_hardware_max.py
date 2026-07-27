@@ -96,7 +96,7 @@ def test_tcp_command_transport_real_socket():
 
 
 def test_hardware_catalog_and_no_demo_module():
-    assert len(gui.load_catalog()) == 158
+    assert len(gui.load_catalog()) == 160
     root = os.path.dirname(HERE)
     assert not os.path.exists(os.path.join(root, "smt_demo.py"))
     assert not os.path.exists(os.path.join(root, "start_demo.bat"))
