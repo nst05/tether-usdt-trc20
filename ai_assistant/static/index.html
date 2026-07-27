@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Assistant</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f0f0f;--surface:#1a1a1a;--surface2:#242424;--border:#333;
+  --text:#e8e8e8;--text2:#999;--accent:#7c5cfc;--accent2:#6344e0;
+  --user-bg:#2a2a3e;--ai-bg:#1e1e1e;--radius:12px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--text);height:100dvh;display:flex;overflow:hidden}
+
+.sidebar{width:260px;background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;flex-shrink:0;transition:transform .2s}
+.sidebar-header{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.sidebar-header h2{font-size:16px;font-weight:600;flex:1}
+.btn-new{background:var(--accent);color:#fff;border:none;border-radius:8px;
+  padding:8px 14px;cursor:pointer;font-size:13px;font-weight:500;transition:background .15s}
+.btn-new:hover{background:var(--accent2)}
+.conv-list{flex:1;overflow-y:auto;padding:8px}
+.conv-item{padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;
+  color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  transition:background .12s}
+.conv-item:hover,.conv-item.active{background:var(--surface2);color:var(--text)}
+
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{height:52px;border-bottom:1px solid var(--border);display:flex;
+  align-items:center;padding:0 20px;gap:12px}
+.btn-menu{display:none;background:none;border:none;color:var(--text);
+  font-size:20px;cursor:pointer;padding:4px}
+.topbar-title{font-size:14px;font-weight:500;color:var(--text2)}
+.model-badge{margin-left:auto;font-size:11px;color:var(--accent);
+  background:rgba(124,92,252,.12);padding:3px 10px;border-radius:20px}
+
+.messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  flex:1;gap:12px;color:var(--text2);text-align:center}
+.welcome h1{font-size:28px;color:var(--text);font-weight:600}
+.welcome p{font-size:14px;max-width:400px;line-height:1.6}
+
+.msg{display:flex;gap:12px;max-width:800px;width:100%;margin:0 auto;
+  animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.msg-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:14px;flex-shrink:0;font-weight:600}
+.msg-user .msg-avatar{background:var(--accent);color:#fff}
+.msg-ai .msg-avatar{background:var(--surface2);color:var(--accent)}
+.msg-body{flex:1;min-width:0}
+.msg-role{font-size:12px;font-weight:600;margin-bottom:4px;color:var(--text2)}
+.msg-text{font-size:14px;line-height:1.7;color:var(--text);white-space:pre-wrap;word-break:break-word}
+.msg-text code{background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:13px}
+.msg-text pre{background:var(--surface2);padding:12px;border-radius:8px;
+  overflow-x:auto;margin:8px 0;font-size:13px}
+.msg-text pre code{background:none;padding:0}
+
+.typing-indicator{display:none;gap:4px;padding:4px 0}
+.typing-indicator span{width:6px;height:6px;background:var(--accent);border-radius:50%;
+  animation:bounce .6s infinite alternate}
+.typing-indicator span:nth-child(2){animation-delay:.15s}
+.typing-indicator span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{to{opacity:.3;transform:translateY(-4px)}}
+
+.input-area{border-top:1px solid var(--border);padding:16px 20px}
+.input-wrap{max-width:800px;margin:0 auto;display:flex;gap:10px;align-items:flex-end}
+textarea{flex:1;resize:none;background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:12px 16px;color:var(--text);font-size:14px;
+  font-family:inherit;line-height:1.5;max-height:160px;outline:none;transition:border-color .15s}
+textarea:focus{border-color:var(--accent)}
+textarea::placeholder{color:var(--text2)}
+.btn-send{background:var(--accent);color:#fff;border:none;border-radius:var(--radius);
+  width:44px;height:44px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:background .15s;flex-shrink:0}
+.btn-send:hover{background:var(--accent2)}
+.btn-send:disabled{opacity:.4;cursor:default}
+.btn-send svg{width:20px;height:20px}
+
+@media(max-width:768px){
+  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:100;transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .btn-menu{display:block}
+  .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99}
+  .overlay.show{display:block}
+}
+</style>
+</head>
+<body>
+
+<div class="overlay" id="overlay"></div>
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <h2>AI Assistant</h2>
+    <button class="btn-new" id="btnNew">+ New</button>
+  </div>
+  <div class="conv-list" id="convList"></div>
+</aside>
+
+<main class="main">
+  <div class="topbar">
+    <button class="btn-menu" id="btnMenu">&#9776;</button>
+    <span class="topbar-title">AI Assistant</span>
+    <span class="model-badge">Claude</span>
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="welcome" id="welcome">
+      <h1>AI Assistant</h1>
+      <p>Universal assistant powered by Claude. Ask any question — I'll answer in your language.</p>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="input-wrap">
+      <textarea id="input" rows="1" placeholder="Type a message..." autofocus></textarea>
+      <button class="btn-send" id="btnSend">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</main>
+
+<script>
+const messagesEl = document.getElementById("messages");
+const inputEl = document.getElementById("input");
+const btnSend = document.getElementById("btnSend");
+const btnNew = document.getElementById("btnNew");
+const btnMenu = document.getElementById("btnMenu");
+const sidebar = document.getElementById("sidebar");
+const overlay = document.getElementById("overlay");
+const convList = document.getElementById("convList");
+const welcomeEl = document.getElementById("welcome");
+
+let conversationId = null;
+let isStreaming = false;
+let chats = {};
+let currentChatId = null;
+
+function saveChatsList() {
+  const meta = {};
+  for (const [id, c] of Object.entries(chats)) {
+    meta[id] = { title: c.title, ts: c.ts };
+  }
+  localStorage.setItem("ai_chats_meta", JSON.stringify(meta));
+}
+
+function saveChatMessages(id) {
+  if (chats[id]) {
+    localStorage.setItem("ai_chat_" + id, JSON.stringify(chats[id].messages));
+  }
+}
+
+function loadChats() {
+  try {
+    const meta = JSON.parse(localStorage.getItem("ai_chats_meta") || "{}");
+    for (const [id, m] of Object.entries(meta)) {
+      const msgs = JSON.parse(localStorage.getItem("ai_chat_" + id) || "[]");
+      chats[id] = { title: m.title, ts: m.ts, messages: msgs };
+    }
+  } catch {}
+}
+
+function renderConvList() {
+  const sorted = Object.entries(chats).sort((a, b) => b[1].ts - a[1].ts);
+  convList.innerHTML = "";
+  for (const [id, c] of sorted) {
+    const el = document.createElement("div");
+    el.className = "conv-item" + (id === currentChatId ? " active" : "");
+    el.textContent = c.title || "New chat";
+    el.onclick = () => switchChat(id);
+    convList.appendChild(el);
+  }
+}
+
+function switchChat(id) {
+  currentChatId = id;
+  conversationId = id;
+  messagesEl.innerHTML = "";
+  const chat = chats[id];
+  if (!chat || chat.messages.length === 0) {
+    messagesEl.innerHTML = welcomeEl.outerHTML;
+  } else {
+    for (const m of chat.messages) {
+      appendMessage(m.role, m.content, false);
+    }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  renderConvList();
+  closeSidebar();
+}
+
+function newChat() {
+  const id = crypto.randomUUID();
+  chats[id] = { title: "", ts: Date.now(), messages: [] };
+  conversationId = null;
+  currentChatId = id;
+  saveChatsList();
+  messagesEl.innerHTML = welcomeEl.outerHTML;
+  renderConvList();
+  closeSidebar();
+  inputEl.focus();
+}
+
+function closeSidebar() {
+  sidebar.classList.remove("open");
+  overlay.classList.remove("show");
+}
+
+btnMenu.onclick = () => {
+  sidebar.classList.toggle("open");
+  overlay.classList.toggle("show");
+};
+overlay.onclick = closeSidebar;
+btnNew.onclick = newChat;
+
+function appendMessage(role, text, animate = true) {
+  const w = messagesEl.querySelector(".welcome");
+  if (w) w.remove();
+
+  const div = document.createElement("div");
+  div.className = "msg msg-" + role;
+  if (!animate) div.style.animation = "none";
+
+  const avatarLabel = role === "user" ? "You" : "AI";
+  div.innerHTML =
+    '<div class="msg-avatar">' + (role === "user" ? "U" : "A") + "</div>" +
+    '<div class="msg-body">' +
+    '<div class="msg-role">' + avatarLabel + "</div>" +
+    '<div class="msg-text"></div>' +
+    "</div>";
+
+  const textEl = div.querySelector(".msg-text");
+  textEl.textContent = text;
+  messagesEl.appendChild(div);
+  return textEl;
+}
+
+function autoResize() {
+  inputEl.style.height = "auto";
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
+}
+inputEl.addEventListener("input", autoResize);
+
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+});
+btnSend.onclick = send;
+
+async function send() {
+  const text = inputEl.value.trim();
+  if (!text || isStreaming) return;
+
+  if (!currentChatId) newChat();
+
+  const chat = chats[currentChatId];
+  chat.messages.push({ role: "user", content: text });
+  if (!chat.title) {
+    chat.title = text.slice(0, 50) + (text.length > 50 ? "..." : "");
+  }
+  chat.ts = Date.now();
+  saveChatsList();
+  saveChatMessages(currentChatId);
+  renderConvList();
+
+  appendMessage("user", text);
+  inputEl.value = "";
+  inputEl.style.height = "auto";
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  isStreaming = true;
+  btnSend.disabled = true;
+
+  const aiTextEl = appendMessage("ai", "");
+  const typingHtml = '<span></span><span></span><span></span>';
+  const typingDiv = document.createElement("div");
+  typingDiv.className = "typing-indicator";
+  typingDiv.style.display = "flex";
+  typingDiv.innerHTML = typingHtml;
+  aiTextEl.appendChild(typingDiv);
+
+  let fullResponse = "";
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, conversation_id: conversationId }),
+    });
+
+    if (!res.ok) {
+      throw new Error("Server error: " + res.status);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let firstChunk = true;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+
+      if (firstChunk) {
+        typingDiv.remove();
+        try {
+          const firstLine = chunk.split("\n")[0];
+          const meta = JSON.parse(firstLine);
+          if (meta.conversation_id) {
+            conversationId = meta.conversation_id;
+          }
+          const rest = chunk.slice(firstLine.length + 1);
+          if (rest) {
+            fullResponse += rest;
+            aiTextEl.textContent = fullResponse;
+          }
+        } catch {
+          fullResponse += chunk;
+          aiTextEl.textContent = fullResponse;
+        }
+        firstChunk = false;
+      } else {
+        fullResponse += chunk;
+        aiTextEl.textContent = fullResponse;
+      }
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+  } catch (err) {
+    typingDiv.remove();
+    fullResponse = "Error: " + err.message;
+    aiTextEl.textContent = fullResponse;
+  }
+
+  chat.messages.push({ role: "ai", content: fullResponse });
+  saveChatMessages(currentChatId);
+
+  isStreaming = false;
+  btnSend.disabled = false;
+  inputEl.focus();
+}
+
+loadChats();
+const chatIds = Object.keys(chats);
+if (chatIds.length > 0) {
+  const latest = chatIds.sort((a, b) => chats[b].ts - chats[a].ts)[0];
+  switchChat(latest);
+} else {
+  newChat();
+}
+</script>
+</body>
+</html>
