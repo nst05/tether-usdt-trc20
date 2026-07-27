@@ -201,3 +201,70 @@ def access_at_level(command, level):
 
 def classify_send(text, actions):
     return command_catalog.classify_command(text, actions)
+
+
+class CommandHistory:
+    """Персистентная история команд и избранное."""
+
+    MAX_HISTORY = 200
+
+    def __init__(self, settings_path: str = SETTINGS_PATH):
+        self._path = settings_path
+        self._history: list[str] = []
+        self._favorites: list[str] = []
+        self._load()
+
+    def _load(self):
+        data = load_settings()
+        self._history = list(data.get("command_history", []))[:self.MAX_HISTORY]
+        self._favorites = list(data.get("command_favorites", []))
+
+    def _save(self):
+        save_settings({
+            "command_history": self._history[:self.MAX_HISTORY],
+            "command_favorites": self._favorites,
+        })
+
+    def add(self, cmd: str):
+        cmd = cmd.strip()
+        if not cmd:
+            return
+        if cmd in self._history:
+            self._history.remove(cmd)
+        self._history.insert(0, cmd)
+        self._history = self._history[:self.MAX_HISTORY]
+        self._save()
+
+    def toggle_favorite(self, cmd: str) -> bool:
+        cmd = cmd.strip()
+        if cmd in self._favorites:
+            self._favorites.remove(cmd)
+            self._save()
+            return False
+        self._favorites.insert(0, cmd)
+        self._save()
+        return True
+
+    def is_favorite(self, cmd: str) -> bool:
+        return cmd.strip() in self._favorites
+
+    @property
+    def history(self) -> list[str]:
+        return list(self._history)
+
+    @property
+    def favorites(self) -> list[str]:
+        return list(self._favorites)
+
+    def combined(self) -> list[str]:
+        seen = set()
+        result = []
+        for cmd in self._favorites:
+            if cmd not in seen:
+                result.append(f"★ {cmd}")
+                seen.add(cmd)
+        for cmd in self._history:
+            if cmd not in seen:
+                result.append(cmd)
+                seen.add(cmd)
+        return result

@@ -27,6 +27,53 @@ from smt_gui_support import (
 )
 
 
+class SessionStats:
+    """Счётчики сессии: TX/RX байты, команды, ошибки, латентность."""
+    __slots__ = ("tx_bytes", "rx_bytes", "tx_count", "rx_count",
+                 "errors", "latency_sum", "latency_max", "latency_count",
+                 "connected_at")
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.tx_bytes = 0
+        self.rx_bytes = 0
+        self.tx_count = 0
+        self.rx_count = 0
+        self.errors = 0
+        self.latency_sum = 0.0
+        self.latency_max = 0.0
+        self.latency_count = 0
+        self.connected_at = 0.0
+
+    def record_exchange(self, tx_len: int, rx_len: int, latency_ms: float, ok: bool):
+        self.tx_bytes += tx_len
+        self.rx_bytes += rx_len
+        self.tx_count += 1
+        if rx_len > 0:
+            self.rx_count += 1
+        if not ok:
+            self.errors += 1
+        if latency_ms > 0:
+            self.latency_sum += latency_ms
+            self.latency_count += 1
+            if latency_ms > self.latency_max:
+                self.latency_max = latency_ms
+
+    def as_dict(self) -> dict:
+        avg = (self.latency_sum / self.latency_count) if self.latency_count else 0.0
+        uptime = time.time() - self.connected_at if self.connected_at else 0.0
+        return {
+            "tx_bytes": self.tx_bytes, "rx_bytes": self.rx_bytes,
+            "tx_count": self.tx_count, "rx_count": self.rx_count,
+            "errors": self.errors,
+            "latency_avg_ms": round(avg, 1),
+            "latency_max_ms": round(self.latency_max, 1),
+            "uptime_s": round(uptime, 0),
+        }
+
+
 class Backend(threading.Thread):
     """Единственный поток, владеющий реальным транспортом прибора."""
     def __init__(self, task_q, out_q, critical=None, actions=None, catalog=None, diagnostic=None):
@@ -42,6 +89,7 @@ class Backend(threading.Thread):
         self.cancel_event = threading.Event()
         self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
         self.diagnostic = diagnostic
+        self.stats = SessionStats()
 
     def cancel_current(self):
         self.cancel_event.set()
@@ -142,6 +190,8 @@ class Backend(threading.Thread):
     def _connect(self, task):
         """Открыть выбранный реальный транспорт."""
         self._close()
+        self.stats.reset()
+        self.stats.connected_at = time.time()
         transport = task.get("transport", "serial")
         if transport == "serial":
             self._connect_serial(task)
@@ -261,6 +311,10 @@ class Backend(threading.Thread):
             raw = self.cli.send(cmd, retry_safe=retry_safe, expert=expert, mutating=mutating)
         except Exception as exc:
             error = str(exc)
+            tx_err = len(getattr(tr, "last_tx", b"") or b"")
+            rx_err = len(getattr(tr, "last_raw_rx", b"") or b"")
+            self.stats.record_exchange(tx_err, rx_err, 0, ok=False)
+            self.post("session_stats", self.stats.as_dict())
             self._safe_record(kind=kind, name=name, cmd=cmd, tr=tr, value=None,
                               ok=False, expert=expert,
                               critical=(name in self.critical), secret=secret, error=error)
@@ -276,6 +330,11 @@ class Backend(threading.Thread):
             })
             raise
         self._wire_log(secret=secret)
+        tx_len = len(getattr(tr, "last_tx", b"") or b"")
+        rx_len = len(getattr(tr, "last_raw_rx", b"") or b"")
+        latency = getattr(tr, "last_latency_ms", 0) or 0
+        self.stats.record_exchange(tx_len, rx_len, latency, ok=bool(raw))
+        self.post("session_stats", self.stats.as_dict())
         val = sc.value_of(raw, name=name)
         base = cmd.strip()
         if "=" not in base and base in AUTH_CREDS and val and classify_secret(val) == "открытым текстом":
@@ -335,6 +394,9 @@ class Backend(threading.Thread):
         self.post("reading", (name, shown, datetime.datetime.now().isoformat(timespec="seconds")))
         self.log("io", f">> {name}\n<< {self._fmt(name, raw, val)}")
 
+    _VALVE_COMMANDS = {"VALVE_OPEN", "VALVE_CLOSE", "VALVE"}
+    _VALVE_READBACK = ["VALVE", "LOCK_STATE", "CLOSED"]
+
     def _send(self, text, expert):
         text = text.strip()
         if not text:
@@ -350,11 +412,22 @@ class Backend(threading.Thread):
             return
         if critical:
             self.log("warn", f"⚠ ЭКСПЕРТ: отправка критичной команды >> {text}")
-        # Запись/действие не повторяются автоматически: неизвестно, успел ли прибор
-        # выполнить первую посылку до потери ответа.
         raw, val = self._tx(text, retry_safe=False, expert=expert, mutating=True, kind=kind)
         self.log("io", f">> {text}\n<< {self._fmt(name, raw, val)}")
+        if name in self._VALVE_COMMANDS and raw:
+            self._valve_readback()
 
+
+    def _valve_readback(self):
+        """Автоматический обратный запрос состояния клапана после управляющей команды."""
+        self.log("ok", "[клапан] обратный запрос состояния…")
+        time.sleep(0.3)
+        for param in self._VALVE_READBACK:
+            try:
+                val = self._read_value_quiet(param)
+                self.log("io", f"  {param:<16} = {val!r}")
+            except Exception as exc:
+                self.log("warn", f"  {param:<16} = <ошибка: {exc}>")
 
     def _read_value_quiet(self, name):
         raw, val = self._tx(name, retry_safe=True, mutating=False, kind="service-read")
@@ -523,46 +596,114 @@ class Backend(threading.Thread):
         if tools_mod is None:
             raise RuntimeError("модуль smt_tools.py не найден")
         steps = tools_mod.parse_batch_script(text, self.actions)
-        protected = [s for s in steps if s.kind in ("write", "action") and s.name in self.critical]
+        all_steps = self._batch_flatten(steps)
+        protected = [s for s in all_steps if s.kind in ("write", "action") and s.name in self.critical]
         if protected and not expert and not dry_run:
             names = ", ".join(sorted({x.name for x in protected}))
             raise PermissionError("сценарий содержит критические операции: " + names +
                                   ". Включи Экспертный режим.")
-        self.log("ok", f"[batch] сценарий: {len(steps)} шагов" +
+        self.log("ok", f"[batch] сценарий: {len(steps)} шагов верхнего уровня" +
                  (" · только проверка" if dry_run else " · выполнение"))
         if dry_run:
-            for i, step in enumerate(steps, 1):
-                self.log("io", f"  {i:03d} · строка {step.line}: {step.kind} "
-                               f"{step.name}{('=' + step.value) if step.kind == 'write' else ''}"
-                               f"{(' ' + str(step.delay_ms) + ' ms') if step.kind == 'sleep' else ''}")
-            self.post("batch_done", (True, len(steps), "Сценарий корректен"))
+            self._batch_dry_run(steps, indent=0)
+            self.post("batch_done", (True, len(all_steps), "Сценарий корректен"))
             return
         self.cancel_event.clear()
-        done = 0
+        variables: dict[str, str] = {}
+        done = self._batch_exec(steps, expert, variables)
+        ok = not self.cancel_event.is_set()
+        msg = "Выполнено" if ok else "Остановлено пользователем"
+        self.post("batch_done", (ok, done, msg))
+        self.log("ok", f"[batch] завершено: {done} операций")
+
+    def _batch_flatten(self, steps):
+        """Плоский список всех атомарных шагов (для проверки критичных)."""
+        result = []
+        for s in steps:
+            if s.body:
+                result.extend(self._batch_flatten(s.body))
+            else:
+                result.append(s)
+        return result
+
+    def _batch_dry_run(self, steps, indent=0):
+        pad = "  " * indent
         for i, step in enumerate(steps, 1):
+            if step.kind == "loop":
+                self.log("io", f"{pad}  LOOP ×{step.repeat} (строка {step.line}):")
+                self._batch_dry_run(step.body, indent + 1)
+                self.log("io", f"{pad}  ENDLOOP")
+            elif step.kind == "if":
+                self.log("io", f"{pad}  IF {step.condition} (строка {step.line}):")
+                self._batch_dry_run(step.body, indent + 1)
+            elif step.repeat > 0 and step.kind not in ("loop", "if"):
+                self.log("io", f"{pad}  {i:03d} · строка {step.line}: REPEAT ×{step.repeat} "
+                               f"{step.kind} {step.name}"
+                               f"{('=' + step.value) if step.kind == 'write' else ''}")
+            else:
+                self.log("io", f"{pad}  {i:03d} · строка {step.line}: {step.kind} "
+                               f"{step.name}{('=' + step.value) if step.kind == 'write' else ''}"
+                               f"{(' ' + str(step.delay_ms) + ' ms') if step.kind == 'sleep' else ''}")
+
+    def _batch_exec(self, steps, expert, variables, total_done=0):
+        """Рекурсивное выполнение шагов с поддержкой LOOP, IF, REPEAT, STORE."""
+        done = total_done
+        for step in steps:
             if self.cancel_event.is_set():
-                self.log("warn", f"[batch] остановлено: {done}/{len(steps)}")
-                self.post("batch_done", (False, done, "Остановлено пользователем")); return
-            self.post("batch_progress", (i, len(steps), step.source))
-            if step.kind == "sleep":
-                deadline = time.monotonic() + step.delay_ms / 1000.0
-                cancelled = False
-                while time.monotonic() < deadline:
+                return done
+
+            if step.kind == "loop":
+                for iteration in range(step.repeat):
                     if self.cancel_event.is_set():
-                        cancelled = True
-                        break
-                    time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
-                if cancelled:
-                    continue
-            elif step.kind == "read":
-                self._read(step.name)
-            elif step.kind == "write":
-                self._send(f"{step.name}={step.value}", expert)
-            elif step.kind == "action":
-                self._send(step.name, expert)
-            done += 1
-        self.post("batch_done", (True, done, "Выполнено"))
-        self.log("ok", f"[batch] завершено: {done}/{len(steps)}")
+                        return done
+                    variables["_iter"] = str(iteration + 1)
+                    variables["_loop"] = str(step.repeat)
+                    self.log("io", f"[batch] LOOP итерация {iteration + 1}/{step.repeat}")
+                    done = self._batch_exec(step.body, expert, variables, done)
+                continue
+
+            if step.kind == "if":
+                cond_val = tools_mod.evaluate_condition(step.condition, variables)
+                if cond_val:
+                    done = self._batch_exec(step.body, expert, variables, done)
+                continue
+
+            iterations = max(step.repeat, 1)
+            for _rep in range(iterations):
+                if self.cancel_event.is_set():
+                    return done
+                self.post("batch_progress", (done + 1, 0, step.source))
+                resolved_name = tools_mod.substitute_vars(step.name, variables)
+                resolved_value = tools_mod.substitute_vars(step.value, variables)
+
+                if step.kind == "sleep":
+                    deadline = time.monotonic() + step.delay_ms / 1000.0
+                    while time.monotonic() < deadline:
+                        if self.cancel_event.is_set():
+                            return done
+                        time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+                elif step.kind == "read":
+                    self._read(resolved_name)
+                elif step.kind == "write":
+                    self._send(f"{resolved_name}={resolved_value}", expert)
+                elif step.kind == "action":
+                    self._send(resolved_name, expert)
+                elif step.kind == "store":
+                    val = self._read_value_quiet(resolved_name)
+                    variables[resolved_value] = val
+                    self.log("io", f"[batch] STORE ${{{resolved_value}}} = {val!r}")
+                elif step.kind == "print":
+                    msg = tools_mod.substitute_vars(step.value, variables)
+                    self.log("ok", f"[batch] PRINT: {msg}")
+                elif step.kind == "assert":
+                    result = tools_mod.evaluate_condition(step.condition, variables)
+                    if not result:
+                        self.log("err", f"[batch] ASSERT FAILED: {step.condition}")
+                        self.cancel_event.set()
+                        return done
+                    self.log("ok", f"[batch] ASSERT OK: {step.condition}")
+                done += 1
+        return done
 
     def _raw_hex(self, text, timeout=None, expert=False):
         if not expert:

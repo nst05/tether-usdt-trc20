@@ -286,3 +286,42 @@ def export_jsonl_to_csv(jsonl_path: str, csv_path: str) -> int:
     recorder.jsonl_path = jsonl_path
     recorder.emit = lambda *args, **kwargs: {}  # type: ignore[assignment]
     return DiagnosticRecorder.export_csv(recorder, csv_path, source_path=jsonl_path)
+
+
+def rotate_diagnostics(folder: str, *, max_files: int = 50, max_total_mb: float = 200.0) -> list[str]:
+    """Удалить старые диагностические файлы, оставив не более max_files.
+
+    Удаление ведётся от самых старых. Также удаляются файлы, если суммарный
+    объём превышает max_total_mb. Возвращает список удалённых путей.
+    """
+    if not os.path.isdir(folder):
+        return []
+    files: list[tuple[float, str]] = []
+    for name in os.listdir(folder):
+        if not (name.startswith("diagnostic_") and (name.endswith(".jsonl") or name.endswith(".log"))):
+            continue
+        path = os.path.join(folder, name)
+        try:
+            mtime = os.path.getmtime(path)
+            files.append((mtime, path))
+        except OSError:
+            continue
+    files.sort()
+    removed: list[str] = []
+    while len(files) > max_files:
+        _, path = files.pop(0)
+        with suppress(OSError):
+            os.remove(path)
+            removed.append(path)
+    total = sum(os.path.getsize(p) for _, p in files if os.path.exists(p))
+    limit = max_total_mb * 1024 * 1024
+    while files and total > limit:
+        _, path = files.pop(0)
+        try:
+            sz = os.path.getsize(path)
+            os.remove(path)
+            removed.append(path)
+            total -= sz
+        except OSError:
+            continue
+    return removed

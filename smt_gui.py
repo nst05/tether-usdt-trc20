@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.5.4.
+"""Графический интерфейс контроллера SMT v4.6.0.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -15,9 +15,10 @@ import queue
 import sys
 
 from smt_backend import Backend
-from smt_diagnostics import DiagnosticRecorder, InstrumentedQueue
+from smt_diagnostics import DiagnosticRecorder, InstrumentedQueue, rotate_diagnostics
 from smt_gui_support import (  # noqa: F401
     AUTH_CREDS, HERE, LEVELS, READING_COMMANDS, TELEMETRY_DB_PATH, TeleServer,
+    CommandHistory,
     access_at_level, access_human, build_actions, build_critical,
     build_telemetry_packet, classify_secret, classify_send, clean_desc, directions, evlog_mod, hexdump, load_catalog,
     load_settings, parse_reading, pretty, reading_text, save_settings, sc, srv, state_mod,
@@ -34,14 +35,16 @@ def build_app(root, selftest=False):
     critical = build_critical(catalog)
     actions = build_actions(catalog)
     out_q = queue.Queue()
+    diag_folder = os.path.join(HERE, "diagnostics")
+    rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        os.path.join(HERE, "diagnostics"), application="gui", version="4.5.4",
+        diag_folder, application="gui", version="4.6.0",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.5.4 DIAGNOSTIC · 158 команд")
+    root.title("Контроллер устройства 4.6.0 · 158 команд · LOOP/IF/STORE")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
@@ -51,6 +54,7 @@ def build_app(root, selftest=False):
              "diagnostic": diagnostic, "diagnostic_events": [],
              "diagnostic_file": diagnostic.jsonl_path}
     settings = load_settings()
+    cmd_history = CommandHistory()
 
     # ── шапка: реальные транспорты ─────────────────────────────────────
     top = ttk.Frame(root, padding=6); top.pack(fill="x")
@@ -358,12 +362,29 @@ def build_app(root, selftest=False):
     free = ttk.LabelFrame(right, text="Свободная команда (сырой протокол)", padding=6)
     free.pack(fill="x")
     free_var = tk.StringVar()
-    ttk.Entry(free, textvariable=free_var).pack(side="left", fill="x", expand=True)
+    free_cb = ttk.Combobox(free, textvariable=free_var, values=cmd_history.combined())
+    free_cb.pack(side="left", fill="x", expand=True)
+    def _refresh_history():
+        free_cb.config(values=cmd_history.combined())
     def do_send_free():
         txt = free_var.get().strip()
+        if txt.startswith("★ "):
+            txt = txt[2:]
+            free_var.set(txt)
         if txt:
+            cmd_history.add(txt)
+            _refresh_history()
             task_q.put({"op": "send", "text": txt, "expert": state["expert"]})
+    def _toggle_favorite():
+        txt = free_var.get().strip()
+        if txt.startswith("★ "):
+            txt = txt[2:]
+        if txt:
+            is_fav = cmd_history.toggle_favorite(txt)
+            _refresh_history()
+            append("ok", f"[★] {'Добавлено в избранное' if is_fav else 'Удалено из избранного'}: {txt}")
     ttk.Button(free, text="Отправить", command=do_send_free).pack(side="left", padx=6)
+    ttk.Button(free, text="★", width=2, command=_toggle_favorite).pack(side="left")
 
     quick = ttk.LabelFrame(right, text="Быстрые действия", padding=6); quick.pack(fill="x")
     quick.columnconfigure(0, weight=1); quick.columnconfigure(1, weight=1)
@@ -484,13 +505,20 @@ def build_app(root, selftest=False):
     term_cmd.pack(fill="x", pady=(6, 3)); term_cmd.columnconfigure(1, weight=1)
     ttk.Label(term_cmd, text="Команда:").grid(row=0,column=0,sticky="w")
     terminal_cmd_var=tk.StringVar()
-    terminal_cmd_ent=ttk.Entry(term_cmd,textvariable=terminal_cmd_var)
-    terminal_cmd_ent.grid(row=0,column=1,sticky="ew",padx=5)
+    terminal_cmd_cb=ttk.Combobox(term_cmd,textvariable=terminal_cmd_var,values=cmd_history.combined())
+    terminal_cmd_cb.grid(row=0,column=1,sticky="ew",padx=5)
     def terminal_send():
         text=terminal_cmd_var.get().strip()
-        if text: task_q.put({"op":"send","text":text,"expert":state["expert"]})
+        if text.startswith("★ "):
+            text = text[2:]
+            terminal_cmd_var.set(text)
+        if text:
+            cmd_history.add(text)
+            free_cb.config(values=cmd_history.combined())
+            terminal_cmd_cb.config(values=cmd_history.combined())
+            task_q.put({"op":"send","text":text,"expert":state["expert"]})
     ttk.Button(term_cmd,text="Отправить",command=terminal_send).grid(row=0,column=2)
-    terminal_cmd_ent.bind("<Return>",lambda _e: terminal_send())
+    terminal_cmd_cb.bind("<Return>",lambda _e: terminal_send())
     ttk.Label(term_cmd,text="Примеры: DevInfo · SERVER_URL=host:port · VALVE_OPEN",
               foreground="#777").grid(row=1,column=1,sticky="w")
 
@@ -749,6 +777,7 @@ def build_app(root, selftest=False):
               ).pack(anchor="w")
     hctl = ttk.Frame(tab_hist); hctl.pack(fill="x", pady=4)
     ttk.Button(hctl, text="Загрузить дамп…", command=lambda: hist_load()).pack(side="left")
+    ttk.Button(hctl, text="Сравнить с другим дампом…", command=lambda: hist_compare()).pack(side="left", padx=4)
     ttk.Button(hctl, text="Экспорт разбора CSV…", command=lambda: hist_export()).pack(side="left", padx=4)
     hist_path = ttk.Label(hctl, text="дамп не загружен", foreground="#777")
     hist_path.pack(side="left", padx=8)
@@ -898,6 +927,75 @@ def build_app(root, selftest=False):
                 w.writerow(["event", cnt, dt, txt, "", "", f"0x{code:04X}", note])
         append("ok", f"[история] экспортировано → {p}")
 
+    def hist_compare():
+        """Сравнить текущий загруженный дамп со вторым дампом."""
+        if not state.get("history_archive"):
+            append("warn", "[история] сначала загрузи основной дамп.")
+            return
+        p = filedialog.askopenfilename(
+            title="Выбери второй дамп для сравнения",
+            filetypes=[("dump W25Q64", "*.bin"), ("все", "*.*")])
+        if not p:
+            return
+        try:
+            data2 = open(p, "rb").read()
+        except Exception as e:
+            append("err", f"[сравнение] ошибка чтения: {e}"); return
+        if state_mod is None:
+            append("err", "[сравнение] модуль smt_state.py не найден"); return
+        try:
+            archive2 = state_mod.parse_archive(data2)
+            archive2, summary2 = state_mod.analyse_timeline(archive2)
+        except Exception as e:
+            append("err", f"[сравнение] ошибка разбора второго дампа: {e}"); return
+        base_archive = state.get("history_archive", [])
+        base_by_idx = {r.get("index"): r for r in base_archive}
+        diff_count = 0; added = 0; removed = 0
+        compare_win = tk.Toplevel(root)
+        compare_win.title(f"Сравнение архивов · {os.path.basename(p)}")
+        compare_win.geometry("1000x500")
+        cmp_cols = ("idx", "dt_base", "vol_base", "dt_cmp", "vol_cmp", "status")
+        cmp_tree = ttk.Treeview(compare_win, columns=cmp_cols, show="headings")
+        for c, t, w in (("idx", "#", 55), ("dt_base", "Время (основной)", 155),
+                        ("vol_base", "Показания (осн.)", 120),
+                        ("dt_cmp", "Время (сравн.)", 155),
+                        ("vol_cmp", "Показания (ср.)", 120),
+                        ("status", "Статус", 100)):
+            cmp_tree.heading(c, text=t); cmp_tree.column(c, width=w, anchor="w")
+        cmp_tree.tag_configure("changed", foreground="#c0392b")
+        cmp_tree.tag_configure("added", foreground="#0a7d0a")
+        cmp_tree.tag_configure("removed", foreground="#999")
+        csb = ttk.Scrollbar(compare_win, orient="vertical", command=cmp_tree.yview)
+        cmp_tree.configure(yscrollcommand=csb.set)
+        cmp_tree.pack(side="left", fill="both", expand=True)
+        csb.pack(side="right", fill="y")
+        cmp_by_idx = {r.get("index"): r for r in archive2}
+        all_idx = sorted(set(base_by_idx.keys()) | set(cmp_by_idx.keys()))
+        for idx in all_idx:
+            b = base_by_idx.get(idx)
+            c = cmp_by_idx.get(idx)
+            dt_b = b["datetime"].strftime("%Y-%m-%d %H:%M:%S") if b and b.get("datetime") else "—"
+            dt_c = c["datetime"].strftime("%Y-%m-%d %H:%M:%S") if c and c.get("datetime") else "—"
+            vol_b = f"{b.get('volume', 0):.6f}" if b else "—"
+            vol_c = f"{c.get('volume', 0):.6f}" if c else "—"
+            if b and c:
+                if abs(b.get("volume", 0) - c.get("volume", 0)) > 1e-6:
+                    status = "ИЗМЕНЕНО"; diff_count += 1; tag = ("changed",)
+                else:
+                    status = "совпадает"; tag = ()
+            elif b and not c:
+                status = "только осн."; removed += 1; tag = ("removed",)
+            else:
+                status = "только ср."; added += 1; tag = ("added",)
+            cmp_tree.insert("", "end", values=(idx, dt_b, vol_b, dt_c, vol_c, status), tags=tag)
+        ttk.Label(compare_win,
+                  text=f"Записей: основной {len(base_archive)}, сравниваемый {len(archive2)} · "
+                       f"изменено: {diff_count} · только в осн.: {removed} · "
+                       f"только в ср.: {added}",
+                  foreground="#c0392b" if diff_count else "#0a7d0a").pack(fill="x", pady=4)
+        append("ok", f"[сравнение] загружен {os.path.basename(p)}: "
+                     f"{len(archive2)} записей, различий: {diff_count}")
+
     # ── вкладка «Снимки · сценарии · мониторинг» ───────────────────────
     ttk.Label(tab_lab, wraplength=1160, foreground="#555", justify="left",
               text="Инженерная работа с реальным прибором: полный READ-аудит каталога, "
@@ -983,6 +1081,23 @@ def build_app(root, selftest=False):
         except Exception as exc:
             append("err", f"[снимок] ошибка загрузки: {exc}")
 
+    def export_coverage():
+        values = state.get("current_snapshot", {})
+        if not values:
+            append("warn", "[покрытие] сначала выполни полный опрос."); return
+        if tools_mod is None:
+            append("err", "[покрытие] smt_tools.py не найден."); return
+        matrix = tools_mod.build_coverage_matrix(catalog, values, actions)
+        summary = tools_mod.coverage_summary(matrix)
+        p = filedialog.asksaveasfilename(
+            defaultextension=".csv", filetypes=[("CSV", "*.csv")],
+            initialfile=f"coverage_{datetime.datetime.now():%Y%m%d_%H%M%S}.csv")
+        if p:
+            tools_mod.export_coverage_csv(p, matrix)
+            append("ok", f"[покрытие] {summary['ok']}/{summary['total']} команд "
+                         f"({summary['coverage_pct']}%) → {p}")
+
+    ttk.Button(snap_actions, text="Матрица покрытия…", command=export_coverage).pack(side="right")
     ttk.Button(snap_actions, text="Экспорт JSON…", command=lambda: save_snapshot(".json")).pack(side="right")
     ttk.Button(snap_actions, text="Экспорт CSV…", command=lambda: save_snapshot(".csv")).pack(side="right", padx=3)
     ttk.Button(snap_actions, text="Загрузить эталон…", command=load_reference).pack(side="right", padx=3)
@@ -992,15 +1107,34 @@ def build_app(root, selftest=False):
     batch_frame.pack(fill="both", expand=True)
     batch_text = scrolledtext.ScrolledText(batch_frame, height=11, wrap="none", font=("TkFixedFont", 9))
     batch_text.pack(fill="both", expand=True)
-    batch_text.insert("1.0", """# Пример сценария работы с прибором
+    batch_text.insert("1.0", """# Пример сценария работы с прибором v4.6
 READ DevInfo
 READ DEVICE_SN
-READ STATUS_SYSTEM
-READ Volume
-SLEEP 250
-SET LCD_TIME=15
-READ LCD_TIME
-# Критические ACTION/SET выполняются только в Экспертном режиме
+STORE sn=DEVICE_SN
+PRINT Серийник: ${sn}
+
+# Циклический опрос: 5 раз через 1 секунду
+LOOP 5
+  READ Volume
+  READ STATUS_SYSTEM
+  SLEEP 1000
+ENDLOOP
+
+# Повтор одной команды
+REPEAT 3
+READ VOLUME_INST
+
+# Условная логика по значению переменной
+STORE vol=Volume
+IF ${vol} > 100
+  PRINT Показание высокое: ${vol}
+ELSE
+  PRINT Показание: ${vol}
+ENDIF
+
+# Критические ACTION/SET — только в Экспертном режиме
+# SET LCD_TIME=15
+# ACTION VALVE_OPEN
 """)
     batch_status = ttk.Label(batch_frame, text="готов", foreground="#555"); batch_status.pack(anchor="w")
     batch_bar = ttk.Frame(batch_frame); batch_bar.pack(fill="x")
@@ -1192,6 +1326,27 @@ READ LCD_TIME
     ttk.Button(diag_filter, text="Копия JSONL…", command=diag_save_jsonl_copy).pack(side="right", padx=3)
     ttk.Button(diag_filter, text="Очистить вид", command=diag_clear_view).pack(side="right", padx=3)
 
+    # ── статистика сессии TX/RX ───────────────────────────────────
+    stats_bar = ttk.Frame(root, padding=(6, 2)); stats_bar.pack(fill="x")
+    stats_lbl = ttk.Label(stats_bar, text="TX: 0 · RX: 0 · ошибок: 0 · avg: 0 мс", foreground="#555")
+    stats_lbl.pack(side="left")
+
+    def _update_stats(data):
+        tx = data.get("tx_bytes", 0)
+        rx = data.get("rx_bytes", 0)
+        errs = data.get("errors", 0)
+        avg = data.get("latency_avg_ms", 0)
+        mx = data.get("latency_max_ms", 0)
+        n = data.get("tx_count", 0)
+        up = int(data.get("uptime_s", 0))
+        m, s = divmod(up, 60)
+        h, m = divmod(m, 60)
+        time_str = f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+        stats_lbl.config(
+            text=f"TX: {tx} б ({n} ком.) · RX: {rx} б · ошибок: {errs} · "
+                 f"avg {avg:.0f} мс · max {mx:.0f} мс · {time_str}",
+            foreground="#c0392b" if errs else "#555")
+
     logbar = ttk.Frame(root); logbar.pack(fill="x")
     def save_log():
         p = filedialog.asksaveasfilename(defaultextension=".txt",
@@ -1301,6 +1456,8 @@ READ LCD_TIME
                             with contextlib.suppress(Exception):
                                 diag_tree.see(str(payload.get("seq", "")))
                         diag_count_lbl.config(text=f"{len(state['diagnostic_events'])} событий")
+                    elif kind == "session_stats":
+                        _update_stats(payload)
                     elif kind == "session_file":
                         state["session_file"] = payload
                     elif kind == "password":
