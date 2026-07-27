@@ -1514,9 +1514,80 @@ ENDIF
                ).pack(side="left", padx=6)
     kf_status_lbl = ttk.Label(kf_bar, text="", foreground="#555")
     kf_status_lbl.pack(side="left", padx=6)
+    # ── ползунок: как меняется расход при изменении KFACTOR ──────────────
+    kf_calc = ttk.Frame(kf_frame); kf_calc.pack(fill="x", pady=(6, 0))
+    ttk.Label(kf_calc, text="Базовый KFACTOR:").pack(side="left")
+    kf_base_var = tk.StringVar(value="1.0")
+    kf_base_ent = ttk.Entry(kf_calc, textvariable=kf_base_var, width=10)
+    kf_base_ent.pack(side="left", padx=2)
+    ttk.Button(kf_calc, text="← Текущий",
+               command=lambda: kf_base_var.set(kf_current_lbl.cget("text"))
+                               if kf_current_lbl.cget("text") not in ("—", "")
+                               else None).pack(side="left", padx=2)
+
+    kf_slider_frame = ttk.Frame(kf_frame); kf_slider_frame.pack(fill="x", pady=(2, 0))
+    kf_slider_var = tk.DoubleVar(value=0.0)
+    kf_pct_lbl = ttk.Label(kf_slider_frame, text="Изменение: 0.00%",
+                            font=("TkFixedFont", 11, "bold"), foreground="#555",
+                            width=22)
+    kf_pct_lbl.pack(side="left")
+    kf_new_lbl = ttk.Label(kf_slider_frame, text="→ KFACTOR = 1.000000",
+                            font=("TkFixedFont", 10), foreground="#555")
+    kf_new_lbl.pack(side="left", padx=8)
+    kf_flow_lbl = ttk.Label(kf_slider_frame, text="",
+                             font=("TkFixedFont", 9), foreground="#555")
+    kf_flow_lbl.pack(side="left", padx=8)
+    ttk.Button(kf_slider_frame, text="→ Записать это",
+               command=lambda: kf_val_var.set(kf_new_lbl.cget("text").split("= ")[-1])
+               ).pack(side="right")
+
+    kf_slider = tk.Scale(kf_frame, from_=-50.0, to=50.0, resolution=0.01,
+                          orient="horizontal", variable=kf_slider_var,
+                          showvalue=False, length=400)
+    kf_slider.pack(fill="x", pady=(0, 2))
+
+    kf_marks = ttk.Frame(kf_frame); kf_marks.pack(fill="x")
+    for pct_text, anchor in (("−50%", "w"), ("−25%", "w"), ("0%", "center"),
+                              ("+25%", "e"), ("+50%", "e")):
+        ttk.Label(kf_marks, text=pct_text, foreground="#999",
+                  font=("TkFixedFont", 7)).pack(side="left", expand=True, anchor=anchor)
+
+    def _kf_slider_update(*_):
+        pct = kf_slider_var.get()
+        try:
+            base = float(kf_base_var.get().replace(",", ".").strip().rstrip(";"))
+        except (ValueError, AttributeError):
+            base = 1.0
+        if base <= 0:
+            base = 1.0
+        new_kf = base * (1.0 + pct / 100.0)
+        if new_kf < 0:
+            new_kf = 0.0
+        if pct > 0:
+            color = "#c0392b"
+            arrow = "▲"
+        elif pct < 0:
+            color = "#2980b9"
+            arrow = "▼"
+        else:
+            color = "#0a7d0a"
+            arrow = "—"
+        kf_pct_lbl.config(text=f"Изменение: {pct:+.2f}%", foreground=color)
+        kf_new_lbl.config(text=f"→ KFACTOR = {new_kf:.6f}", foreground=color)
+        example_vol = 1000.0
+        new_vol = example_vol * (1.0 + pct / 100.0)
+        kf_flow_lbl.config(
+            text=f"{arrow} Было 1000 м³ → станет {new_vol:.2f} м³ (Δ {new_vol - example_vol:+.2f})",
+            foreground=color)
+
+    kf_slider_var.trace_add("write", _kf_slider_update)
+    kf_base_var.trace_add("write", _kf_slider_update)
+    _kf_slider_update()
+
     ttk.Label(kf_frame, foreground="#8a4b08", wraplength=1100, justify="left",
-              text="Коэффициент пересчёта импульсов датчика в м³. Типичные значения: "
-                   "1.0 (штатный), 0.01–10.0. Требуется уровень Provider + Экспертный режим. "
+              text="Ползунок показывает влияние изменения KFACTOR на расход в %. "
+                   "Формула: Объём = Импульсы × KFACTOR. Кнопка «→ Записать это» "
+                   "переносит рассчитанное значение в поле записи. "
                    "Также доступен KALMAN_K (фильтр Калмана) — через вкладку «Команды»."
               ).pack(anchor="w", pady=(3, 0))
 
