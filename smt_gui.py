@@ -17,10 +17,12 @@ import sys
 from smt_backend import Backend
 from smt_diagnostics import DiagnosticRecorder, InstrumentedQueue, rotate_diagnostics
 from smt_gui_support import (  # noqa: F401
-    AUTH_CREDS, HERE, LEVELS, READING_COMMANDS, TELEMETRY_DB_PATH, TeleServer,
+    AUTH_CREDS, HERE, LEVELS, READING_COMMANDS, STATUS_BITS, STATUS_COLORS,
+    STATUS_NAMES, TELEMETRY_DB_PATH, TeleServer,
     CommandHistory,
     access_at_level, access_human, build_actions, build_critical,
-    build_telemetry_packet, classify_secret, classify_send, clean_desc, directions, evlog_mod, hexdump, load_catalog,
+    build_telemetry_packet, classify_secret, classify_send, clean_desc,
+    decode_status_bits, directions, evlog_mod, hexdump, load_catalog,
     load_settings, parse_reading, pretty, reading_text, save_settings, sc, srv, state_mod,
     suggested_port, tele_send, tele_store_mod, tools_mod, value_options,
 )
@@ -260,11 +262,13 @@ def build_app(root, selftest=False):
     tab_tele = ttk.Frame(main_nb, padding=6)
     tab_hist = ttk.Frame(main_nb, padding=6)
     tab_lab = ttk.Frame(main_nb, padding=6)
-    main_nb.add(tab_cmd, text="Команды (158)")
+    tab_service = ttk.Frame(main_nb, padding=6)
+    main_nb.add(tab_cmd, text="Команды (160)")
     main_nb.add(tab_terminal, text="Транспорт · RAW · SMS")
     main_nb.add(tab_tele, text="Телеметрия")
     main_nb.add(tab_hist, text="История")
     main_nb.add(tab_lab, text="Снимки · сценарии · мониторинг")
+    main_nb.add(tab_service, text="Сервис · статус · бэкап")
     main_nb.pack(fill="both", expand=True)
 
     # ── тело вкладки «Команды»: слева каталог, справа детали+запись ──────
@@ -1004,19 +1008,19 @@ def build_app(root, selftest=False):
               ).pack(anchor="w")
 
     lab_pan = ttk.Panedwindow(tab_lab, orient="horizontal"); lab_pan.pack(fill="both", expand=True, pady=4)
-    snap_frame = ttk.Labelframe(lab_pan, text="Снимок всех 158 команд", padding=5)
+    snap_frame = ttk.Labelframe(lab_pan, text="Снимок всех 160 команд", padding=5)
     lab_pan.add(snap_frame, weight=3)
     work_frame = ttk.Frame(lab_pan, padding=(5, 0, 0, 0)); lab_pan.add(work_frame, weight=2)
 
     snap_bar = ttk.Frame(snap_frame); snap_bar.pack(fill="x")
-    scan_btn = ttk.Button(snap_bar, text="Аудит всех 158 команд",
+    scan_btn = ttk.Button(snap_bar, text="Аудит всех 160 команд",
                           command=lambda: task_q.put({"op": "scan_all"}))
     scan_btn.pack(side="left")
     ttk.Button(snap_bar, text="Стоп", command=backend.cancel_current).pack(side="left", padx=3)
     scan_var = tk.DoubleVar(value=0)
     scan_progress = ttk.Progressbar(snap_bar, variable=scan_var, maximum=max(1, len(catalog)))
     scan_progress.pack(side="left", fill="x", expand=True, padx=6)
-    scan_label = ttk.Label(snap_bar, text="0/158"); scan_label.pack(side="left")
+    scan_label = ttk.Label(snap_bar, text="0/160"); scan_label.pack(side="left")
 
     snap_cols = ("name", "current", "reference", "status")
     snap_tree = ttk.Treeview(snap_frame, columns=snap_cols, show="headings", height=16)
@@ -1217,6 +1221,211 @@ ENDIF
     ttk.Button(mon_buttons, text="Экспорт CSV…", command=monitor_export).pack(side="right")
     ttk.Button(mon_buttons, text="Очистить", command=lambda: (
         mon_tree.delete(*mon_tree.get_children()), state["monitor_rows"].clear())).pack(side="right", padx=3)
+
+    # ── вкладка «Сервис · статус · бэкап» ────────────────────────────────
+    svc_pan = ttk.Panedwindow(tab_service, orient="vertical")
+    svc_pan.pack(fill="both", expand=True)
+
+    # ── 1. Панель статусов устройства ──────────────────────────────────
+    status_frame = ttk.Labelframe(svc_pan, text="Статус устройства — расшифровка регистров", padding=5)
+    svc_pan.add(status_frame, weight=2)
+    status_bar = ttk.Frame(status_frame); status_bar.pack(fill="x")
+    ttk.Button(status_bar, text="Считать статусы",
+               command=lambda: task_q.put({"op": "read_status"})).pack(side="left")
+    ttk.Button(status_bar, text="Очистить",
+               command=lambda: _status_clear()).pack(side="left", padx=4)
+    status_summary_lbl = ttk.Label(status_bar, text="—", foreground="#555")
+    status_summary_lbl.pack(side="left", padx=10)
+
+    status_panels = {}
+    status_grid = ttk.Frame(status_frame); status_grid.pack(fill="both", expand=True, pady=4)
+    for col_idx in range(4):
+        status_grid.columnconfigure(col_idx, weight=1)
+    status_grid.rowconfigure(0, weight=1)
+
+    status_titles = {"STATUS_SYSTEM": "SYSTEM", "STATUS_WARNING": "WARNING",
+                     "STATUS_ALARM": "ALARM", "STATUS_CRASH": "CRASH"}
+    for col_idx, sname in enumerate(STATUS_NAMES):
+        frame = ttk.Labelframe(status_grid, text=status_titles[sname], padding=3)
+        frame.grid(row=0, column=col_idx, sticky="nsew", padx=2)
+        val_lbl = ttk.Label(frame, text="—", font=("TkFixedFont", 10, "bold"))
+        val_lbl.pack(anchor="w")
+        bits_frame = ttk.Frame(frame)
+        bits_frame.pack(fill="both", expand=True)
+        status_panels[sname] = {"val_lbl": val_lbl, "bits_frame": bits_frame, "bit_labels": []}
+
+    def _status_clear():
+        for sname, panel in status_panels.items():
+            panel["val_lbl"].config(text="—", foreground="#555")
+            for w in panel["bit_labels"]:
+                w.destroy()
+            panel["bit_labels"].clear()
+        status_summary_lbl.config(text="—", foreground="#555")
+
+    def _status_render(data):
+        total_active = 0
+        max_severity = "ok"
+        for sname, panel in status_panels.items():
+            for w in panel["bit_labels"]:
+                w.destroy()
+            panel["bit_labels"].clear()
+            raw_val = data.get(sname, "")
+            if raw_val.startswith("<err:"):
+                panel["val_lbl"].config(text=raw_val, foreground="#c0392b")
+                continue
+            panel["val_lbl"].config(text=f"0x{raw_val}" if raw_val else "—",
+                                    foreground="#555")
+            bits = decode_status_bits(sname, raw_val)
+            for bit, label, severity, is_set in bits:
+                color = STATUS_COLORS.get(severity if is_set else "ok", "#555")
+                marker = "●" if is_set else "○"
+                lbl = ttk.Label(panel["bits_frame"],
+                                text=f"{marker} {bit}: {label}",
+                                foreground=color)
+                lbl.pack(anchor="w")
+                panel["bit_labels"].append(lbl)
+                if is_set:
+                    total_active += 1
+                    if severity == "err":
+                        max_severity = "err"
+                    elif severity == "warn" and max_severity != "err":
+                        max_severity = "warn"
+        if total_active == 0:
+            status_summary_lbl.config(text="Все регистры в норме", foreground="#0a7d0a")
+        else:
+            status_summary_lbl.config(
+                text=f"Активных флагов: {total_active}",
+                foreground=STATUS_COLORS.get(max_severity, "#555"))
+
+    # ── 2. Чтение архива по оптопорту ──────────────────────────────────
+    arc_frame = ttk.Labelframe(svc_pan, text="Архив устройства — чтение по оптопорту", padding=5)
+    svc_pan.add(arc_frame, weight=3)
+    arc_bar = ttk.Frame(arc_frame); arc_bar.pack(fill="x")
+    ttk.Label(arc_bar, text="Последних записей:").pack(side="left")
+    arc_count_var = tk.StringVar(value="20")
+    ttk.Entry(arc_bar, textvariable=arc_count_var, width=6).pack(side="left", padx=3)
+    ttk.Button(arc_bar, text="Считать архив",
+               command=lambda: task_q.put({"op": "read_archive_port",
+                                           "count": int(arc_count_var.get() or 20)})
+               ).pack(side="left", padx=4)
+    ttk.Button(arc_bar, text="Стоп", command=backend.cancel_current).pack(side="left")
+    arc_progress_lbl = ttk.Label(arc_bar, text="—", foreground="#555")
+    arc_progress_lbl.pack(side="left", padx=8)
+
+    def arc_export():
+        rows = state.get("archive_port_records", [])
+        if not rows:
+            append("warn", "[архив] нет данных для экспорта."); return
+        p = filedialog.asksaveasfilename(
+            defaultextension=".csv", filetypes=[("CSV", "*.csv")],
+            initialfile=f"archive_{datetime.datetime.now():%Y%m%d_%H%M%S}.csv")
+        if not p:
+            return
+        with open(p, "w", encoding="utf-8-sig", newline="") as stream:
+            w = csv.writer(stream)
+            w.writerow(["index", "data"])
+            for r in rows:
+                w.writerow([r.get("index", ""), r.get("data", "")])
+        append("ok", f"[архив] экспортировано {len(rows)} записей → {p}")
+
+    ttk.Button(arc_bar, text="Экспорт CSV…", command=arc_export).pack(side="right")
+
+    arc_tree = ttk.Treeview(arc_frame, columns=("idx", "data"), show="headings", height=8)
+    arc_tree.heading("idx", text="#"); arc_tree.column("idx", width=60, anchor="w")
+    arc_tree.heading("data", text="Данные записи"); arc_tree.column("data", width=900, anchor="w")
+    arc_tree.tag_configure("err", foreground="#c0392b")
+    arc_sb = ttk.Scrollbar(arc_frame, orient="vertical", command=arc_tree.yview)
+    arc_tree.configure(yscrollcommand=arc_sb.set)
+    arc_tree.pack(side="left", fill="both", expand=True, pady=4)
+    arc_sb.pack(side="left", fill="y", pady=4)
+    state["archive_port_records"] = []
+
+    def _arc_render(data):
+        arc_tree.delete(*arc_tree.get_children())
+        records = data.get("records", [])
+        state["archive_port_records"] = records
+        for r in records:
+            tags = ("err",) if str(r.get("data", "")).startswith("<err:") else ()
+            arc_tree.insert("", "end", values=(r.get("index", ""), r.get("data", "")), tags=tags)
+        total = data.get("total", 0)
+        arc_progress_lbl.config(
+            text=f"Записей в архиве: {total} · показано: {len(records)}",
+            foreground="#0a7d0a" if records else "#555")
+
+    # ── 3. Резервное копирование и восстановление ──────────────────────
+    bak_frame = ttk.Labelframe(svc_pan, text="Резервное копирование / восстановление параметров", padding=5)
+    svc_pan.add(bak_frame, weight=2)
+    bak_bar = ttk.Frame(bak_frame); bak_bar.pack(fill="x")
+    ttk.Button(bak_bar, text="Считать все параметры",
+               command=lambda: task_q.put({"op": "backup"})).pack(side="left")
+    ttk.Button(bak_bar, text="Стоп", command=backend.cancel_current).pack(side="left", padx=3)
+    bak_progress_lbl = ttk.Label(bak_bar, text="—", foreground="#555")
+    bak_progress_lbl.pack(side="left", padx=8)
+    state["backup_params"] = {}
+
+    def bak_save():
+        params = state.get("backup_params", {})
+        if not params:
+            append("warn", "[бэкап] сначала считай параметры с прибора."); return
+        p = filedialog.asksaveasfilename(
+            defaultextension=".json", filetypes=[("JSON backup", "*.json")],
+            initialfile=f"backup_{datetime.datetime.now():%Y%m%d_%H%M%S}.json")
+        if not p:
+            return
+        backup = {
+            "type": "smt_backup",
+            "version": "4.7.0",
+            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+            "count": len(params),
+            "params": params,
+        }
+        with open(p, "w", encoding="utf-8") as stream:
+            json.dump(backup, stream, ensure_ascii=False, indent=2)
+        append("ok", f"[бэкап] сохранено {len(params)} параметров → {p}")
+
+    def bak_load_and_restore():
+        if not state["expert"]:
+            messagebox.showwarning("Восстановление", "Включи Экспертный режим.")
+            return
+        p = filedialog.askopenfilename(filetypes=[("JSON backup", "*.json"), ("все", "*.*")])
+        if not p:
+            return
+        try:
+            with open(p, encoding="utf-8") as stream:
+                data = json.load(stream)
+        except Exception as exc:
+            append("err", f"[восстановление] ошибка чтения: {exc}"); return
+        params = data.get("params", {})
+        if not params:
+            append("warn", "[восстановление] файл не содержит параметров."); return
+        if not messagebox.askyesno(
+                "Восстановление параметров",
+                f"Записать {len(params)} параметров из файла?\n{os.path.basename(p)}\n\n"
+                "Критичные параметры (пароли, объёмы, актуатор) будут записаны "
+                "только при наличии экспертного режима и авторизации.",
+                parent=root):
+            return
+        task_q.put({"op": "restore", "params": params, "expert": state["expert"]})
+
+    ttk.Button(bak_bar, text="Сохранить в файл…", command=bak_save).pack(side="right")
+    ttk.Button(bak_bar, text="Загрузить и восстановить…",
+               command=bak_load_and_restore).pack(side="right", padx=3)
+
+    bak_tree = ttk.Treeview(bak_frame, columns=("name", "value"), show="headings", height=8)
+    bak_tree.heading("name", text="Параметр"); bak_tree.column("name", width=200, anchor="w")
+    bak_tree.heading("value", text="Значение"); bak_tree.column("value", width=500, anchor="w")
+    bak_sb = ttk.Scrollbar(bak_frame, orient="vertical", command=bak_tree.yview)
+    bak_tree.configure(yscrollcommand=bak_sb.set)
+    bak_tree.pack(side="left", fill="both", expand=True, pady=4)
+    bak_sb.pack(side="left", fill="y", pady=4)
+
+    def _bak_render(params):
+        bak_tree.delete(*bak_tree.get_children())
+        state["backup_params"] = params
+        for name in sorted(params):
+            bak_tree.insert("", "end", values=(name, params[name]))
+        bak_progress_lbl.config(text=f"Считано {len(params)} параметров",
+                                foreground="#0a7d0a")
 
     # ── лог: вкладки «Журнал» и «Сырые байты (hex)» ─────────────────────
     nb = ttk.Notebook(root); nb.pack(fill="both", expand=False)
@@ -1458,6 +1667,30 @@ ENDIF
                         diag_count_lbl.config(text=f"{len(state['diagnostic_events'])} событий")
                     elif kind == "session_stats":
                         _update_stats(payload)
+                    elif kind == "status_panel":
+                        _status_render(payload)
+                        main_nb.select(tab_service)
+                    elif kind == "archive_data":
+                        _arc_render(payload)
+                        main_nb.select(tab_service)
+                    elif kind == "archive_progress":
+                        i, total = payload
+                        arc_progress_lbl.config(text=f"Чтение {i}/{total}…")
+                    elif kind == "backup_data":
+                        _bak_render(payload)
+                        main_nb.select(tab_service)
+                    elif kind == "backup_progress":
+                        i, total, name = payload
+                        bak_progress_lbl.config(text=f"{i}/{total}: {name}")
+                    elif kind == "restore_progress":
+                        i, total, name = payload
+                        bak_progress_lbl.config(text=f"Запись {i}/{total}: {name}")
+                    elif kind == "restore_done":
+                        ok = payload.get("ok", 0)
+                        total = payload.get("total", 0)
+                        bak_progress_lbl.config(
+                            text=f"Восстановлено {ok}/{total} параметров",
+                            foreground="#0a7d0a" if ok == total else "#c47f00")
                     elif kind == "session_file":
                         state["session_file"] = payload
                     elif kind == "password":

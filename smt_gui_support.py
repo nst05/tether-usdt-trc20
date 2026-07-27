@@ -203,6 +203,67 @@ def classify_send(text, actions):
     return command_catalog.classify_command(text, actions)
 
 
+STATUS_BITS: dict[str, list[tuple[int, str, str]]] = {
+    "STATUS_SYSTEM": [
+        (0, "Низкий заряд батареи", "warn"),
+        (1, "Актуатор закрыт", "info"),
+        (2, "Ошибка актуатора", "err"),
+        (3, "Ошибка датчика температуры", "err"),
+        (4, "Ошибка датчика расхода", "err"),
+        (5, "Вскрытие корпуса (саботаж)", "err"),
+        (6, "Ошибка RTC", "err"),
+        (7, "Ошибка flash-памяти", "err"),
+        (8, "Ошибка GSM-модуля", "warn"),
+        (9, "Ошибка RS-485", "warn"),
+        (10, "Поверка истекла", "warn"),
+        (11, "Внешнее питание отсутствует", "info"),
+    ],
+    "STATUS_WARNING": [
+        (0, "Батарея: предупреждение", "warn"),
+        (1, "Температура вне рабочего диапазона", "warn"),
+        (2, "Расход вне рабочего диапазона", "warn"),
+        (3, "Приближается дата поверки", "warn"),
+        (4, "Flash заполнен", "warn"),
+        (5, "Слабый сигнал GSM", "warn"),
+        (6, "Архив почти заполнен", "warn"),
+    ],
+    "STATUS_ALARM": [
+        (0, "Критический разряд батареи", "err"),
+        (1, "Температура за допустимыми пределами", "err"),
+        (2, "Тревога: вмешательство", "err"),
+        (3, "Неисправность актуатора", "err"),
+        (4, "Ошибка измерения", "err"),
+        (5, "Обнаружена утечка газа", "err"),
+        (6, "Аномалия давления", "err"),
+    ],
+    "STATUS_CRASH": [
+        (0, "Аппаратный сбой", "err"),
+        (1, "Повреждение flash-памяти", "err"),
+        (2, "Отказ RTC", "err"),
+        (3, "Отказ датчика", "err"),
+        (4, "Перезагрузка по Watchdog", "err"),
+        (5, "Переполнение стека", "err"),
+    ],
+}
+
+STATUS_NAMES = ["STATUS_SYSTEM", "STATUS_WARNING", "STATUS_ALARM", "STATUS_CRASH"]
+STATUS_COLORS = {"ok": "#0a7d0a", "warn": "#c47f00", "err": "#c0392b", "info": "#555"}
+
+
+def decode_status_bits(name: str, raw_value: str) -> list[tuple[int, str, str, bool]]:
+    """Decode status register into list of (bit, label, severity, is_set)."""
+    bits_def = STATUS_BITS.get(name, [])
+    try:
+        val = int(raw_value.strip().rstrip(";"), 0)
+    except (ValueError, AttributeError):
+        return []
+    result = []
+    for bit, label, severity in bits_def:
+        is_set = bool(val & (1 << bit))
+        result.append((bit, label, severity, is_set))
+    return result
+
+
 class CommandHistory:
     """Персистентная история команд и избранное."""
 

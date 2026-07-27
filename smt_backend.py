@@ -15,9 +15,11 @@ from smt_gui_support import (
     HERE,
     READING_COMMANDS,
     SECRET_READS,
+    STATUS_NAMES,
     TELE_PARAMS,
     classify_secret,
     classify_send,
+    decode_status_bits,
     hexdump,
     parse_reading,
     pretty,
@@ -161,6 +163,14 @@ class Backend(threading.Thread):
                     self._sms_receive(task.get("delete", False))
                 elif op == "modem_at":
                     self._modem_at(task.get("text", "AT"))
+                elif op == "read_status":
+                    self._read_status_panel()
+                elif op == "read_archive_port":
+                    self._read_archive_port(task.get("count", 20))
+                elif op == "backup":
+                    self._backup_params()
+                elif op == "restore":
+                    self._restore_params(task.get("params", {}), task.get("expert", False))
             except Exception as exc:
                 outcome = "error"
                 failure = exc
@@ -760,3 +770,110 @@ class Backend(threading.Thread):
                        f"{tr.last_latency_ms} мс · RX {len(tr.last_raw_rx)} байт" +
                        (" · оптическое эхо снято" if getattr(tr, 'last_echo_removed', False) else ""))
         self.log("io", f"     DevInfo = {pretty(value)!r}")
+
+    def _read_status_panel(self):
+        self.log("ok", "[статус] Считываю регистры состояния…")
+        result = {}
+        for name in STATUS_NAMES:
+            try:
+                raw, val = self._tx(name, retry_safe=True, mutating=False, kind="read")
+                result[name] = pretty(val) if val not in (None, "") else ""
+                bits = decode_status_bits(name, result[name])
+                active = [label for _, label, _, is_set in bits if is_set]
+                self.log("io", f"  {name} = {result[name]}" +
+                         (f"  [{', '.join(active)}]" if active else "  [норма]"))
+            except Exception as exc:
+                result[name] = f"<err:{exc}>"
+                self.log("err", f"  {name} = ошибка: {exc}")
+        self.post("status_panel", result)
+
+    def _read_archive_port(self, count=20):
+        self.log("ok", "[архив] Считываю количество записей…")
+        raw, val = self._tx("ArcNumRecords", retry_safe=True, mutating=False, kind="read")
+        num_str = pretty(val) if val not in (None, "") else "0"
+        try:
+            total = int(num_str.strip().rstrip(";"))
+        except (ValueError, AttributeError):
+            total = 0
+        self.log("io", f"  ArcNumRecords = {total}")
+        if total == 0:
+            self.post("archive_data", {"total": 0, "records": []})
+            self.log("warn", "[архив] Архив пуст.")
+            return
+        self.cancel_event.clear()
+        records = []
+        read_count = min(count, total)
+        self.log("ok", f"[архив] Читаю последние {read_count} из {total} записей…")
+        for i in range(read_count):
+            if self.cancel_event.is_set():
+                self.log("warn", "[архив] Остановлено пользователем.")
+                break
+            idx = total - read_count + i + 1
+            try:
+                raw, val = self._tx(f"ARCHIVE(6;1;{idx})", retry_safe=True, mutating=False, kind="read")
+                text = pretty(val) if val not in (None, "") else sc.decode_response(raw).strip() if raw else ""
+                records.append({"index": idx, "data": text})
+            except Exception as exc:
+                records.append({"index": idx, "data": f"<err:{exc}>"})
+            self.post("archive_progress", (i + 1, read_count))
+            time.sleep(0.02)
+        self.post("archive_data", {"total": total, "records": records})
+        self.log("ok", f"[архив] Прочитано {len(records)}/{total} записей.")
+
+    def _backup_params(self):
+        if self.mode == "sms":
+            raise RuntimeError("Резервное копирование по SMS отключено.")
+        self.cancel_event.clear()
+        readable = [c for c in self.catalog
+                    if c["name"] not in self.actions
+                    and c["name"] not in getattr(sc, "SECRET_NAMES", set())]
+        total = len(readable)
+        self.log("ok", f"[бэкап] Чтение {total} параметров…")
+        params = {}
+        for i, item in enumerate(readable, 1):
+            if self.cancel_event.is_set():
+                self.log("warn", f"[бэкап] Остановлено: {i-1}/{total}")
+                break
+            name = item["name"]
+            try:
+                raw, val = self._tx(name, retry_safe=True, mutating=False, kind="backup")
+                params[name] = pretty(val) if val not in (None, "") else None
+            except Exception:
+                params[name] = None
+            self.post("backup_progress", (i, total, name))
+            time.sleep(0.015)
+        params = {k: v for k, v in params.items() if v is not None}
+        self.post("backup_data", params)
+        self.log("ok", f"[бэкап] Считано {len(params)}/{total} параметров.")
+
+    def _restore_params(self, params, expert):
+        if not expert:
+            raise PermissionError("Восстановление требует Экспертный режим.")
+        self.cancel_event.clear()
+        writable = {c["name"] for c in self.catalog
+                    if c["name"] not in self.actions
+                    and (c.get("prov") == "0101" or c.get("user") == "0101")}
+        to_write = {k: v for k, v in params.items()
+                    if k in writable and v is not None
+                    and k not in getattr(sc, "SECRET_NAMES", set())}
+        total = len(to_write)
+        self.log("ok", f"[восстановление] Запись {total} параметров…")
+        ok = 0
+        for i, (name, value) in enumerate(to_write.items(), 1):
+            if self.cancel_event.is_set():
+                self.log("warn", f"[восстановление] Остановлено: {i-1}/{total}")
+                break
+            critical = name in self.critical
+            if critical and not expert:
+                self.log("warn", f"  {name}: пропущен (критичная, нет экспертного)")
+                continue
+            try:
+                self._tx(f"{name}={value}", retry_safe=False, expert=expert, mutating=True, kind="restore")
+                ok += 1
+                self.log("io", f"  {name}={value}")
+            except Exception as exc:
+                self.log("err", f"  {name}: ошибка записи: {exc}")
+            self.post("restore_progress", (i, total, name))
+            time.sleep(0.03)
+        self.post("restore_done", {"total": total, "ok": ok})
+        self.log("ok", f"[восстановление] Записано {ok}/{total} параметров.")
