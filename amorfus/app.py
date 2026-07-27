@@ -26,13 +26,14 @@ async def lifespan(app: FastAPI):
     await client.close()
 
 
-app = FastAPI(title="AI Assistant", lifespan=lifespan)
+app = FastAPI(title="Amorfus", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 SYSTEM_PROMPT = (
-    "You are a helpful, knowledgeable, and friendly AI assistant. "
-    "Answer questions on any topic clearly and accurately. "
+    "You are Amorfus — a helpful, knowledgeable, and friendly AI assistant. "
+    "Your name comes from the concept of an amorphous state: fluid, adaptable, "
+    "and without rigid boundaries. Answer questions on any topic clearly and accurately. "
     "When appropriate, use examples and structured formatting. "
     "Respond in the same language as the user's message."
 )

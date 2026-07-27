@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Assistant</title>
+<title>Amorfus</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -93,7 +93,7 @@ textarea::placeholder{color:var(--text2)}
 
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-header">
-    <h2>AI Assistant</h2>
+    <h2>Amorfus</h2>
     <button class="btn-new" id="btnNew">+ New</button>
   </div>
   <div class="conv-list" id="convList"></div>
@@ -102,14 +102,14 @@ textarea::placeholder{color:var(--text2)}
 <main class="main">
   <div class="topbar">
     <button class="btn-menu" id="btnMenu">&#9776;</button>
-    <span class="topbar-title">AI Assistant</span>
+    <span class="topbar-title">Amorfus</span>
     <span class="model-badge">Claude</span>
   </div>
 
   <div class="messages" id="messages">
     <div class="welcome" id="welcome">
-      <h1>AI Assistant</h1>
-      <p>Universal assistant powered by Claude. Ask any question — I'll answer in your language.</p>
+      <h1>Amorfus</h1>
+      <p>Adaptive AI assistant. Ask any question — I'll answer in your language.</p>
     </div>
   </div>
 
@@ -228,7 +228,7 @@ function appendMessage(role, text, animate = true) {
   div.className = "msg msg-" + role;
   if (!animate) div.style.animation = "none";
 
-  const avatarLabel = role === "user" ? "You" : "AI";
+  const avatarLabel = role === "user" ? "You" : "Amorfus";
   div.innerHTML =
     '<div class="msg-avatar">' + (role === "user" ? "U" : "A") + "</div>" +
     '<div class="msg-body">' +
