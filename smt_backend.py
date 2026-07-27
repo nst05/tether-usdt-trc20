@@ -171,6 +171,14 @@ class Backend(threading.Thread):
                     self._backup_params()
                 elif op == "restore":
                     self._restore_params(task.get("params", {}), task.get("expert", False))
+                elif op == "write_kfactor":
+                    self._write_kfactor(task.get("value", ""), task.get("expert", False))
+                elif op == "tele_auto_cycle":
+                    self._tele_auto_cycle(task.get("host", ""), task.get("port", 0),
+                                          task.get("interval", 60))
+                elif op == "gsm_init_apn":
+                    self._gsm_init_apn(task.get("apn", ""), task.get("user", ""),
+                                       task.get("password", ""))
             except Exception as exc:
                 outcome = "error"
                 failure = exc
@@ -877,3 +885,89 @@ class Backend(threading.Thread):
             time.sleep(0.03)
         self.post("restore_done", {"total": total, "ok": ok})
         self.log("ok", f"[восстановление] Записано {ok}/{total} параметров.")
+
+    def _write_kfactor(self, value, expert):
+        self._require_provider(expert=expert)
+        target = parse_reading(value)
+        target_text = format(target, "f")
+        self.log("warn", f"[KFACTOR] Запись коэффициента: {target_text}")
+        raw, _ = self._tx(f"KFACTOR={target_text}", retry_safe=False, expert=True,
+                          mutating=True, kind="kfactor-set")
+        after = self._read_value_quiet("KFACTOR")
+        if after in (None, ""):
+            raise RuntimeError("read-back KFACTOR не получен")
+        try:
+            actual = parse_reading(after)
+        except (ValueError, ArithmeticError) as exc:
+            raise RuntimeError(f"read-back не распознан: {after!r}") from exc
+        tolerance = max(abs(target) * Decimal("0.000001"), Decimal("0.000001"))
+        if abs(actual - target) > tolerance:
+            raise RuntimeError(f"read-back не совпал: ожидалось {target}, прибор вернул {actual}")
+        self.log("ok", f"[KFACTOR] Записано {after}; read-back подтверждён")
+        self.post("kfactor_done", {"value": after, "ok": True})
+
+    def _tele_auto_cycle(self, host, port, interval_s):
+        self.log("ok", f"[автотелеметрия] Снимаю показания и отправляю на {host}:{port}…")
+        values = {}
+        for name in TELE_PARAMS:
+            try:
+                raw, val = self._tx(name, retry_safe=True, mutating=False, kind="read")
+                values[name] = pretty(val) if val not in (None, "") else ""
+            except Exception:
+                pass
+        self.post("tele_reading", values)
+        from smt_gui_support import build_telemetry_packet
+        pkt = build_telemetry_packet(values)
+        data = pkt.encode("latin1", "replace")
+        import socket
+        s = None
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(5)
+            s.connect((host, port))
+            s.sendall(data)
+            s.shutdown(socket.SHUT_WR)
+            try:
+                ack = s.recv(256)
+            except TimeoutError:
+                ack = b""
+            self.log("ok", f"[автотелеметрия] Отправлено {len(data)} б → {host}:{port} · "
+                           f"ACK {ack.decode('latin1', 'replace')!r}")
+            self.post("tele_auto_sent", {"ok": True, "bytes": len(data), "ack": ack.decode("latin1", "replace")})
+        except Exception as exc:
+            self.log("err", f"[автотелеметрия] Ошибка отправки: {exc}")
+            self.post("tele_auto_sent", {"ok": False, "error": str(exc)})
+        finally:
+            if s is not None:
+                import contextlib as _cl
+                with _cl.suppress(Exception):
+                    s.close()
+
+    def _gsm_init_apn(self, apn, user, password):
+        send_at = getattr(self.cli.t, "send_at", None)
+        if send_at is None:
+            raise RuntimeError("AT-команды доступны только для GSM-модема")
+        steps = [
+            ("AT", "проверка модема"),
+            ("AT+CPIN?", "проверка SIM"),
+            (f'AT+CSTT="{apn}","{user}","{password}"', "установка APN"),
+            ("AT+CIICR", "активация PDP-контекста"),
+            ("AT+CIFSR", "получение IP-адреса"),
+            ("AT+CSQ", "уровень сигнала"),
+            ("AT+CREG?", "регистрация в сети"),
+            ("AT+CGATT?", "статус GPRS"),
+        ]
+        results = []
+        for cmd, desc in steps:
+            self.log("io", f"[GSM] {desc}: {cmd}")
+            try:
+                raw = send_at(cmd)
+                self._wire_log()
+                text = pretty(sc.decode_response(raw).strip()) if raw else ""
+                results.append({"cmd": cmd, "desc": desc, "response": text, "ok": True})
+                self.log("io", f"  ← {text}")
+            except Exception as exc:
+                results.append({"cmd": cmd, "desc": desc, "response": str(exc), "ok": False})
+                self.log("err", f"  ← ошибка: {exc}")
+            time.sleep(0.5)
+        self.post("gsm_init_done", results)

@@ -182,6 +182,24 @@ def devices(path: str) -> list[str]:
             "SELECT DISTINCT id64 FROM packets WHERE id64<>'' ORDER BY id64").fetchall()]
 
 
+def chart_data(path: str, *, id64: str = "", limit: int = 2000) -> list[dict[str, Any]]:
+    if not os.path.exists(path):
+        return []
+    where: list[str] = []
+    params: list[str | int] = []
+    if id64:
+        where.append("p.id64=?"); params.append(id64)
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    params.append(max(1, min(int(limit), 10000)))
+    sql = (
+        "SELECT p.received_utc, p.id64, r.device_datetime, r.accumulator_m3, r.value "
+        "FROM records r JOIN packets p ON p.id=r.packet_id" +
+        clause + " ORDER BY p.id ASC, r.seq ASC LIMIT ?"
+    )
+    with _connect(path) as con:
+        return [dict(row) for row in con.execute(sql, params).fetchall()]
+
+
 def export_csv(path: str, output: str) -> int:
     rows = recent_records(path, 10000)
     cols = ["received_utc", "source_ip", "id64", "auth_ok", "raw_sha256",

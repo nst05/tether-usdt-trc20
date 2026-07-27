@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.6.0.
+"""Графический интерфейс контроллера SMT v4.9.0.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -40,13 +40,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.8.0",
+        diag_folder, application="gui", version="4.9.0",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.8.0 · 160 команд · LOOP/IF/STORE")
+    root.title("Контроллер устройства 4.9.0 · 160 команд · KFACTOR/телеметрия/GSM")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
@@ -734,6 +734,166 @@ def build_app(root, selftest=False):
 
     refresh_telemetry_db()
 
+    # ── Автоматическая периодическая отправка телеметрии ───────────────
+    auto_frame = ttk.LabelFrame(tab_tele, text="Автоматическая отправка телеметрии", padding=5)
+    auto_frame.pack(fill="x", pady=(4, 2))
+    auto_bar = ttk.Frame(auto_frame); auto_bar.pack(fill="x")
+    ttk.Label(auto_bar, text="Сервер:").pack(side="left")
+    auto_host_var = tk.StringVar(value="127.0.0.1")
+    ttk.Entry(auto_bar, textvariable=auto_host_var, width=14).pack(side="left", padx=2)
+    ttk.Label(auto_bar, text="порт:").pack(side="left")
+    auto_port_var = tk.StringVar(value="40000")
+    ttk.Entry(auto_bar, textvariable=auto_port_var, width=7).pack(side="left", padx=2)
+    ttk.Label(auto_bar, text="интервал, мин:").pack(side="left", padx=(8, 2))
+    auto_interval_var = tk.StringVar(value="5")
+    ttk.Entry(auto_bar, textvariable=auto_interval_var, width=5).pack(side="left", padx=2)
+    state["tele_auto_active"] = False
+    state["tele_auto_count"] = 0
+    auto_status_lbl = ttk.Label(auto_bar, text="○ остановлено", foreground="#777")
+
+    def _auto_tele_tick():
+        if not state.get("tele_auto_active"):
+            return
+        if not state["connected"]:
+            append("warn", "[автотелеметрия] Нет подключения — пропускаю цикл.")
+        else:
+            try:
+                host = auto_host_var.get().strip()
+                port = int(auto_port_var.get())
+                task_q.put({"op": "tele_auto_cycle", "host": host, "port": port})
+            except ValueError:
+                append("err", "[автотелеметрия] Неверный порт.")
+        try:
+            interval_min = max(0.1, float(auto_interval_var.get().replace(",", ".")))
+        except ValueError:
+            interval_min = 5.0
+        ms = int(interval_min * 60 * 1000)
+        state["tele_auto_after"] = root.after(ms, _auto_tele_tick)
+
+    def _auto_tele_start():
+        if state.get("tele_auto_active"):
+            return
+        state["tele_auto_active"] = True
+        state["tele_auto_count"] = 0
+        auto_status_lbl.config(text="● активно (0 отправок)", foreground="#0a7d0a")
+        append("ok", "[автотелеметрия] Запущена.")
+        _auto_tele_tick()
+
+    def _auto_tele_stop():
+        state["tele_auto_active"] = False
+        aid = state.pop("tele_auto_after", None)
+        if aid:
+            with contextlib.suppress(Exception):
+                root.after_cancel(aid)
+        auto_status_lbl.config(text="○ остановлено", foreground="#777")
+        append("ok", "[автотелеметрия] Остановлена.")
+
+    ttk.Button(auto_bar, text="Запустить", command=_auto_tele_start).pack(side="left", padx=6)
+    ttk.Button(auto_bar, text="Остановить", command=_auto_tele_stop).pack(side="left")
+    auto_status_lbl.pack(side="left", padx=8)
+    ttk.Label(auto_frame, foreground="#555", wraplength=1100, justify="left",
+              text="Каждые N минут снимает показания с прибора через активный оптопорт, "
+                   "собирает телеметрический пакет и отправляет на указанный TCP-сервер."
+              ).pack(anchor="w")
+
+    # ── График телеметрии ─────────────────────────────────────────────
+    chart_frame = ttk.LabelFrame(tab_tele, text="График телеметрии — накопитель и расход", padding=5)
+    chart_frame.pack(fill="both", expand=True, pady=(2, 0))
+    chart_bar = ttk.Frame(chart_frame); chart_bar.pack(fill="x")
+    chart_device_var = tk.StringVar(value="(все устройства)")
+    chart_device_cb = ttk.Combobox(chart_bar, textvariable=chart_device_var,
+                                    state="readonly", width=20,
+                                    values=["(все устройства)"])
+    chart_device_cb.pack(side="left", padx=(0, 6))
+
+    try:
+        chart_canvas_widget = tk.Canvas(chart_frame, height=180, bg="white",
+                                         highlightthickness=0)
+    except Exception:
+        chart_canvas_widget = None
+
+    def _draw_chart():
+        if chart_canvas_widget is None or tele_store_mod is None:
+            return
+        chart_canvas_widget.delete("all")
+        w = chart_canvas_widget.winfo_width()
+        h = chart_canvas_widget.winfo_height()
+        if w < 100 or h < 60:
+            return
+        sel = chart_device_var.get()
+        id64_filter = "" if sel == "(все устройства)" else sel
+        rows = tele_store_mod.chart_data(TELEMETRY_DB_PATH, id64=id64_filter, limit=2000)
+        if not rows:
+            chart_canvas_widget.create_text(w // 2, h // 2, text="Нет данных",
+                                             fill="#777", font=("TkDefaultFont", 11))
+            return
+        acc_vals = [r.get("accumulator_m3") for r in rows if r.get("accumulator_m3") is not None]
+        flow_vals = [r.get("value") for r in rows if r.get("value") is not None]
+        margin_l, margin_r, margin_t, margin_b = 70, 20, 15, 30
+        plot_w = w - margin_l - margin_r
+        plot_h = h - margin_t - margin_b
+        if plot_w < 10 or plot_h < 10:
+            return
+        chart_canvas_widget.create_rectangle(margin_l, margin_t,
+                                              w - margin_r, h - margin_b,
+                                              outline="#ccc")
+        if acc_vals:
+            mn, mx = min(acc_vals), max(acc_vals)
+            if mn == mx:
+                mx = mn + 1
+            rng = mx - mn
+            points = []
+            for i, v in enumerate(acc_vals):
+                x = margin_l + (i / max(1, len(acc_vals) - 1)) * plot_w
+                y = h - margin_b - ((v - mn) / rng) * plot_h
+                points.append((x, y))
+            if len(points) >= 2:
+                flat = [coord for pt in points for coord in pt]
+                chart_canvas_widget.create_line(*flat, fill="#2980b9", width=2, smooth=True)
+            chart_canvas_widget.create_text(margin_l - 4, margin_t, anchor="ne",
+                                             text=f"{mx:.2f}", fill="#2980b9",
+                                             font=("TkFixedFont", 8))
+            chart_canvas_widget.create_text(margin_l - 4, h - margin_b, anchor="se",
+                                             text=f"{mn:.2f}", fill="#2980b9",
+                                             font=("TkFixedFont", 8))
+            chart_canvas_widget.create_text(margin_l + 4, margin_t + 2, anchor="nw",
+                                             text="Накопитель, м³", fill="#2980b9",
+                                             font=("TkFixedFont", 8))
+        if flow_vals:
+            mn2, mx2 = min(flow_vals), max(flow_vals)
+            if mn2 == mx2:
+                mx2 = mn2 + 1
+            rng2 = mx2 - mn2
+            points2 = []
+            for i, v in enumerate(flow_vals):
+                x = margin_l + (i / max(1, len(flow_vals) - 1)) * plot_w
+                y = h - margin_b - ((v - mn2) / rng2) * plot_h
+                points2.append((x, y))
+            if len(points2) >= 2:
+                flat2 = [coord for pt in points2 for coord in pt]
+                chart_canvas_widget.create_line(*flat2, fill="#e67e22", width=1,
+                                                 dash=(4, 2), smooth=True)
+            chart_canvas_widget.create_text(w - margin_r - 4, margin_t + 2, anchor="ne",
+                                             text=f"Расход (макс {mx2:.2f})", fill="#e67e22",
+                                             font=("TkFixedFont", 8))
+        n_pts = max(len(acc_vals), len(flow_vals))
+        chart_canvas_widget.create_text(w // 2, h - 4, anchor="s",
+                                         text=f"Точек: {n_pts}", fill="#777",
+                                         font=("TkFixedFont", 8))
+
+    def _refresh_chart():
+        if tele_store_mod is not None:
+            devs = tele_store_mod.devices(TELEMETRY_DB_PATH)
+            vals = ["(все устройства)"] + devs
+            chart_device_cb.config(values=vals)
+        _draw_chart()
+
+    ttk.Button(chart_bar, text="Обновить график", command=_refresh_chart).pack(side="left")
+    if chart_canvas_widget is not None:
+        chart_canvas_widget.pack(fill="both", expand=True, pady=(4, 0))
+        chart_canvas_widget.bind("<Configure>", lambda _e: _draw_chart())
+    chart_device_cb.bind("<<ComboboxSelected>>", lambda _e: _draw_chart())
+
     def _tele_render(rep):
         rec_tree.delete(*rec_tree.get_children())
         tele_sum.delete("1.0", "end")
@@ -1315,6 +1475,51 @@ ENDIF
                 text=f"Активных флагов: {total_active}",
                 foreground=STATUS_COLORS.get(max_severity, "#555"))
 
+    # ── 1b. Редактор KFACTOR ─────────────────────────────────────────────
+    kf_frame = ttk.Labelframe(svc_pan, text="KFACTOR — поправочный коэффициент расхода", padding=5)
+    svc_pan.add(kf_frame, weight=1)
+    kf_bar = ttk.Frame(kf_frame); kf_bar.pack(fill="x")
+    ttk.Label(kf_bar, text="Текущий:").pack(side="left")
+    kf_current_lbl = ttk.Label(kf_bar, text="—", font=("TkFixedFont", 10, "bold"),
+                                foreground="#555")
+    kf_current_lbl.pack(side="left", padx=4)
+    ttk.Button(kf_bar, text="Считать",
+               command=lambda: task_q.put({"op": "read", "name": "KFACTOR"})
+               ).pack(side="left", padx=6)
+    ttk.Label(kf_bar, text="Новое значение:").pack(side="left", padx=(12, 2))
+    kf_val_var = tk.StringVar(value="1.0")
+    ttk.Entry(kf_bar, textvariable=kf_val_var, width=12).pack(side="left", padx=2)
+
+    def _do_write_kfactor():
+        if not state["expert"]:
+            messagebox.showwarning("KFACTOR", "Включи Экспертный режим.")
+            return
+        if not state.get("provider_verified"):
+            messagebox.showwarning("KFACTOR",
+                "Сначала выполни авторизацию Provider (PASSWORD_PROVIDER).")
+            return
+        val = kf_val_var.get().strip()
+        if not val:
+            return
+        if not messagebox.askyesno(
+                "Запись KFACTOR",
+                f"Записать KFACTOR = {val}?\n\n"
+                "Поправочный коэффициент пересчёта импульсов в объём.\n"
+                "После записи будет выполнен read-back для подтверждения.",
+                parent=root):
+            return
+        task_q.put({"op": "write_kfactor", "value": val, "expert": True})
+
+    ttk.Button(kf_bar, text="Записать (Provider)", command=_do_write_kfactor
+               ).pack(side="left", padx=6)
+    kf_status_lbl = ttk.Label(kf_bar, text="", foreground="#555")
+    kf_status_lbl.pack(side="left", padx=6)
+    ttk.Label(kf_frame, foreground="#8a4b08", wraplength=1100, justify="left",
+              text="Коэффициент пересчёта импульсов датчика в м³. Типичные значения: "
+                   "1.0 (штатный), 0.01–10.0. Требуется уровень Provider + Экспертный режим. "
+                   "Также доступен KALMAN_K (фильтр Калмана) — через вкладку «Команды»."
+              ).pack(anchor="w", pady=(3, 0))
+
     # ── 2. Чтение архива по оптопорту ──────────────────────────────────
     arc_frame = ttk.Labelframe(svc_pan, text="Архив устройства — чтение по оптопорту", padding=5)
     svc_pan.add(arc_frame, weight=3)
@@ -1444,6 +1649,65 @@ ENDIF
             bak_tree.insert("", "end", values=(name, params[name]))
         bak_progress_lbl.config(text=f"Считано {len(params)} параметров",
                                 foreground="#0a7d0a")
+
+    # ── 4. Настройка GSM-модема (APN/GPRS) ──────────────────────────────
+    gsm_frame = ttk.Labelframe(svc_pan, text="Настройка GSM-модема — APN / GPRS", padding=5)
+    svc_pan.add(gsm_frame, weight=2)
+    gsm_bar = ttk.Frame(gsm_frame); gsm_bar.pack(fill="x")
+    ttk.Label(gsm_bar, text="APN:").pack(side="left")
+    gsm_apn_var = tk.StringVar(value="internet")
+    ttk.Entry(gsm_bar, textvariable=gsm_apn_var, width=18).pack(side="left", padx=2)
+    ttk.Label(gsm_bar, text="логин:").pack(side="left", padx=(6, 2))
+    gsm_user_var = tk.StringVar()
+    ttk.Entry(gsm_bar, textvariable=gsm_user_var, width=12).pack(side="left", padx=2)
+    ttk.Label(gsm_bar, text="пароль:").pack(side="left", padx=(6, 2))
+    gsm_pass_var = tk.StringVar()
+    ttk.Entry(gsm_bar, textvariable=gsm_pass_var, width=12, show="•").pack(side="left", padx=2)
+
+    def _do_gsm_init():
+        if state.get("mode") != "sms":
+            messagebox.showwarning("GSM", "Сначала подключись через GSM/SMS транспорт.")
+            return
+        apn = gsm_apn_var.get().strip()
+        if not apn:
+            messagebox.showwarning("GSM", "Укажи имя точки доступа (APN).")
+            return
+        task_q.put({"op": "gsm_init_apn", "apn": apn,
+                    "user": gsm_user_var.get().strip(),
+                    "password": gsm_pass_var.get()})
+
+    ttk.Button(gsm_bar, text="Инициализировать GPRS",
+               command=_do_gsm_init).pack(side="left", padx=8)
+    gsm_status_lbl = ttk.Label(gsm_bar, text="", foreground="#555")
+    gsm_status_lbl.pack(side="left", padx=4)
+
+    gsm_tree = ttk.Treeview(gsm_frame, columns=("cmd", "desc", "resp", "status"),
+                             show="headings", height=6)
+    for c, t, w in (("cmd", "AT-команда", 250), ("desc", "Описание", 200),
+                    ("resp", "Ответ", 350), ("status", "Статус", 60)):
+        gsm_tree.heading(c, text=t); gsm_tree.column(c, width=w, anchor="w")
+    gsm_tree.tag_configure("fail", foreground="#c0392b")
+    gsm_sb = ttk.Scrollbar(gsm_frame, orient="vertical", command=gsm_tree.yview)
+    gsm_tree.configure(yscrollcommand=gsm_sb.set)
+    gsm_tree.pack(side="left", fill="both", expand=True, pady=4)
+    gsm_sb.pack(side="left", fill="y", pady=4)
+    ttk.Label(gsm_frame, foreground="#555", wraplength=1100, justify="left",
+              text="Последовательность: AT → SIM → CSTT (APN) → CIICR (PDP) → CIFSR (IP) → "
+                   "CSQ (сигнал) → CREG (сеть) → CGATT (GPRS). "
+                   "Типичные APN: internet, internet.mts.ru, internet.beeline.ru, internet.tele2.ru"
+              ).pack(anchor="w", side="bottom")
+
+    def _gsm_render(results):
+        gsm_tree.delete(*gsm_tree.get_children())
+        ok_count = sum(1 for r in results if r.get("ok"))
+        for r in results:
+            tags = () if r.get("ok") else ("fail",)
+            gsm_tree.insert("", "end", values=(
+                r.get("cmd", ""), r.get("desc", ""),
+                r.get("response", ""), "OK" if r.get("ok") else "ОШИБКА"), tags=tags)
+        gsm_status_lbl.config(
+            text=f"Выполнено {ok_count}/{len(results)} шагов",
+            foreground="#0a7d0a" if ok_count == len(results) else "#c47f00")
 
     # ── лог: вкладки «Журнал» и «Сырые байты (hex)» ─────────────────────
     nb = ttk.Notebook(root); nb.pack(fill="both", expand=False)
@@ -1615,6 +1879,8 @@ ENDIF
                         append_hex(payload)
                     elif kind == "reading":
                         name, value, ts = payload
+                        if name == "KFACTOR" and value:
+                            kf_current_lbl.config(text=value, foreground="#333")
                         if state.get("monitoring") and name in state.get("monitor_names", []):
                             row = (ts, name, value)
                             state["monitor_rows"].append(row)
@@ -1709,6 +1975,23 @@ ENDIF
                         bak_progress_lbl.config(
                             text=f"Восстановлено {ok}/{total} параметров",
                             foreground="#0a7d0a" if ok == total else "#c47f00")
+                    elif kind == "kfactor_done":
+                        val = payload.get("value", "")
+                        kf_current_lbl.config(text=val, foreground="#0a7d0a")
+                        kf_status_lbl.config(text="Записано, read-back OK",
+                                             foreground="#0a7d0a")
+                    elif kind == "tele_auto_sent":
+                        state["tele_auto_count"] = state.get("tele_auto_count", 0) + 1
+                        n = state["tele_auto_count"]
+                        ok = payload.get("ok", False)
+                        auto_status_lbl.config(
+                            text=f"● активно ({n} отправок)" if ok
+                                 else f"● ошибка ({n} попыток)",
+                            foreground="#0a7d0a" if ok else "#c47f00")
+                        refresh_telemetry_db()
+                    elif kind == "gsm_init_done":
+                        _gsm_render(payload)
+                        main_nb.select(tab_service)
                     elif kind == "session_file":
                         state["session_file"] = payload
                     elif kind == "password":
@@ -1846,10 +2129,12 @@ ENDIF
 
     def on_close():
         state["monitoring"] = False
-        aid = state.pop("monitor_after", None)
-        if aid:
-            with contextlib.suppress(Exception):
-                root.after_cancel(aid)
+        state["tele_auto_active"] = False
+        for _aid_key in ("monitor_after", "tele_auto_after"):
+            aid = state.pop(_aid_key, None)
+            if aid:
+                with contextlib.suppress(Exception):
+                    root.after_cancel(aid)
         s = state.get("tele_srv")
         if s:
             s.stop()
