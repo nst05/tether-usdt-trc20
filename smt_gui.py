@@ -12,6 +12,7 @@ import datetime
 import json
 import os
 import queue
+import struct
 import sys
 
 from smt_backend import Backend
@@ -263,12 +264,14 @@ def build_app(root, selftest=False):
     tab_hist = ttk.Frame(main_nb, padding=6)
     tab_lab = ttk.Frame(main_nb, padding=6)
     tab_service = ttk.Frame(main_nb, padding=6)
+    tab_dump = ttk.Frame(main_nb, padding=6)
     main_nb.add(tab_cmd, text="Команды (160)")
     main_nb.add(tab_terminal, text="Транспорт · RAW · SMS")
     main_nb.add(tab_tele, text="Телеметрия")
     main_nb.add(tab_hist, text="История")
     main_nb.add(tab_lab, text="Снимки · сценарии · мониторинг")
     main_nb.add(tab_service, text="Сервис · статус · бэкап")
+    main_nb.add(tab_dump, text="Дамп W25Q64 · пароли")
     main_nb.pack(fill="both", expand=True)
 
     # ── тело вкладки «Команды»: слева каталог, справа детали+запись ──────
@@ -1924,6 +1927,298 @@ ENDIF
     ttk.Button(logbar, text="Сохранить hex…", command=save_hex).pack(side="right", padx=6)
     ttk.Button(logbar, text="Очистить", command=lambda: (log.delete("1.0", "end"),
                hexlog.delete("1.0", "end"))).pack(side="right")
+
+    # ── вкладка «Дамп W25Q64 · пароли» ───────────────────────────────────
+    dump_pan = ttk.Panedwindow(tab_dump, orient="vertical")
+    dump_pan.pack(fill="both", expand=True)
+
+    # Вспомогательные функции для работы с дампом
+    EVT_R0, EVT_R1 = 0x15E000, 0x171000
+    EVENT_CODES = {
+        0x020F: ("PASSWORD_PROVIDER", "пароль провайдера", "password"),
+        0x0220: ("PASSWORD_OMEGA", "пароль omega", "password"),
+        0x02B7: ("PASSWORD_OMEGA", "пароль omega", "password"),
+        0x023C: ("ACCESS_LEVEL", "байт уровня доступа", "level"),
+        0x026B: ("ACCESS_LEVEL", "байт уровня доступа", "level"),
+    }
+    LEVEL_CODES = {"f": 0x66, "F": 0x66, "U": 0x55, "u": 0x55, "0": 0x00}
+    LEVEL_NAMES = {0x66: "заводской (f)", 0x55: "omega (U)", 0x00: "гость"}
+
+    def u32(data, offset):
+        return struct.unpack_from("<I", data, offset)[0]
+
+    def u16(data, offset):
+        return struct.unpack_from("<H", data, offset)[0]
+
+    def scan_dump_journal(dump):
+        """Сканирует журнал событий и возвращает пароли и уровни."""
+        passwords, levels = [], []
+        o = EVT_R0
+        limit = min(EVT_R1, len(dump))
+        while o < limit - 16:
+            try:
+                ts = u32(dump, o)
+                cnt = u32(dump, o + 0x08)
+                code = u16(dump, o + 0x0C)
+                if not (100_000_000 < ts < 4_000_000_000) or cnt >= 100000:
+                    o += 4
+                    continue
+                val_start = o + 0x0E
+                val_end = dump.find(b"\0", val_start, min(limit, val_start + 48))
+                if val_end < 0:
+                    val_end = min(limit, val_start + 48)
+                raw = dump[val_start:val_end]
+                text = raw.decode("ascii", errors="replace") if raw else ""
+                if code in EVENT_CODES:
+                    cmd, human, kind = EVENT_CODES[code]
+                    entry = {"offset": o, "timestamp": ts, "counter": cnt, "code": code,
+                             "command": cmd, "value": text, "kind": kind}
+                    if kind == "password":
+                        passwords.append(entry)
+                    elif kind == "level":
+                        try:
+                            level_byte = int(text)
+                            entry["level_byte"] = level_byte
+                            entry["level_name"] = LEVEL_NAMES.get(level_byte, "?")
+                            levels.append(entry)
+                        except ValueError:
+                            pass
+            except (struct.error, ValueError):
+                pass
+            o += 0x10
+        return passwords, levels
+
+    def set_password_dump(dump, command, new_password):
+        """Меняет пароль во всех записях журнала."""
+        if not new_password:
+            raise ValueError("Пароль не задан")
+        data = bytearray(dump)
+        password_len = len(new_password)
+        if password_len > 48:
+            raise ValueError("Пароль не должен быть длинне 48 символов")
+        target_code = None
+        for code, (cmd, _, _) in EVENT_CODES.items():
+            if cmd == command:
+                target_code = code
+                break
+        if target_code is None:
+            raise ValueError(f"Команда {command} не найдена")
+        changed = 0
+        o = EVT_R0
+        while o < min(EVT_R1, len(data)) - 16:
+            try:
+                ts = u32(data, o)
+                cnt = u32(data, o + 0x08)
+                code = u16(data, o + 0x0C)
+                if (100_000_000 < ts < 4_000_000_000 and cnt < 100000 and code == target_code):
+                    val_offset = o + 0x0E
+                    for i in range(val_offset, min(val_offset + 48, len(data))):
+                        data[i] = 0
+                    new_bytes = new_password.encode("ascii") + b"\0"
+                    for i, byte in enumerate(new_bytes):
+                        if val_offset + i < len(data):
+                            data[val_offset + i] = byte
+                    changed += 1
+            except (struct.error, ValueError):
+                pass
+            o += 0x10
+        return bytes(data), changed
+
+    def set_level_dump(dump, level_char):
+        """Меняет уровень доступа во всех записях журнала."""
+        if level_char not in LEVEL_CODES:
+            raise ValueError(f"Неизвестный уровень: {level_char}. Допустимы: f, U, 0")
+        level_byte = LEVEL_CODES[level_char]
+        data = bytearray(dump)
+        changed = 0
+        o = EVT_R0
+        while o < min(EVT_R1, len(data)) - 16:
+            try:
+                ts = u32(data, o)
+                cnt = u32(data, o + 0x08)
+                code = u16(data, o + 0x0C)
+                if (100_000_000 < ts < 4_000_000_000 and cnt < 100000 and
+                    code in (0x023C, 0x026B)):
+                    val_offset = o + 0x0E
+                    val_text = str(level_byte).encode("ascii") + b"\0"
+                    for i in range(val_offset, min(val_offset + 48, len(data))):
+                        data[i] = 0
+                    for i, byte in enumerate(val_text):
+                        if val_offset + i < len(data):
+                            data[val_offset + i] = byte
+                    changed += 1
+            except (struct.error, ValueError):
+                pass
+            o += 0x10
+        return bytes(data), changed
+
+    # ── UI для работы с дампом ─────────────────────────────────────────────
+    dump_file_frame = ttk.Labelframe(dump_pan, text="Выбор файла дампа", padding=5)
+    dump_pan.add(dump_file_frame, weight=0)
+
+    dump_file_bar = ttk.Frame(dump_file_frame)
+    dump_file_bar.pack(fill="x")
+    dump_file_var = tk.StringVar(value="")
+    dump_file_ent = ttk.Entry(dump_file_bar, textvariable=dump_file_var)
+    dump_file_ent.pack(side="left", fill="x", expand=True, padx=2)
+
+    def browse_dump():
+        path = filedialog.askopenfilename(filetypes=[("W25Q64 dump", "*.bin"), ("все", "*.*")])
+        if path:
+            dump_file_var.set(path)
+            dump_state["path"] = path
+            dump_state["data"] = None
+            dump_state["modified"] = False
+            refresh_dump_display()
+
+    ttk.Button(dump_file_bar, text="Обзор…", command=browse_dump).pack(side="left", padx=2)
+
+    def load_dump_file():
+        path = dump_file_var.get().strip()
+        if not path or not os.path.exists(path):
+            messagebox.showerror("Дамп", "Укажи путь к файлу дампа.")
+            return
+        try:
+            with open(path, "rb") as f:
+                dump_state["data"] = f.read()
+            dump_state["modified"] = False
+            refresh_dump_display()
+            append("ok", f"[дамп] загружен {len(dump_state['data'])} байт из {path}")
+        except Exception as e:
+            messagebox.showerror("Дамп", f"Ошибка загрузки: {e}")
+
+    ttk.Button(dump_file_bar, text="Загрузить", command=load_dump_file).pack(side="left", padx=2)
+
+    dump_state = {"path": "", "data": None, "modified": False}
+
+    # ── результаты сканирования ───────────────────────────────────────────
+    result_frame = ttk.Labelframe(dump_pan, text="Результаты сканирования", padding=5)
+    dump_pan.add(result_frame, weight=2)
+
+    result_text = scrolledtext.ScrolledText(result_frame, height=12, wrap="word")
+    result_text.pack(fill="both", expand=True)
+    result_text.configure(state="disabled")
+
+    def refresh_dump_display():
+        result_text.configure(state="normal")
+        result_text.delete("1.0", "end")
+        if dump_state["data"] is None:
+            result_text.insert("end", "Дамп не загружен. Укажи путь и нажми «Загрузить».", "io")
+            result_text.configure(state="disabled")
+            return
+        try:
+            pwds, lvls = scan_dump_journal(dump_state["data"])
+            if pwds:
+                result_text.insert("end", f"[ПАРОЛИ] Найдено {len(pwds)}:\n", "ok")
+                for pwd in pwds:
+                    result_text.insert("end",
+                        f"  {pwd['command']:20} = {pwd['value']!r:15} @ 0x{pwd['offset']:06X}\n", "io")
+            else:
+                result_text.insert("end", "[ПАРОЛИ] Не найдены\n", "warn")
+            if lvls:
+                result_text.insert("end", f"\n[УРОВНИ] Найдено {len(lvls)}:\n", "ok")
+                for lev in lvls:
+                    result_text.insert("end",
+                        f"  0x{lev['level_byte']:02X} = {lev['level_name']:20} @ 0x{lev['offset']:06X}\n", "io")
+            else:
+                result_text.insert("end", "\n[УРОВНИ] Не найдены\n", "warn")
+            if dump_state["modified"]:
+                result_text.insert("end", "\n⚠ Дамп изменён, но не сохранён", "err")
+        except Exception as e:
+            result_text.insert("end", f"Ошибка сканирования: {e}", "err")
+        result_text.configure(state="disabled")
+
+    result_text.tag_config("ok", foreground="#0a7d0a")
+    result_text.tag_config("warn", foreground="#c47f00")
+    result_text.tag_config("err", foreground="#c0392b")
+    result_text.tag_config("io", foreground="#555")
+
+    # ── редактирование паролей и уровня ───────────────────────────────────
+    edit_frame = ttk.Labelframe(dump_pan, text="Редактирование", padding=5)
+    dump_pan.add(edit_frame, weight=0)
+
+    edit_grid = ttk.Frame(edit_frame)
+    edit_grid.pack(fill="x", pady=4)
+
+    ttk.Label(edit_grid, text="PASSWORD_PROVIDER:").grid(row=0, column=0, sticky="w", padx=2)
+    provider_var = tk.StringVar()
+    ttk.Entry(edit_grid, textvariable=provider_var, width=30).grid(row=0, column=1, padx=2, sticky="ew")
+
+    ttk.Label(edit_grid, text="PASSWORD_OMEGA:").grid(row=1, column=0, sticky="w", padx=2, pady=2)
+    omega_var = tk.StringVar()
+    ttk.Entry(edit_grid, textvariable=omega_var, width=30).grid(row=1, column=1, padx=2, sticky="ew", pady=2)
+
+    ttk.Label(edit_grid, text="ACCESS_LEVEL:").grid(row=2, column=0, sticky="w", padx=2, pady=2)
+    level_edit_var = tk.StringVar(value="f")
+    level_cb = ttk.Combobox(edit_grid, textvariable=level_edit_var, values=["f (заводской)", "U (omega)", "0 (гость)"],
+                           state="readonly", width=27)
+    level_cb.grid(row=2, column=1, padx=2, sticky="ew", pady=2)
+    edit_grid.columnconfigure(1, weight=1)
+
+    def apply_changes():
+        if dump_state["data"] is None:
+            messagebox.showwarning("Дамп", "Загрузи дамп сначала.")
+            return
+
+        data = dump_state["data"]
+        changed_items = []
+
+        try:
+            if provider_var.get().strip():
+                data, changed = set_password_dump(data, "PASSWORD_PROVIDER", provider_var.get().strip())
+                dump_state["data"] = data
+                changed_items.append(f"PASSWORD_PROVIDER: {changed} записей")
+                append("ok", f"[дамп] PASSWORD_PROVIDER изменён в {changed} записях")
+
+            if omega_var.get().strip():
+                data, changed = set_password_dump(data, "PASSWORD_OMEGA", omega_var.get().strip())
+                dump_state["data"] = data
+                changed_items.append(f"PASSWORD_OMEGA: {changed} записей")
+                append("ok", f"[дамп] PASSWORD_OMEGA изменён в {changed} записях")
+
+            level_code = level_edit_var.get()[0]
+            if level_code in ("f", "U", "0"):
+                data, changed = set_level_dump(data, level_code)
+                dump_state["data"] = data
+                changed_items.append(f"ACCESS_LEVEL: {changed} записей")
+                level_name = LEVEL_NAMES.get(LEVEL_CODES[level_code], "?")
+                append("ok", f"[дамп] ACCESS_LEVEL изменён на {level_name} в {changed} записях")
+
+            if changed_items:
+                dump_state["modified"] = True
+                refresh_dump_display()
+                messagebox.showinfo("Дамп — успех",
+                    f"Применены изменения:\n" + "\n".join(changed_items) +
+                    f"\n\nНе забудь сохранить дамп!")
+        except Exception as e:
+            messagebox.showerror("Дамп — ошибка", f"Ошибка при применении: {e}")
+
+    btn_frame = ttk.Frame(edit_frame)
+    btn_frame.pack(fill="x", pady=4)
+    ttk.Button(btn_frame, text="Применить изменения", command=apply_changes).pack(side="left", padx=2)
+
+    def save_dump_file():
+        if dump_state["data"] is None:
+            messagebox.showwarning("Дамп", "Нечего сохранять.")
+            return
+        path = dump_file_var.get().strip()
+        if not path:
+            path = filedialog.asksaveasfilename(defaultextension=".bin",
+                filetypes=[("W25Q64 dump", "*.bin"), ("все", "*.*")],
+                initialfile="dump_modified.bin")
+            if not path:
+                return
+        try:
+            with open(path, "wb") as f:
+                f.write(dump_state["data"])
+            dump_state["modified"] = False
+            dump_file_var.set(path)
+            append("ok", f"[дамп] сохранён {len(dump_state['data'])} байт → {path}")
+            messagebox.showinfo("Дамп", f"Сохранено: {path}")
+        except Exception as e:
+            messagebox.showerror("Дамп", f"Ошибка сохранения: {e}")
+
+    ttk.Button(btn_frame, text="Сохранить дамп…", command=save_dump_file).pack(side="left", padx=2)
 
     def append(tag, text):
         diagnostic.emit("gui", "journal.line", status=tag, details={"tag": tag, "text": text})
