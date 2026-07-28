@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.11.0.
+"""Графический интерфейс контроллера SMT v4.12.0.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -41,13 +41,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.11.0",
+        diag_folder, application="gui", version="4.12.0",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.11.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.12.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
@@ -2053,7 +2053,18 @@ ENDIF
         return bytes(data), changed
 
     # ── UI для работы с дампом ─────────────────────────────────────────────
-    dump_file_frame = ttk.Labelframe(dump_pan, text="Выбор файла дампа", padding=5)
+    steps_frame = ttk.Frame(dump_pan)
+    dump_pan.add(steps_frame, weight=0)
+    ttk.Label(steps_frame, foreground="#2c3e50", justify="left", wraplength=1080,
+        font=("TkDefaultFont", 9),
+        text="Порядок работы:  1) «Обзор…» выбери файл дампа  →  2) «Загрузить»  →  "
+             "3) смотри, что нашлось  →  4) впиши новый пароль или выбери уровень  →  "
+             "5) «Применить изменения»  →  6) «Сохранить дамп…».\n"
+             "Всё текстом, вручную байты вводить не нужно. Работаем с файлом .bin, "
+             "прибор при этом не трогается."
+        ).pack(anchor="w", padx=2, pady=(2, 4))
+
+    dump_file_frame = ttk.Labelframe(dump_pan, text="Шаг 1–2. Файл дампа", padding=5)
     dump_pan.add(dump_file_frame, weight=0)
 
     dump_file_bar = ttk.Frame(dump_file_frame)
@@ -2092,7 +2103,7 @@ ENDIF
     dump_state = {"path": "", "data": None, "modified": False}
 
     # ── результаты сканирования ───────────────────────────────────────────
-    result_frame = ttk.Labelframe(dump_pan, text="Результаты сканирования", padding=5)
+    result_frame = ttk.Labelframe(dump_pan, text="Шаг 3. Что нашлось в дампе", padding=5)
     dump_pan.add(result_frame, weight=2)
 
     result_text = scrolledtext.ScrolledText(result_frame, height=12, wrap="word")
@@ -2108,22 +2119,45 @@ ENDIF
             return
         try:
             pwds, lvls = scan_dump_journal(dump_state["data"])
+
+            # Заполняем «Сейчас в дампе» первыми найденными значениями
+            prov_vals = [p["value"] for p in pwds if p["command"] == "PASSWORD_PROVIDER" and p["value"]]
+            omega_vals = [p["value"] for p in pwds if p["command"] == "PASSWORD_OMEGA" and p["value"]]
+            with contextlib.suppress(Exception):
+                cur_provider_var.set(prov_vals[0] if prov_vals else "не найдено")
+                cur_omega_var.set(omega_vals[0] if omega_vals else "не найдено")
+                cur_level_var.set(lvls[0]["level_name"] if lvls else "не найдено")
+
+            result_text.insert("end", "Что нашлось в журнале образа (это уже в дампе):\n\n", "ok")
             if pwds:
-                result_text.insert("end", f"[ПАРОЛИ] Найдено {len(pwds)}:\n", "ok")
+                result_text.insert("end", f"🔑 Пароли — {len(pwds)} записей в журнале:\n", "ok")
+                shown = set()
                 for pwd in pwds:
+                    key = (pwd["command"], pwd["value"])
+                    if key in shown:
+                        continue
+                    shown.add(key)
+                    human = {"PASSWORD_PROVIDER": "провайдера", "PASSWORD_OMEGA": "omega"}.get(
+                        pwd["command"], pwd["command"])
                     result_text.insert("end",
-                        f"  {pwd['command']:20} = {pwd['value']!r:15} @ 0x{pwd['offset']:06X}\n", "io")
+                        f"   пароль {human:10} = {pwd['value']!r}\n", "io")
             else:
-                result_text.insert("end", "[ПАРОЛИ] Не найдены\n", "warn")
+                result_text.insert("end", "🔑 Пароли не найдены (возможно, template-дамп без конфига)\n", "warn")
+
             if lvls:
-                result_text.insert("end", f"\n[УРОВНИ] Найдено {len(lvls)}:\n", "ok")
+                result_text.insert("end", f"\n🛡 Уровень доступа — {len(lvls)} записей:\n", "ok")
+                shown = set()
                 for lev in lvls:
-                    result_text.insert("end",
-                        f"  0x{lev['level_byte']:02X} = {lev['level_name']:20} @ 0x{lev['offset']:06X}\n", "io")
+                    if lev["level_name"] in shown:
+                        continue
+                    shown.add(lev["level_name"])
+                    result_text.insert("end", f"   уровень = {lev['level_name']}\n", "io")
             else:
-                result_text.insert("end", "\n[УРОВНИ] Не найдены\n", "warn")
+                result_text.insert("end", "\n🛡 Уровень доступа не найден\n", "warn")
+
             if dump_state["modified"]:
-                result_text.insert("end", "\n⚠ Дамп изменён, но не сохранён", "err")
+                result_text.insert("end",
+                    "\n⚠ В памяти есть несохранённые изменения — нажми «Сохранить дамп…»", "err")
         except Exception as e:
             result_text.insert("end", f"Ошибка сканирования: {e}", "err")
         result_text.configure(state="disabled")
@@ -2133,69 +2167,138 @@ ENDIF
     result_text.tag_config("err", foreground="#c0392b")
     result_text.tag_config("io", foreground="#555")
 
-    # ── редактирование паролей и уровня ───────────────────────────────────
-    edit_frame = ttk.Labelframe(dump_pan, text="Редактирование", padding=5)
+    # ── редактирование паролей и уровня (по-человечески, без байтов) ──────
+    edit_frame = ttk.Labelframe(
+        dump_pan, text="Шаг 4–5. Что можно изменить (понятным языком)", padding=6)
     dump_pan.add(edit_frame, weight=0)
 
+    ttk.Label(edit_frame, foreground="#555", wraplength=1080, justify="left",
+        text="Здесь меняются только те значения, что прибор реально хранит в журнале "
+             "образа. Вводишь текст в обычные поля — байты/адреса программа проставит сама. "
+             "Пустое поле = не менять. Адрес сервера и APN тут НЕ правятся (их нет в дампе) — "
+             "они меняются на подключённом приборе во вкладке «Команды»."
+        ).pack(anchor="w", pady=(0, 6))
+
+    # Текущие значения из дампа (заполняются при сканировании)
+    cur_provider_var = tk.StringVar(value="—")
+    cur_omega_var = tk.StringVar(value="—")
+    cur_level_var = tk.StringVar(value="—")
+
     edit_grid = ttk.Frame(edit_frame)
-    edit_grid.pack(fill="x", pady=4)
+    edit_grid.pack(fill="x", pady=2)
+    edit_grid.columnconfigure(2, weight=1)
 
-    ttk.Label(edit_grid, text="PASSWORD_PROVIDER:").grid(row=0, column=0, sticky="w", padx=2)
+    # шапка колонок
+    ttk.Label(edit_grid, text="Параметр", font=("TkDefaultFont", 9, "bold")
+              ).grid(row=0, column=0, sticky="w", padx=2)
+    ttk.Label(edit_grid, text="Сейчас в дампе", font=("TkDefaultFont", 9, "bold")
+              ).grid(row=0, column=1, sticky="w", padx=6)
+    ttk.Label(edit_grid, text="Новое значение", font=("TkDefaultFont", 9, "bold")
+              ).grid(row=0, column=2, sticky="w", padx=2)
+
+    def _mk_row(r, title, cur_var, hint):
+        ttk.Label(edit_grid, text=title).grid(row=r, column=0, sticky="w", padx=2, pady=(4, 0))
+        ttk.Label(edit_grid, textvariable=cur_var, foreground="#0a7d0a",
+                  font=("TkFixedFont", 9)).grid(row=r, column=1, sticky="w", padx=6, pady=(4, 0))
+        ttk.Label(edit_grid, text=hint, foreground="#999", wraplength=1040, justify="left"
+                  ).grid(row=r + 1, column=0, columnspan=3, sticky="w", padx=2)
+
+    # Пароль провайдера
+    _mk_row(1, "🔑 Пароль провайдера", cur_provider_var,
+            "Основной сервисный пароль. Обычно 6 цифр (например 123456). "
+            "Меняется во всех копиях журнала сразу.")
     provider_var = tk.StringVar()
-    ttk.Entry(edit_grid, textvariable=provider_var, width=30).grid(row=0, column=1, padx=2, sticky="ew")
+    ttk.Entry(edit_grid, textvariable=provider_var, width=24).grid(row=1, column=2, sticky="w", padx=2, pady=(4, 0))
 
-    ttk.Label(edit_grid, text="PASSWORD_OMEGA:").grid(row=1, column=0, sticky="w", padx=2, pady=2)
+    # Пароль omega
+    _mk_row(3, "🔑 Пароль omega", cur_omega_var,
+            "Пароль расширенного доступа omega. В журнале может быть скрыт звёздочками.")
     omega_var = tk.StringVar()
-    ttk.Entry(edit_grid, textvariable=omega_var, width=30).grid(row=1, column=1, padx=2, sticky="ew", pady=2)
+    ttk.Entry(edit_grid, textvariable=omega_var, width=24).grid(row=3, column=2, sticky="w", padx=2, pady=(4, 0))
 
-    ttk.Label(edit_grid, text="ACCESS_LEVEL:").grid(row=2, column=0, sticky="w", padx=2, pady=2)
-    level_edit_var = tk.StringVar(value="f")
-    level_cb = ttk.Combobox(edit_grid, textvariable=level_edit_var, values=["f (заводской)", "U (omega)", "0 (гость)"],
-                           state="readonly", width=27)
-    level_cb.grid(row=2, column=1, padx=2, sticky="ew", pady=2)
-    edit_grid.columnconfigure(1, weight=1)
+    # Уровень доступа — выбор из списка, без байтов
+    _mk_row(5, "🛡 Уровень доступа", cur_level_var,
+            "Кем «представляется» прибор по умолчанию. Заводской (f) — полный доступ; "
+            "Omega (U) — расширенный; Гость — только чтение. Выбираешь из списка, байт проставится сам.")
+    level_edit_var = tk.StringVar(value="(не менять)")
+    ttk.Combobox(edit_grid, textvariable=level_edit_var, state="readonly", width=22,
+                 values=["(не менять)", "Заводской (f) — полный",
+                         "Omega (U) — расширенный", "Гость — только чтение"]
+                 ).grid(row=5, column=2, sticky="w", padx=2, pady=(4, 0))
+
+    # выбор уровня из списка → символ кода уровня
+    _LEVEL_LABEL_TO_CODE = {
+        "Заводской (f) — полный": "f",
+        "Omega (U) — расширенный": "U",
+        "Гость — только чтение": "0",
+    }
 
     def apply_changes():
         if dump_state["data"] is None:
-            messagebox.showwarning("Дамп", "Загрузи дамп сначала.")
+            messagebox.showwarning("Дамп", "Сначала загрузи файл дампа.")
+            return
+
+        # Собираем план изменений в человеческом виде для подтверждения
+        plan = []          # (краткое_описание, действие)
+        new_provider = provider_var.get().strip()
+        new_omega = omega_var.get().strip()
+        level_choice = level_edit_var.get()
+        level_code = _LEVEL_LABEL_TO_CODE.get(level_choice)
+
+        if new_provider:
+            plan.append((f"Пароль провайдера:  {cur_provider_var.get()}  →  {new_provider}",
+                         ("password", "PASSWORD_PROVIDER", new_provider)))
+        if new_omega:
+            plan.append((f"Пароль omega:  {cur_omega_var.get()}  →  {new_omega}",
+                         ("password", "PASSWORD_OMEGA", new_omega)))
+        if level_code:
+            new_level_name = LEVEL_NAMES.get(LEVEL_CODES[level_code], "?")
+            plan.append((f"Уровень доступа:  {cur_level_var.get()}  →  {new_level_name}",
+                         ("level", level_code, None)))
+
+        if not plan:
+            messagebox.showinfo("Дамп",
+                "Ничего не выбрано для изменения.\n\n"
+                "Впиши новый пароль в поле или выбери уровень из списка.")
+            return
+
+        # Подтверждение с понятным «что произойдёт»
+        if not messagebox.askyesno(
+                "Подтверждение изменений дампа",
+                "Будут изменены значения ВО ВСЕХ копиях журнала образа:\n\n"
+                + "\n".join(f"  • {desc}" for desc, _ in plan)
+                + "\n\nСам прибор не затрагивается — меняется только файл. "
+                  "После этого нужно нажать «Сохранить дамп…».\n\nПродолжить?",
+                parent=root):
             return
 
         data = dump_state["data"]
         changed_items = []
-
         try:
-            if provider_var.get().strip():
-                data, changed = set_password_dump(data, "PASSWORD_PROVIDER", provider_var.get().strip())
+            for desc, (kind, arg, val) in plan:
+                if kind == "password":
+                    data, changed = set_password_dump(data, arg, val)
+                    append("ok", f"[дамп] {arg} изменён в {changed} копиях")
+                else:
+                    data, changed = set_level_dump(data, arg)
+                    append("ok", f"[дамп] уровень доступа изменён в {changed} копиях")
                 dump_state["data"] = data
-                changed_items.append(f"PASSWORD_PROVIDER: {changed} записей")
-                append("ok", f"[дамп] PASSWORD_PROVIDER изменён в {changed} записях")
+                changed_items.append(f"{desc}   ({changed} копий)")
 
-            if omega_var.get().strip():
-                data, changed = set_password_dump(data, "PASSWORD_OMEGA", omega_var.get().strip())
-                dump_state["data"] = data
-                changed_items.append(f"PASSWORD_OMEGA: {changed} записей")
-                append("ok", f"[дамп] PASSWORD_OMEGA изменён в {changed} записях")
-
-            level_code = level_edit_var.get()[0]
-            if level_code in ("f", "U", "0"):
-                data, changed = set_level_dump(data, level_code)
-                dump_state["data"] = data
-                changed_items.append(f"ACCESS_LEVEL: {changed} записей")
-                level_name = LEVEL_NAMES.get(LEVEL_CODES[level_code], "?")
-                append("ok", f"[дамп] ACCESS_LEVEL изменён на {level_name} в {changed} записях")
-
-            if changed_items:
-                dump_state["modified"] = True
-                refresh_dump_display()
-                messagebox.showinfo("Дамп — успех",
-                    f"Применены изменения:\n" + "\n".join(changed_items) +
-                    f"\n\nНе забудь сохранить дамп!")
+            dump_state["modified"] = True
+            # очистим поля ввода, чтобы не применить повторно
+            provider_var.set(""); omega_var.set(""); level_edit_var.set("(не менять)")
+            refresh_dump_display()
+            messagebox.showinfo("Готово — изменения внесены в память",
+                "Изменено:\n\n" + "\n".join(f"  • {c}" for c in changed_items)
+                + "\n\n⚠ Файл ещё не записан на диск — нажми «Сохранить дамп…».")
         except Exception as e:
             messagebox.showerror("Дамп — ошибка", f"Ошибка при применении: {e}")
 
     btn_frame = ttk.Frame(edit_frame)
-    btn_frame.pack(fill="x", pady=4)
-    ttk.Button(btn_frame, text="Применить изменения", command=apply_changes).pack(side="left", padx=2)
+    btn_frame.pack(fill="x", pady=(8, 2))
+    ttk.Button(btn_frame, text="✓ Применить изменения (в память)",
+               command=apply_changes).pack(side="left", padx=2)
 
     def save_dump_file():
         if dump_state["data"] is None:
