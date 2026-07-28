@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.12.0.
+"""Графический интерфейс контроллера SMT v4.13.0.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -41,13 +41,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.12.0",
+        diag_folder, application="gui", version="4.13.0",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.12.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.13.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
