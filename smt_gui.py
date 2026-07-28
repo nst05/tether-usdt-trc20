@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.13.4.
+"""Графический интерфейс контроллера SMT v4.13.5.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -41,13 +41,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.13.4",
+        diag_folder, application="gui", version="4.13.5",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.13.4 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.13.5 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
@@ -2406,12 +2406,87 @@ ENDIF
                 "пароль из дампа невозможно. Пароль провайдера при этом читается открыто.\n\n"
                 "Выход: задать НОВУЮ omega в поле выше и «Применить» — она запишется открыто.")
 
+    def do_dump_diag():
+        """Диагностика прямо в GUI: где лежит пароль, есть ли копии вне журнала,
+        меняется ли значение round-trip. Ничего не портит — работает на копии."""
+        if dump_state["data"] is None:
+            messagebox.showwarning("Дамп", "Сначала загрузи файл дампа.")
+            return
+        data = dump_state["data"]
+        lines = []
+        lines.append(f"Файл: {dump_file_var.get()}")
+        lines.append(f"Размер: {len(data)} (0x{len(data):X})")
+        lines.append("")
+        # 1) записи журнала
+        pwds, lvls = scan_dump_journal(data)
+        lines.append("── 1) ЗАПИСИ В ЖУРНАЛЕ (адрес · код · значение) ──")
+        if not pwds and not lvls:
+            lines.append("   (ничего не найдено — возможно, template-дамп)")
+        prov_clear = None
+        for p in pwds:
+            mark = " (скрыт ******)" if "*" in p["value"] else ""
+            lines.append(f"   0x{p['offset']:06X}  {p['command']:17} = {p['value']!r}{mark}")
+            if p["command"] == "PASSWORD_PROVIDER" and "*" not in p["value"] and prov_clear is None:
+                prov_clear = p["value"]
+        for lv in lvls:
+            lines.append(f"   0x{lv['offset']:06X}  ACCESS_LEVEL      = {lv['level_name']}")
+        # 2) поиск пароля по всему образу
+        lines.append("")
+        lines.append("── 2) ПОИСК ПАРОЛЯ ПРОВАЙДЕРА ПО ВСЕМУ ОБРАЗУ ──")
+        if prov_clear:
+            needle = prov_clear.encode("ascii")
+            hits, start = [], 0
+            while True:
+                i = data.find(needle, start)
+                if i < 0:
+                    break
+                hits.append(i); start = i + 1
+            inside = [i for i in hits if EVT_R0 <= i < EVT_R1]
+            outside = [i for i in hits if not (EVT_R0 <= i < EVT_R1)]
+            lines.append(f"   Значение {prov_clear!r}: всего вхождений {len(hits)} "
+                         f"(в журнале {len(inside)}, ВНЕ журнала {len(outside)})")
+            for i in outside[:20]:
+                lines.append(f"     0x{i:06X}  ← ВНЕ журнала (конфиг?) — правка журнала это НЕ меняет!")
+            if outside:
+                lines.append("   ⚠ Есть копии вне журнала — вот почему при перечтении/на приборе "
+                             "пароль остаётся старым.")
+            else:
+                lines.append("   ✓ Копий вне журнала нет — правки журнала достаточно.")
+        else:
+            lines.append("   Открытый пароль провайдера в журнале не найден.")
+        # 3) тест записи round-trip на копии
+        lines.append("")
+        lines.append("── 3) ТЕСТ ЗАПИСИ (на копии, файл не трогаю) ──")
+        try:
+            test, changed = set_password_dump(data, "PASSWORD_PROVIDER", "000111")
+            after = sorted({p["value"] for p in scan_dump_journal(test)[0]
+                            if p["command"] == "PASSWORD_PROVIDER"})
+            lines.append(f"   Заменено копий в журнале: {changed}")
+            lines.append(f"   Значения провайдера после замены: {after}")
+            lines.append("   → если тут ['000111'] — запись в журнал работает; проблема во "
+                         "внешней копии (п.2) либо в том, что прибор читает не из журнала.")
+        except Exception as exc:
+            lines.append(f"   Ошибка теста: {exc}")
+
+        # показать в отдельном окне с выделяемым текстом
+        win = tk.Toplevel(root)
+        win.title("Диагностика дампа W25Q64")
+        win.geometry("820x520")
+        txt = scrolledtext.ScrolledText(win, wrap="word", font=("TkFixedFont", 9))
+        txt.pack(fill="both", expand=True)
+        txt.insert("1.0", "\n".join(lines))
+        txt.configure(state="normal")
+        ttk.Button(win, text="Закрыть", command=win.destroy).pack(pady=4)
+        append("ok", "[дамп] диагностика выполнена (см. отдельное окно)")
+
     btn_frame = ttk.Frame(edit_frame)
     btn_frame.pack(fill="x", pady=(8, 2))
     ttk.Button(btn_frame, text="✓ Применить изменения (в память)",
                command=apply_changes).pack(side="left", padx=2)
     ttk.Button(btn_frame, text="🔍 Искать omega по всему образу",
                command=do_deep_omega).pack(side="left", padx=2)
+    ttk.Button(btn_frame, text="🔬 Диагностика (где пароль, почему не меняется)",
+               command=do_dump_diag).pack(side="left", padx=2)
 
     def save_dump_file():
         if dump_state["data"] is None:
