@@ -6,14 +6,15 @@
 - Байт уровня доступа: 0x66=заводской (f), 0x55=omega (U), 0x00=гость
 - Биты нумерованного уровня: бит0=уровень1, бит1=уровень2, бит2=уровень3
 
+Примечание: Template дампы не содержат конфиг; конфиг создаётся прибором при старте.
+Эта утилита позволяет редактировать конфиг, если вы знаете его смещение в дампе.
+
 Использование:
-  python3 smt_dump_passwords.py dump.bin --scan          # сканировать пароли и уровни
-  python3 smt_dump_passwords.py dump.bin --set-provider PASSWORD   # пароль провайдера
-  python3 smt_dump_passwords.py dump.bin --set-omega PASSWORD      # пароль omega
-  python3 smt_dump_passwords.py dump.bin --set-fabric PASSWORD     # заводской пароль
-  python3 smt_dump_passwords.py dump.bin --set-level f             # уровень: f/U/0
-  python3 smt_dump_passwords.py dump.bin --set-level-bits 0b111    # биты 1/2/3
-  python3 smt_dump_passwords.py dump.bin --set-all P O F f 0b111 -o out.bin
+  python3 smt_dump_passwords.py dump.bin --scan                    # сканировать
+  python3 smt_dump_passwords.py dump.bin --config-base 0x7B0000 \\
+      --provider-offset 0x100 --omega-offset 0x106 \\
+      --fabric-offset 0x10C --level-offset 0x112 \\
+      --set-provider P123 --set-level f -o out.bin
 """
 
 import sys
@@ -22,25 +23,14 @@ import struct
 from pathlib import Path
 
 
-# По документу авторизации (firmware audit):
-# В ОЗУ: 0x20000278 — конфиг, +0x294 — байт уровня (0x20000D62)
-# В W25Q64 — конфиг может быть по похожему адресу или в специальной области
+# TEMPLATE дамп не содержит конфиг, эти значения — по умолчанию для поиска
+# Если конфиг найден, смещения переопределяются
 
-# Если дамп — это полный образ памяти (с ОЗУ и флешкой):
-CONFIG_BASE = 0x20000278
-ACCESS_LEVEL_OFFSET = 0x294
-
-# Если дамп — только W25Q64 флешка (8 МБ):
-# Конфиг обычно в конце флешки или по известному смещению
-# Ищем по сигнатурам
-W25Q64_CONFIG_HINTS = [
-    (0x7B0000, "конец флешки (область 0x7B0000)"),
-    (0x7B2000, "область 0x7B2000"),
-    (0x7F0000, "последние 64 КБ (0x7F0000)"),
-]
-
-# Биты нумерованного уровня (в ОЗУ 0x2000B1B0)
-NUMBERED_LEVEL_OFFSET = 0xFFFFFFFFF  # нужно уточнить для W25Q64
+DEFAULT_CONFIG_BASE = 0x7B0000  # конец флешки (область, где может быть конфиг)
+DEFAULT_PROVIDER_OFFSET = 0x100
+DEFAULT_OMEGA_OFFSET = 0x106
+DEFAULT_FABRIC_OFFSET = 0x10C
+DEFAULT_LEVEL_OFFSET = 0x112
 
 # Пароли: 6 символов, ASCII-печатные
 PASSWORD_LEN = 6
@@ -180,11 +170,11 @@ def set_password(data, pwd_type, new_password):
     return bytes(data)
 
 
-def set_access_level(data, level_char):
+def set_access_level(data, level_char, config_base, level_offset):
     """Меняет байт уровня доступа (f/U/0).
 
     После авторизации прибор устанавливает этот байт в 0x20000D62 (ОЗУ).
-    В W25Q64 он хранится по адресу CONFIG_BASE + 0x294.
+    В W25Q64 он хранится по адресу config_base + level_offset.
     """
     if level_char not in LEVEL_CODES:
         raise ValueError(f"Неизвестный уровень: {level_char}. Допустимы: f, U, 0")
@@ -192,9 +182,9 @@ def set_access_level(data, level_char):
     level_byte = LEVEL_CODES[level_char]
     data = bytearray(data)
 
-    level_byte_pos = CONFIG_BASE + ACCESS_LEVEL_OFFSET
+    level_byte_pos = config_base + level_offset
     if level_byte_pos >= len(data):
-        raise ValueError(f"Смещение уровня 0x{level_byte_pos:06X} вне дампа")
+        raise ValueError(f"Смещение уровня 0x{level_byte_pos:06X} вне дампа ({len(data)} байт)")
 
     data[level_byte_pos] = level_byte
     decoded = LEVEL_NAMES.get(level_byte, "?")
@@ -253,6 +243,18 @@ def main():
                     help="Уровень доступа: f (заводской), U (omega), 0 (гость)")
     ap.add_argument("--set-level-bits", metavar="BITS",
                     help="Биты нумерованного уровня (0-7, 0b000-0b111)")
+
+    # Смещения конфига (если известны)
+    ap.add_argument("--config-base", type=lambda x: int(x, 0), default=DEFAULT_CONFIG_BASE,
+                    help=f"Адрес конфига в дампе (hex, по умолч. 0x{DEFAULT_CONFIG_BASE:X})")
+    ap.add_argument("--provider-offset", type=lambda x: int(x, 0), default=DEFAULT_PROVIDER_OFFSET,
+                    help=f"Смещение PASSWORD_PROVIDER (по умолч. 0x{DEFAULT_PROVIDER_OFFSET:X})")
+    ap.add_argument("--omega-offset", type=lambda x: int(x, 0), default=DEFAULT_OMEGA_OFFSET,
+                    help=f"Смещение PASSWORD_OMEGA (по умолч. 0x{DEFAULT_OMEGA_OFFSET:X})")
+    ap.add_argument("--fabric-offset", type=lambda x: int(x, 0), default=DEFAULT_FABRIC_OFFSET,
+                    help=f"Смещение PASSWORD_FABRIC (по умолч. 0x{DEFAULT_FABRIC_OFFSET:X})")
+    ap.add_argument("--level-offset", type=lambda x: int(x, 0), default=DEFAULT_LEVEL_OFFSET,
+                    help=f"Смещение байта уровня (по умолч. 0x{DEFAULT_LEVEL_OFFSET:X})")
 
     ap.add_argument("-o", "--output", help="Сохранить изменённый дамп (по умолч. dump_modified.bin)")
 
@@ -316,7 +318,7 @@ def main():
 
     if args.set_level:
         print("[уровень] доступа")
-        modified = set_access_level(modified, args.set_level)
+        modified = set_access_level(modified, args.set_level, args.config_base, args.level_offset)
         changed.append(f"level={args.set_level}")
 
     if args.set_level_bits:
