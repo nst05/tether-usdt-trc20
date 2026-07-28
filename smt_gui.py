@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.13.2.
+"""Графический интерфейс контроллера SMT v4.13.3.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -41,13 +41,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.13.2",
+        diag_folder, application="gui", version="4.13.3",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.13.2 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.13.3 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
@@ -1950,78 +1950,84 @@ ENDIF
     def u16(data, offset):
         return struct.unpack_from("<H", data, offset)[0]
 
-    def scan_dump_journal(dump):
-        """Сканирует журнал событий и возвращает пароли и уровни."""
-        passwords, levels = [], []
+    def _iter_journal(data):
+        """Единый обход журнала (как в smt_eventlog.parse): при валидной записи
+        шаг 0x10, при промахе — 0x04 с ПОВТОРНЫМ выравниванием. И чтение, и запись
+        обязаны использовать один обход, иначе запись «уезжает» из фазы и не
+        попадает в реальные записи. Отдаёт (offset, ts, cnt, code, val_start, val_end).
+        """
         o = EVT_R0
-        limit = min(EVT_R1, len(dump))
+        limit = min(EVT_R1, len(data))
         while o < limit - 16:
-            try:
-                ts = u32(dump, o)
-                cnt = u32(dump, o + 0x08)
-                code = u16(dump, o + 0x0C)
-                if not (100_000_000 < ts < 4_000_000_000) or cnt >= 100000:
-                    o += 4
-                    continue
-                val_start = o + 0x0E
-                val_end = dump.find(b"\0", val_start, min(limit, val_start + 48))
-                if val_end < 0:
-                    val_end = min(limit, val_start + 48)
-                raw = dump[val_start:val_end]
-                text = raw.decode("ascii", errors="replace") if raw else ""
-                if code in EVENT_CODES:
-                    cmd, human, kind = EVENT_CODES[code]
-                    entry = {"offset": o, "timestamp": ts, "counter": cnt, "code": code,
-                             "command": cmd, "value": text, "kind": kind}
-                    if kind == "password":
-                        passwords.append(entry)
-                    elif kind == "level":
-                        try:
-                            level_byte = int(text)
-                            entry["level_byte"] = level_byte
-                            entry["level_name"] = LEVEL_NAMES.get(level_byte, "?")
-                            levels.append(entry)
-                        except ValueError:
-                            pass
-            except (struct.error, ValueError):
-                pass
-            o += 0x10
-        return passwords, levels
-
-    def set_password_dump(dump, command, new_password):
-        """Меняет пароль во всех записях журнала."""
-        if not new_password:
-            raise ValueError("Пароль не задан")
-        data = bytearray(dump)
-        password_len = len(new_password)
-        if password_len > 48:
-            raise ValueError("Пароль не должен быть длинне 48 символов")
-        target_code = None
-        for code, (cmd, _, _) in EVENT_CODES.items():
-            if cmd == command:
-                target_code = code
-                break
-        if target_code is None:
-            raise ValueError(f"Команда {command} не найдена")
-        changed = 0
-        o = EVT_R0
-        while o < min(EVT_R1, len(data)) - 16:
             try:
                 ts = u32(data, o)
                 cnt = u32(data, o + 0x08)
-                code = u16(data, o + 0x0C)
-                if (100_000_000 < ts < 4_000_000_000 and cnt < 100000 and code == target_code):
-                    val_offset = o + 0x0E
-                    for i in range(val_offset, min(val_offset + 48, len(data))):
-                        data[i] = 0
-                    new_bytes = new_password.encode("ascii") + b"\0"
-                    for i, byte in enumerate(new_bytes):
-                        if val_offset + i < len(data):
-                            data[val_offset + i] = byte
-                    changed += 1
-            except (struct.error, ValueError):
-                pass
+            except struct.error:
+                o += 4
+                continue
+            if not (100_000_000 < ts < 4_000_000_000) or cnt >= 100000:
+                o += 4
+                continue
+            code = u16(data, o + 0x0C)
+            vs = o + 0x0E
+            ve = data.find(b"\0", vs, min(limit, vs + 48))
+            if ve < 0:
+                ve = min(limit, vs + 48)
+            yield o, ts, cnt, code, vs, ve
             o += 0x10
+
+    def _write_value_inplace(data, vs, ve, new_bytes):
+        """Безопасно заменяет значение записи на месте: пишет new_bytes + \\0 и
+        обнуляет остаток СТАРОГО значения только в пределах [vs, ve) — не заходя
+        в следующую запись."""
+        n = len(new_bytes)
+        for i, b in enumerate(new_bytes):
+            if vs + i < len(data):
+                data[vs + i] = b
+        if vs + n < len(data):
+            data[vs + n] = 0                      # терминатор
+        for i in range(vs + n + 1, ve):           # затираем хвост старого значения
+            if i < len(data):
+                data[i] = 0
+
+    def scan_dump_journal(dump):
+        """Сканирует журнал событий и возвращает пароли и уровни."""
+        passwords, levels = [], []
+        for o, ts, cnt, code, vs, ve in _iter_journal(dump):
+            raw = bytes(dump[vs:ve])
+            text = raw.decode("ascii", errors="replace") if raw else ""
+            if code in EVENT_CODES:
+                cmd, human, kind = EVENT_CODES[code]
+                entry = {"offset": o, "timestamp": ts, "counter": cnt, "code": code,
+                         "command": cmd, "value": text, "kind": kind}
+                if kind == "password":
+                    passwords.append(entry)
+                elif kind == "level":
+                    try:
+                        level_byte = int(text)
+                        entry["level_byte"] = level_byte
+                        entry["level_name"] = LEVEL_NAMES.get(level_byte, "?")
+                        levels.append(entry)
+                    except ValueError:
+                        pass
+        return passwords, levels
+
+    def set_password_dump(dump, command, new_password):
+        """Меняет пароль ВО ВСЕХ записях журнала (для omega — оба кода)."""
+        if not new_password:
+            raise ValueError("Пароль не задан")
+        if len(new_password) > 48:
+            raise ValueError("Пароль не должен быть длиннее 48 символов")
+        target_codes = {code for code, (cmd, _, _) in EVENT_CODES.items() if cmd == command}
+        if not target_codes:
+            raise ValueError(f"Команда {command} не найдена")
+        data = bytearray(dump)
+        nb = new_password.encode("ascii")
+        changed = 0
+        for o, ts, cnt, code, vs, ve in _iter_journal(data):
+            if code in target_codes:
+                _write_value_inplace(data, vs, ve, nb)
+                changed += 1
         return bytes(data), changed
 
     def set_level_dump(dump, level_char):
@@ -2030,26 +2036,12 @@ ENDIF
             raise ValueError(f"Неизвестный уровень: {level_char}. Допустимы: f, U, 0")
         level_byte = LEVEL_CODES[level_char]
         data = bytearray(dump)
+        nb = str(level_byte).encode("ascii")
         changed = 0
-        o = EVT_R0
-        while o < min(EVT_R1, len(data)) - 16:
-            try:
-                ts = u32(data, o)
-                cnt = u32(data, o + 0x08)
-                code = u16(data, o + 0x0C)
-                if (100_000_000 < ts < 4_000_000_000 and cnt < 100000 and
-                    code in (0x023C, 0x026B)):
-                    val_offset = o + 0x0E
-                    val_text = str(level_byte).encode("ascii") + b"\0"
-                    for i in range(val_offset, min(val_offset + 48, len(data))):
-                        data[i] = 0
-                    for i, byte in enumerate(val_text):
-                        if val_offset + i < len(data):
-                            data[val_offset + i] = byte
-                    changed += 1
-            except (struct.error, ValueError):
-                pass
-            o += 0x10
+        for o, ts, cnt, code, vs, ve in _iter_journal(data):
+            if code in (0x023C, 0x026B):
+                _write_value_inplace(data, vs, ve, nb)
+                changed += 1
         return bytes(data), changed
 
     def deep_search_omega(dump):
@@ -2351,6 +2343,7 @@ ENDIF
 
         data = dump_state["data"]
         changed_items = []
+        total_changed = 0
         try:
             for desc, (kind, arg, val) in plan:
                 if kind == "password":
@@ -2360,7 +2353,20 @@ ENDIF
                     data, changed = set_level_dump(data, arg)
                     append("ok", f"[дамп] уровень доступа изменён в {changed} копиях")
                 dump_state["data"] = data
-                changed_items.append(f"{desc}   ({changed} копий)")
+                total_changed += changed
+                mark = "" if changed else "  ⚠ НЕ найдено записей!"
+                changed_items.append(f"{desc}   ({changed} копий){mark}")
+
+            if total_changed == 0:
+                # ничего не совпало — не вводим в заблуждение «успехом»
+                dump_state["data"] = data
+                refresh_dump_display()
+                messagebox.showwarning("Ничего не изменено",
+                    "В журнале образа не нашлось ни одной записи для правки:\n\n"
+                    + "\n".join(f"  • {c}" for c in changed_items)
+                    + "\n\nВозможно, это template-дамп без сохранённого конфига, "
+                      "или значения хранятся вне журнала. Файл не менялся.")
+                return
 
             dump_state["modified"] = True
             # очистим поля ввода, чтобы не применить повторно

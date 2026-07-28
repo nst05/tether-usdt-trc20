@@ -63,6 +63,44 @@ def u16(data, offset):
     return struct.unpack_from("<H", data, offset)[0]
 
 
+def iter_journal(data):
+    """Единый обход журнала: валидная запись → шаг 0x10, промах → 0x04 с
+    повторным выравниванием. И чтение, и запись используют ОДИН обход."""
+    o = EVT_R0
+    limit = min(EVT_R1, len(data))
+    while o < limit - 16:
+        try:
+            ts = u32(data, o)
+            cnt = u32(data, o + 0x08)
+        except struct.error:
+            o += 4
+            continue
+        if not (100_000_000 < ts < 4_000_000_000) or cnt >= 100000:
+            o += 4
+            continue
+        code = u16(data, o + 0x0C)
+        vs = o + 0x0E
+        ve = data.find(b"\0", vs, min(limit, vs + 48))
+        if ve < 0:
+            ve = min(limit, vs + 48)
+        yield o, ts, cnt, code, vs, ve
+        o += 0x10
+
+
+def write_value_inplace(data, vs, ve, new_bytes):
+    """Замена значения на месте: new_bytes + \\0, хвост старого значения в [vs, ve)
+    обнуляется, следующая запись не затрагивается."""
+    n = len(new_bytes)
+    for i, b in enumerate(new_bytes):
+        if vs + i < len(data):
+            data[vs + i] = b
+    if vs + n < len(data):
+        data[vs + n] = 0
+    for i in range(vs + n + 1, ve):
+        if i < len(data):
+            data[i] = 0
+
+
 def scan_journal(dump):
     """Сканирует журнал событий и показывает пароли."""
     print(f"[сканирование] Журнал 0x{EVT_R0:06X}..0x{EVT_R1:06X}\n")
@@ -70,57 +108,30 @@ def scan_journal(dump):
     passwords = []
     levels = []
 
-    o = EVT_R0
-    limit = min(EVT_R1, len(dump))
-
-    while o < limit - 16:
-        try:
-            ts = u32(dump, o)
-            cnt = u32(dump, o + 0x08)
-            code = u16(dump, o + 0x0C)
-
-            # Проверяем валидность
-            if not (100_000_000 < ts < 4_000_000_000) or cnt >= 100000:
-                o += 4
-                continue
-
-            # Ищем значение (ASCII, до первого \0 или 48 байт)
-            val_start = o + 0x0E
-            val_end = dump.find(b"\0", val_start, min(limit, val_start + 48))
-            if val_end < 0:
-                val_end = min(limit, val_start + 48)
-
-            raw = dump[val_start:val_end]
-            text = raw.decode("ascii", errors="replace") if raw else ""
-
-            # Проверяем, интересует ли нас этот код
-            if code in EVENT_CODES:
-                cmd, human, kind = EVENT_CODES[code]
-                entry = {
-                    "offset": o,
-                    "timestamp": ts,
-                    "counter": cnt,
-                    "code": code,
-                    "command": cmd,
-                    "value": text,
-                    "kind": kind,
-                }
-
-                if kind == "password":
-                    passwords.append(entry)
-                elif kind == "level":
-                    try:
-                        level_byte = int(text)
-                        entry["level_byte"] = level_byte
-                        entry["level_name"] = LEVEL_NAMES.get(level_byte, "?")
-                        levels.append(entry)
-                    except ValueError:
-                        pass
-
-        except (struct.error, ValueError):
-            pass
-
-        o += 0x10
+    for o, ts, cnt, code, val_start, val_end in iter_journal(dump):
+        raw = bytes(dump[val_start:val_end])
+        text = raw.decode("ascii", errors="replace") if raw else ""
+        if code in EVENT_CODES:
+            cmd, human, kind = EVENT_CODES[code]
+            entry = {
+                "offset": o,
+                "timestamp": ts,
+                "counter": cnt,
+                "code": code,
+                "command": cmd,
+                "value": text,
+                "kind": kind,
+            }
+            if kind == "password":
+                passwords.append(entry)
+            elif kind == "level":
+                try:
+                    level_byte = int(text)
+                    entry["level_byte"] = level_byte
+                    entry["level_name"] = LEVEL_NAMES.get(level_byte, "?")
+                    levels.append(entry)
+                except ValueError:
+                    pass
 
     # Показываем результаты
     if passwords:
@@ -148,53 +159,22 @@ def set_password_in_journal(dump, command, new_password):
     if not new_password:
         raise ValueError("Пароль не задан")
 
-    data = bytearray(dump)
-    password_len = len(new_password)
+    if len(new_password) > 48:
+        raise ValueError("Пароль не должен быть длиннее 48 символов")
 
-    if password_len > 48:
-        raise ValueError("Пароль не должен быть длинне 48 символов")
-
-    # Ищем все записи с этой командой
-    target_code = None
-    for code, (cmd, _, _) in EVENT_CODES.items():
-        if cmd == command:
-            target_code = code
-            break
-
-    if target_code is None:
+    # Все коды, относящиеся к этой команде (у omega их два: 0x0220 и 0x02B7)
+    target_codes = {code for code, (cmd, _, _) in EVENT_CODES.items() if cmd == command}
+    if not target_codes:
         raise ValueError(f"Команда {command} не найдена")
 
+    data = bytearray(dump)
+    nb = new_password.encode("ascii")
     changed = 0
-    o = EVT_R0
-
-    while o < min(EVT_R1, len(data)) - 16:
-        try:
-            ts = u32(data, o)
-            cnt = u32(data, o + 0x08)
-            code = u16(data, o + 0x0C)
-
-            if (100_000_000 < ts < 4_000_000_000 and
-                cnt < 100000 and
-                code == target_code):
-
-                # Замещаем значение
-                val_offset = o + 0x0E
-                # Очищаем старое значение
-                for i in range(val_offset, min(val_offset + 48, len(data))):
-                    data[i] = 0
-
-                # Пишем новое (ASCII + \0)
-                new_bytes = new_password.encode("ascii") + b"\0"
-                for i, byte in enumerate(new_bytes):
-                    if val_offset + i < len(data):
-                        data[val_offset + i] = byte
-
-                changed += 1
-
-        except (struct.error, ValueError):
-            pass
-
-        o += 0x10
+    # Пишем ровно по тем адресам, что находит сканер (общий обход iter_journal)
+    for o, ts, cnt, code, vs, ve in iter_journal(data):
+        if code in target_codes:
+            write_value_inplace(data, vs, ve, nb)
+            changed += 1
 
     print(f"  → {command} = {new_password!r}")
     print(f"    Заменено записей в журнале: {changed}")
@@ -209,39 +189,12 @@ def set_level_in_journal(dump, level_char):
 
     level_byte = LEVEL_CODES[level_char]
     data = bytearray(dump)
-
+    nb = str(level_byte).encode("ascii")
     changed = 0
-    o = EVT_R0
-
-    while o < min(EVT_R1, len(data)) - 16:
-        try:
-            ts = u32(data, o)
-            cnt = u32(data, o + 0x08)
-            code = u16(data, o + 0x0C)
-
-            if (100_000_000 < ts < 4_000_000_000 and
-                cnt < 100000 and
-                code in (0x023C, 0x026B)):  # ACCESS_LEVEL коды
-
-                # Замещаем значение на число
-                val_offset = o + 0x0E
-                val_text = str(level_byte).encode("ascii") + b"\0"
-
-                # Очищаем
-                for i in range(val_offset, min(val_offset + 48, len(data))):
-                    data[i] = 0
-
-                # Пишем новое
-                for i, byte in enumerate(val_text):
-                    if val_offset + i < len(data):
-                        data[val_offset + i] = byte
-
-                changed += 1
-
-        except (struct.error, ValueError):
-            pass
-
-        o += 0x10
+    for o, ts, cnt, code, vs, ve in iter_journal(data):
+        if code in (0x023C, 0x026B):  # ACCESS_LEVEL коды
+            write_value_inplace(data, vs, ve, nb)
+            changed += 1
 
     level_name = LEVEL_NAMES.get(level_byte, "?")
     print(f"  → ACCESS_LEVEL = 0x{level_byte:02X} ({level_name})")
