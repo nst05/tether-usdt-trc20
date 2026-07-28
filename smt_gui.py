@@ -1668,7 +1668,7 @@ ENDIF
             return
         backup = {
             "type": "smt_backup",
-            "version": "4.7.0",
+            "version": "4.9.0",
             "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
             "count": len(params),
             "params": params,
