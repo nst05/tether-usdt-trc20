@@ -1,1 +1,1 @@
-4.10.0 AUTH-MODEL · KFACTOR · автотелеметрия · график · GSM/APN
+4.11.0 AUTH-MODEL · KFACTOR · автотелеметрия · график · GSM/APN · Дамп W25Q64
