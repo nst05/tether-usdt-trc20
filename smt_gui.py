@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.13.5.
+"""Графический интерфейс контроллера SMT v4.14.0.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -41,13 +41,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.13.5",
+        diag_folder, application="gui", version="4.14.0",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.13.5 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.14.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
@@ -265,6 +265,7 @@ def build_app(root, selftest=False):
     tab_lab = ttk.Frame(main_nb, padding=6)
     tab_service = ttk.Frame(main_nb, padding=6)
     tab_dump = ttk.Frame(main_nb, padding=6)
+    tab_audit = ttk.Frame(main_nb, padding=6)
     main_nb.add(tab_cmd, text="Команды (160)")
     main_nb.add(tab_terminal, text="Транспорт · RAW · SMS")
     main_nb.add(tab_tele, text="Телеметрия")
@@ -272,6 +273,7 @@ def build_app(root, selftest=False):
     main_nb.add(tab_lab, text="Снимки · сценарии · мониторинг")
     main_nb.add(tab_service, text="Сервис · статус · бэкап")
     main_nb.add(tab_dump, text="Дамп W25Q64 · пароли")
+    main_nb.add(tab_audit, text="Аудит · Pentest")
     main_nb.pack(fill="both", expand=True)
 
     # ── тело вкладки «Команды»: слева каталог, справа детали+запись ──────
@@ -2511,6 +2513,145 @@ ENDIF
 
     ttk.Button(btn_frame, text="Сохранить дамп…", command=save_dump_file).pack(side="left", padx=2)
 
+    # ── вкладка «Аудит · Pentest» ─────────────────────────────────────────
+    # Операционализация методологии «живого» пентеста без дампа: чек-лист шагов,
+    # кнопки запускают УЖЕ существующие безопасные проверки backend (Recon-чтения,
+    # Auth-scan на утечку секрета, полный опрос гостём), находки сводятся в отчёт.
+    ttk.Label(tab_audit, foreground="#c0392b", wraplength=1150, justify="left",
+        font=("TkDefaultFont", 9, "bold"),
+        text="⚠ Только для АВТОРИЗОВАННОГО тестирования своего/переданного оборудования "
+             "(договор, RoE). Все авто-действия здесь — штатные чтения и предъявление "
+             "учётных данных, ничего разрушительного."
+        ).pack(anchor="w", pady=(0, 4))
+
+    audit_bar = ttk.Frame(tab_audit); audit_bar.pack(fill="x", pady=(0, 4))
+    audit_conn_lbl = ttk.Label(audit_bar, text="○ прибор не подключён", foreground="#b00")
+    audit_conn_lbl.pack(side="left")
+
+    # Прокручиваемая область с шагами
+    audit_canvas = tk.Canvas(tab_audit, highlightthickness=0)
+    audit_scroll = ttk.Scrollbar(tab_audit, orient="vertical", command=audit_canvas.yview)
+    audit_inner = ttk.Frame(audit_canvas)
+    audit_inner.bind("<Configure>",
+        lambda e: audit_canvas.configure(scrollregion=audit_canvas.bbox("all")))
+    audit_canvas.create_window((0, 0), window=audit_inner, anchor="nw")
+    audit_canvas.configure(yscrollcommand=audit_scroll.set)
+    audit_canvas.pack(side="left", fill="both", expand=True)
+    audit_scroll.pack(side="right", fill="y")
+
+    _SEV = {"crit": ("КРИТ", "#c0392b"), "high": ("ВЫС", "#e67e22"),
+            "med": ("СРЕД", "#d4a017"), "info": ("ИНФО", "#2980b9")}
+    audit_rows = []   # список dict: title, sev, status_var, notes_var
+
+    def _recon():
+        if not state.get("connected"):
+            messagebox.showwarning("Аудит", "Нет подключения к прибору.")
+            return
+        for name in ("DEVICE_SN", "HW_VERSION", "DATETIME", "Volume"):
+            task_q.put({"op": "read", "name": name})
+        append("ok", "[аудит] Recon: запрошены DEVICE_SN/HW_VERSION/DATETIME/Volume (см. журнал)")
+
+    def _try_default(pwd):
+        # Предъявляем дефолтный пароль провайдера штатным путём авторизации
+        cred_var.set("PASSWORD_PROVIDER"); pw_var.set(pwd)
+        do_auth()
+        append("warn", f"[аудит] проба дефолтного пароля провайдера: {pwd} (см. статус авторизации)")
+
+    def _open_tab(tab):
+        main_nb.select(tab)
+
+    # Определение шагов методики. auto — функция или None (ручной шаг).
+    AUDIT_STEPS = [
+        ("info", "1. Recon / отпечаток",
+         "Гостём прочитать то, что отдаётся без авторизации: DEVICE_SN, HW_VERSION, "
+         "DATETIME, показания. Цель — версия прошивки и что отвечает без пароля.",
+         [("▶ Выполнить Recon", _recon)]),
+        ("high", "2. Дефолтные пароли провайдера",
+         "Проверить типовые заводские: 123456, 000000, 111111, 112233. Успех = "
+         "дефолт не сменён (частый реальный вход).",
+         [("123456", lambda: _try_default("123456")),
+          ("000000", lambda: _try_default("000000")),
+          ("111111", lambda: _try_default("111111")),
+          ("112233", lambda: _try_default("112233"))]),
+        ("crit", "3. Auth-scan — утечка секрета открытым текстом",
+         "Гостём запросить PASSWORD_PROVIDER/OMEGA и др. Если прибор отдаёт значение "
+         "в ответе — пароль виден без авторизации (критичная утечка F7).",
+         [("▶ Запустить Auth-scan", lambda: task_q.put({"op": "authscan"}))]),
+        ("crit", "4. Broken access control — матрица гостём",
+         "Полный опрос всех команд гостём. Отметить: чувствительные ЧТЕНИЯ, отдающие "
+         "данные, и любые ЗАПИСИ/действия, принятые прибором без авторизации.",
+         [("▶ Полный опрос (гость)", lambda: task_q.put({"op": "scan_all"}))]),
+        ("high", "5. Брутфорс и лок-аут",
+         "Провайдер 6 знаков. Проверить: есть ли задержка/блокировка после N неверных, "
+         "сбрасывается ли счётчик по питанию, отличается ли ответ «неверный» vs «нет "
+         "доступа» (оракул). Проводится вручную/наблюдением.",
+         []),
+        ("high", "6. GSM/SMS — удалённая поверхность",
+         "Принимает ли команды по SMS и с какой авторизацией? Фильтрует ли номер "
+         "отправителя (белый список)? Что в APN_*, SERVER_URL, BALANCE_PHONE.",
+         [("Открыть SMS-вкладку", lambda: _open_tab(tab_terminal))]),
+        ("high", "7. Телеметрия — подмена сервера / MD5",
+         "Поднять свой (rogue) TCP-сервер, проверить примет ли прибор ответы, стойкость "
+         "MD5-ключа, replay пакетов, влияние ответа сервера на поведение.",
+         [("Открыть Телеметрию", lambda: _open_tab(tab_tele))]),
+        ("crit", "8. Физика: флеш / RDP",
+         "При физдоступе: снять W25Q64 по SPI или через SWD; проверить RDP level STM32 "
+         "(RDP0 = чтение прошивки открыто). Полученный дамп → вкладка «Дамп W25Q64».",
+         [("Открыть вкладку Дамп", lambda: _open_tab(tab_dump))]),
+    ]
+
+    for sev, title, desc, actions in AUDIT_STEPS:
+        row = ttk.Labelframe(audit_inner, padding=(8, 4))
+        row.pack(fill="x", expand=True, padx=2, pady=3)
+        head = ttk.Frame(row); head.pack(fill="x")
+        sev_txt, sev_col = _SEV[sev]
+        tk.Label(head, text=f" {sev_txt} ", bg=sev_col, fg="white",
+                 font=("TkDefaultFont", 8, "bold")).pack(side="left", padx=(0, 6))
+        ttk.Label(head, text=title, font=("TkDefaultFont", 10, "bold")).pack(side="left")
+        status_var = tk.StringVar(value="не проверено")
+        ttk.Combobox(head, textvariable=status_var, state="readonly", width=14,
+                     values=["не проверено", "пройдено (OK)", "НАЙДЕНО (уязвимо)", "неприменимо"]
+                     ).pack(side="right")
+        ttk.Label(head, text="Статус:").pack(side="right", padx=4)
+        ttk.Label(row, text=desc, foreground="#555", wraplength=1000, justify="left"
+                  ).pack(anchor="w", pady=(2, 2))
+        act = ttk.Frame(row); act.pack(fill="x")
+        for label, cmd in actions:
+            ttk.Button(act, text=label, command=cmd).pack(side="left", padx=2)
+        notes_var = tk.StringVar()
+        ttk.Label(act, text="Находка/заметка:").pack(side="left", padx=(12, 2))
+        ttk.Entry(act, textvariable=notes_var).pack(side="left", fill="x", expand=True, padx=2)
+        audit_rows.append({"title": title, "sev": sev_txt,
+                           "status": status_var, "notes": notes_var})
+
+    def audit_export():
+        lines = ["# Отчёт пентеста — SMT Smart (контроллер СГМ)",
+                 f"_Сформировано: {datetime.datetime.now():%Y-%m-%d %H:%M}_", ""]
+        found = 0
+        for r in audit_rows:
+            st = r["status"].get()
+            note = r["notes"].get().strip()
+            if "НАЙДЕНО" in st:
+                found += 1
+            lines.append(f"## [{r['sev']}] {r['title']}")
+            lines.append(f"- Статус: **{st}**")
+            if note:
+                lines.append(f"- Находка: {note}")
+            lines.append("")
+        lines.insert(2, f"**Подтверждённых уязвимостей: {found}**\n")
+        path = filedialog.asksaveasfilename(
+            defaultextension=".md", filetypes=[("Markdown", "*.md"), ("текст", "*.txt")],
+            initialfile=f"pentest_report_{datetime.date.today()}.md")
+        if not path:
+            return
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        append("ok", f"[аудит] отчёт сохранён → {path} (найдено уязвимостей: {found})")
+        messagebox.showinfo("Аудит", f"Отчёт сохранён:\n{path}\n\nПодтверждённых уязвимостей: {found}")
+
+    ttk.Button(audit_bar, text="📄 Выгрузить отчёт (Markdown)…",
+               command=audit_export).pack(side="right")
+
     def append(tag, text):
         diagnostic.emit("gui", "journal.line", status=tag, details={"tag": tag, "text": text})
         ts = datetime.datetime.now().strftime("%H:%M:%S")
@@ -2682,6 +2823,8 @@ ENDIF
                             status_lbl.config(text=f"● {names.get(st,st)} {endpoint}", foreground="#0a7d0a")
                             conn_btn.config(text="Отключить")
                             transport_cb.state(["disabled"])
+                            audit_conn_lbl.config(text=f"● подключён ({names.get(st,st)} {endpoint})",
+                                                  foreground="#0a7d0a")
                         else:
                             monitor_stop()
                             state["provider_verified"] = False
@@ -2691,6 +2834,7 @@ ENDIF
                             status_lbl.config(text="● отключено", foreground="#b00")
                             conn_btn.config(text="Подключить")
                             transport_cb.state(["!disabled"])
+                            audit_conn_lbl.config(text="○ прибор не подключён", foreground="#b00")
                             update_transport_fields()
                 except Exception:
                     import traceback
