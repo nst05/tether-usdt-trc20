@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smt-device-controller"
-version = "4.14.0"
+version = "4.15.0"
 description = "GUI/CLI controller for a physical SMT device over Serial, TCP and GSM/SMS"
 readme = "README_GUI.md"
 requires-python = ">=3.10"
@@ -15,6 +15,8 @@ smt-controller = "smt_gui:main"
 smt-cli = "smt_cli:main"
 smt-telemetry-server = "smt_server:main"
 smt-diagnostic = "smt_diagnostic_viewer:main"
+smt-rogue-server = "smt_rogue_server:main"
+smt-rogue-server-gui = "smt_rogue_server_gui:main"
 
 [tool.setuptools]
 packages = ["smt_core"]
@@ -22,7 +24,7 @@ py-modules = [
   "smt_backend", "smt_cli", "smt_client", "smt_eventlog", "smt_firmware",
   "smt_gui", "smt_gui_support", "smt_logging", "smt_diagnostics", "smt_diagnostic_viewer", "smt_server", "smt_session",
   "smt_smart", "smt_state", "smt_telemetry", "smt_telemetry_store", "smt_tools",
-  "optic_preflight",
+  "optic_preflight", "smt_rogue_server", "smt_rogue_server_gui",
 ]
 
 [tool.setuptools.package-data]
