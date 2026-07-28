@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.13.3.
+"""Графический интерфейс контроллера SMT v4.13.4.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -41,13 +41,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.13.3",
+        diag_folder, application="gui", version="4.13.4",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.13.3 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.13.4 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
@@ -2220,6 +2220,12 @@ ENDIF
              "образа. Вводишь текст в обычные поля — байты/адреса программа проставит сама. "
              "Пустое поле = не менять. Адрес сервера и APN тут НЕ правятся (их нет в дампе) — "
              "они меняются на подключённом приборе во вкладке «Команды»."
+        ).pack(anchor="w", pady=(0, 4))
+    ttk.Label(edit_frame, foreground="#c0392b", wraplength=1080, justify="left",
+        text="⚠ Заводской ПАРОЛЬ (PASSWORD_FABRIC) в дампе НЕ хранится (прошивка не пишет его "
+             "в журнал) — офлайн его сменить нельзя, только на живом приборе: «Команды» → "
+             "PASSWORD_FABRIC. Ниже «Уровень доступа» со словом «заводской» — это НЕ пароль, "
+             "а один байт уровня."
         ).pack(anchor="w", pady=(0, 6))
 
     # Текущие значения из дампа (заполняются при сканировании)
@@ -2275,20 +2281,21 @@ ENDIF
     omega_var.trace_add("write", lambda *_: _upd_len(omega_var, omega_len_lbl))
 
     # Уровень доступа — выбор из списка, без байтов
-    _mk_row(5, "🛡 Уровень доступа", cur_level_var,
-            "Кем «представляется» прибор по умолчанию. Заводской (f) — полный доступ; "
-            "Omega (U) — расширенный; Гость — только чтение. Выбираешь из списка, байт проставится сам.")
+    _mk_row(5, "🛡 Уровень доступа (это НЕ пароль)", cur_level_var,
+            "Один байт: каким уровнем прибор «представляется» по умолчанию. "
+            "Полный (f) / Расширенный (omega, U) / Только чтение (гость). Это не пароль, "
+            "а уровень — выбираешь из списка, байт проставится сам.")
     level_edit_var = tk.StringVar(value="(не менять)")
-    ttk.Combobox(edit_grid, textvariable=level_edit_var, state="readonly", width=22,
-                 values=["(не менять)", "Заводской (f) — полный",
-                         "Omega (U) — расширенный", "Гость — только чтение"]
+    ttk.Combobox(edit_grid, textvariable=level_edit_var, state="readonly", width=26,
+                 values=["(не менять)", "Полный — f (заводской уровень)",
+                         "Расширенный — U (omega)", "Только чтение — гость"]
                  ).grid(row=5, column=2, sticky="w", padx=2, pady=(4, 0))
 
     # выбор уровня из списка → символ кода уровня
     _LEVEL_LABEL_TO_CODE = {
-        "Заводской (f) — полный": "f",
-        "Omega (U) — расширенный": "U",
-        "Гость — только чтение": "0",
+        "Полный — f (заводской уровень)": "f",
+        "Расширенный — U (omega)": "U",
+        "Только чтение — гость": "0",
     }
 
     def apply_changes():
