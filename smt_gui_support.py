@@ -48,6 +48,7 @@ SECRET_READS = [
     ("PASWORD_PROVID_VALUE", "числовое представление/проверка пароля"),
     ("PASSWORD_OMEGA", "пароль omega (может быть маскирован ******)"),
     ("PASSWORD_OMEGA2", "сервисный код omega (=%04x)"),
+    ("PASSWORD_FABRIC", "заводской пароль"),
     ("MAGIC", "сервисная разблокировка"),
     ("ENABLE_OMEGA", "статус omega-доступа"),
 ]
