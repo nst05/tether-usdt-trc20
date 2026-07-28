@@ -1,1 +1,1 @@
-4.9.0 KFACTOR · автотелеметрия · график · GSM/APN
+4.10.0 AUTH-MODEL · KFACTOR · автотелеметрия · график · GSM/APN

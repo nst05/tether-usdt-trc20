@@ -58,6 +58,7 @@ TELE_PARAMS = ["Volume", "VOLUME_GLOB", "VOLUME_INST", "VOLUME_COMMIS", "VOLUME_
                "STATUS_SYSTEM", "STATUS_ALARM", "DEVICE_SN"]
 READING_COMMANDS = {"Volume", "VOLUME_GLOB", "VOLUME_COMMIS", "VOLUME_DISC"}
 LEVELS = ["Гость", "Провайдер (П)", "Omega (О)", "Заводской (f)"]
+MASTER_LEVELS = {"Заводской (f)", "Omega (О)"}
 AUTH_CREDS = ["PASSWORD_PROVIDER", "PASSWORD_OMEGA", "ENABLE_OMEGA",
               "PASSWORD_FABRIC", "MAGIC", "PASSWORD_OMEGA2"]
 ENUM_OPTS = {
@@ -190,13 +191,17 @@ def build_actions(catalog):
 
 
 def access_at_level(command, level):
-    column = command["prov"] if level in ("Провайдер (П)", "Заводской (f)") else \
-             command["user"] if level == "Omega (О)" else None
-    if column is None:
+    if level in MASTER_LEVELS:
+        return ("мастер-ключ: полный доступ", True, True)
+    if level == "Провайдер (П)":
+        column = command.get("prov")
+    else:
         return ("гость: публичное чтение (по гейту прибора)", True, False)
+    if column is None:
+        return ("нет данных", False, False)
     can_read = column in ("0101", "0100")
     can_write = column == "0101"
-    text = {"0101": "чтение+запись", "0100": "чтение", "0000": "нет"}.get(column, column)
+    text = {"0101": "чтение+запись", "0100": "чтение", "0000": "нет доступа"}.get(column, column)
     return text, can_read, can_write
 
 

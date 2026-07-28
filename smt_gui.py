@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.9.0.
+"""Графический интерфейс контроллера SMT v4.10.0.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -40,13 +40,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.9.0",
+        diag_folder, application="gui", version="4.10.0",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.9.0 · 160 команд · KFACTOR/телеметрия/GSM")
+    root.title("Контроллер устройства 4.10.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
@@ -1668,7 +1668,7 @@ ENDIF
             return
         backup = {
             "type": "smt_backup",
-            "version": "4.9.0",
+            "version": "4.10.0",
             "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
             "count": len(params),
             "params": params,
@@ -1986,17 +1986,18 @@ ENDIF
                     elif kind == "auth_state":
                         level = payload.get("level", "guest")
                         verified = bool(payload.get("verified"))
-                        state["provider_verified"] = verified and level == "provider"
+                        is_master = bool(payload.get("master"))
+                        state["provider_verified"] = verified and level in ("provider", "fabric", "omega")
                         state["provider_verified_at"] = payload.get("verified_at", 0.0)
-                        if verified and level == "provider":
-                            level_var.set("Провайдер (П)")
-                            auth_lbl.config(text="● Provider подтверждён", foreground="#0a7d0a")
-                        elif verified and level == "omega":
-                            level_var.set("Omega (О)")
-                            auth_lbl.config(text="● Omega подтверждён", foreground="#0a7d0a")
-                        elif verified and level == "fabric":
-                            level_var.set("Заводской (f)")
-                            auth_lbl.config(text="● Заводской подтверждён", foreground="#0a7d0a")
+                        _auth_map = {
+                            "fabric": ("Заводской (f)", "● Заводской (f) — мастер-ключ", "#d4a017"),
+                            "omega":  ("Omega (О)",     "● Omega (U) — мастер-ключ",     "#0a7d0a"),
+                            "provider":("Провайдер (П)","● Provider — нумерованный доступ","#2980b9"),
+                        }
+                        if verified and level in _auth_map:
+                            lbl_text, auth_text, color = _auth_map[level]
+                            level_var.set(lbl_text)
+                            auth_lbl.config(text=auth_text, foreground=color)
                         else:
                             level_var.set("Гость")
                             auth_lbl.config(text="○ уровень не подтверждён", foreground="#777")

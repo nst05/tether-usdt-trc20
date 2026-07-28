@@ -509,24 +509,34 @@ class Backend(threading.Thread):
         self.post("reading", (name, shown, result["timestamp"]))
         self.post("reading_write_done", result)
 
+    _AUTH_LEVELS = {
+        "PASSWORD_FABRIC":  ("fabric",  "Заводской (f)",  True),
+        "PASSWORD_OMEGA":   ("omega",   "Omega (U)",      True),
+        "PASSWORD_PROVIDER":("provider","Provider",       False),
+    }
+
     def _auth(self, cred, value):
         if cred == "PASSWORD_PROVIDER" and len(str(value)) != 6:
             raise ValueError("Пароль Provider должен содержать ровно 6 символов")
         self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
         self.post("auth_state", dict(self.auth_state))
+        if self.mode != "sms":
+            self.log("ok", "[auth] READY_TO_DIALOG …")
+            try:
+                self._tx("READY_TO_DIALOG", retry_safe=True, mutating=False, kind="auth")
+            except Exception:
+                pass
         cmd = f"{cred}={value}" if value != "" else cred
         self.log("ok", f"[auth] Предъявление учётных данных: {cred} …")
         raw, val = self._tx(cmd, retry_safe=False, expert=True, mutating=True, kind="auth")
         self.log("io", f">> {cred}=•••\n<< ответ получен ({len(raw)} байт; значение скрыто)")
-        if cred in ("PASSWORD_PROVIDER", "PASSWORD_OMEGA", "PASSWORD_FABRIC"):
-            level = {"PASSWORD_PROVIDER": "provider", "PASSWORD_OMEGA": "omega",
-                     "PASSWORD_FABRIC": "fabric"}[cred]
-            label = {"provider": "Provider", "omega": "Omega", "fabric": "Заводской"}[level]
+        if cred in self._AUTH_LEVELS:
+            level, label, is_master = self._AUTH_LEVELS[cred]
             if sc.response_has_auth_error(raw):
                 raise PermissionError(f"Прибор отклонил пароль {label}")
             if self.mode == "sms":
                 self.auth_state = {
-                    "level": level, "verified": False,
+                    "level": level, "verified": False, "master": is_master,
                     "verified_at": time.time(), "sms_sent": True,
                 }
                 self.post("auth_state", dict(self.auth_state))
@@ -534,12 +544,12 @@ class Backend(threading.Thread):
                                  "Модем подтвердил отправку, но уровень прибора автоматически не проверен.")
             else:
                 self.auth_state = {
-                    "level": level, "verified": True,
+                    "level": level, "verified": True, "master": is_master,
                     "verified_at": time.time(), "verified_by": cred,
                 }
                 self.post("auth_state", dict(self.auth_state))
-                self.log("ok", f"[auth] Команда {cred} принята без явного отказа; "
-                               f"активирован уровень {label} на текущем подключении.")
+                kind = "мастер-ключ (все команды)" if is_master else "нумерованный доступ"
+                self.log("ok", f"[auth] {label} принят; {kind}.")
         else:
             self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
             self.post("auth_state", dict(self.auth_state))

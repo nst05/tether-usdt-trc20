@@ -300,7 +300,7 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
     args.diagnostic = DiagnosticRecorder(
         os.path.join(os.path.abspath(args.outdir), "diagnostics"),
-        application="server", version="4.9.0")
+        application="server", version="4.10.0")
     args.diagnostic.emit("server", "arguments", status="ok", details=vars(args))
     try:
         serve(args)
