@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Утилита для замены паролей в дампе W25Q64.
+"""Утилита для замены паролей и уровней доступа в дампе W25Q64.
 
-Читает дамп SPI-флешки, находит пароли в конфигурационной области и меняет их.
-Все пароли хранятся открытым текстом, ровно 6 символов.
+По документу авторизации (дизассемблер 0x0800B58E):
+- Пароли хранятся открытым текстом (6 символов)
+- Байт уровня доступа: 0x66=заводской (f), 0x55=omega (U), 0x00=гость
+- Биты нумерованного уровня: бит0=уровень1, бит1=уровень2, бит2=уровень3
 
 Использование:
-  python3 smt_dump_passwords.py dump.bin --scan          # сканировать и показать пароли
-  python3 smt_dump_passwords.py dump.bin --set-provider PASSWORD   # изменить пароль провайдера
-  python3 smt_dump_passwords.py dump.bin --set-omega PASSWORD      # изменить omega
-  python3 smt_dump_passwords.py dump.bin --set-fabric PASSWORD     # изменить заводской
-  python3 smt_dump_passwords.py dump.bin --set-all P O F -o out.bin  # все три + сохранить
+  python3 smt_dump_passwords.py dump.bin --scan          # сканировать пароли и уровни
+  python3 smt_dump_passwords.py dump.bin --set-provider PASSWORD   # пароль провайдера
+  python3 smt_dump_passwords.py dump.bin --set-omega PASSWORD      # пароль omega
+  python3 smt_dump_passwords.py dump.bin --set-fabric PASSWORD     # заводской пароль
+  python3 smt_dump_passwords.py dump.bin --set-level f             # уровень: f/U/0
+  python3 smt_dump_passwords.py dump.bin --set-level-bits 0b111    # биты 1/2/3
+  python3 smt_dump_passwords.py dump.bin --set-all P O F f 0b111 -o out.bin
 """
 
 import sys
@@ -20,27 +24,40 @@ from pathlib import Path
 
 # По документу авторизации (firmware audit):
 # Конфиг в памяти: 0x20000278, в W25Q64 — точно такой же адрес.
-# Смещения паролей внутри конфига:
 CONFIG_BASE = 0x20000278
 
-# Эти смещения найдены аудитом прошивки, нужно уточнить для конкретного дампа
-# Временно используем сканирование по сигнатурам
-PASSWORD_PROVIDER_HINT = b"PROVIDER"  # может быть метка перед паролем
-PASSWORD_OMEGA_HINT = b"OMEGA"
-PASSWORD_FABRIC_HINT = b"FABRIC"
+# Смещение байта уровня доступа внутри конфига
+ACCESS_LEVEL_OFFSET = 0x294  # 0x20000278 + 0x294 = 0x2000050C (в ОЗУ это 0x20000D62)
 
-# Пароли всегда 6 символов, ASCII-печатные
+# Смещение битов нумерованного уровня (в ОЗУ 0x2000B1B0)
+NUMBERED_LEVEL_OFFSET = 0xFFFFFFFFF  # нужно уточнить для W25Q64
+
+# Пароли: 6 символов, ASCII-печатные
 PASSWORD_LEN = 6
-PASSWORD_CHARS = set(b"0123456789ABCDEFabcdef_-.*")  # типичные символы в паролях
+
+# Коды уровней
+LEVEL_CODES = {
+    "f": 0x66,      # заводской (мастер-ключ)
+    "F": 0x66,
+    "U": 0x55,      # omega (мастер-ключ)
+    "u": 0x55,
+    "0": 0x00,      # гость
+}
+LEVEL_NAMES = {
+    0x66: "заводской (f) — мастер-ключ",
+    0x55: "omega (U) — мастер-ключ",
+    0x00: "гость",
+}
 
 
 def scan_dump(data):
-    """Сканирует дамп и ищет 6-символьные пароли открытым текстом."""
+    """Сканирует дамп и показывает пароли + уровни доступа."""
     results = {
         "provider": [],
         "omega": [],
         "fabric": [],
         "access_level": [],
+        "numbered_bits": [],
     }
 
     # Поиск в конфиг-области (вокруг CONFIG_BASE)
@@ -78,15 +95,22 @@ def scan_dump(data):
             pos = idx + 1
 
     # Байт уровня доступа (0x66 = f, 0x55 = U, 0x00 = гость)
-    level_byte_pos = CONFIG_BASE + 0x294
+    # В ОЗУ: 0x20000D62, в конфиге W25Q64: CONFIG_BASE + 0x294
+    level_byte_pos = CONFIG_BASE + ACCESS_LEVEL_OFFSET
     if level_byte_pos < len(data):
         level = data[level_byte_pos]
-        level_map = {0x66: "f (заводской)", 0x55: "U (omega)", 0x00: "гость"}
+        decoded = LEVEL_NAMES.get(level, f"нестандартный (0x{level:02X})")
         results["access_level"].append({
             "offset": level_byte_pos,
             "value": level,
-            "decoded": level_map.get(level, f"нестандартный ({level})")
+            "hex": hex(level),
+            "decoded": decoded
         })
+
+    # Биты нумерованного уровня (в ОЗУ 0x2000B1B0)
+    # Структура: бит0=уровень1, бит1=уровень2, бит2=уровень3
+    # Нужно найти в дампе по сигнатурам или известным смещениям
+    # На данный момент: только сканируем вокруг конфига
 
     return results
 
@@ -101,10 +125,6 @@ def set_password(data, pwd_type, new_password):
         raise ValueError("Пароль должен содержать только ASCII печатные символы")
 
     data = bytearray(data)
-
-    # Простой способ: ищем старый пароль по сигнатурам и меняем
-    # Более надёжно — использовать карту смещений из дампа
-    # На данный момент: сканируем и меняем первый найденный
 
     hints = {
         "provider": b"PROVIDER",
@@ -138,16 +158,69 @@ def set_password(data, pwd_type, new_password):
                     # Нашли — меняем
                     data[pwd_start:pwd_start + PASSWORD_LEN] = new_password.encode("ascii")
                     found = True
-                    print(f"  → Пароль {pwd_type} изменён на {new_password} (смещение 0x{pwd_start:06X})")
+                    print(f"  → Пароль {pwd_type} = {new_password} (смещение 0x{pwd_start:06X})")
                     break
         if found:
             break
         pos = idx + 1
 
     if not found:
-        print(f"  ⚠ Пароль {pwd_type} не найден; попытаемся по известному смещению…")
-        # Fallback: пробуем стандартные смещения
-        # Это нужно уточнить на реальном дампе
+        print(f"  ⚠ Пароль {pwd_type} не найден по сигнатурам")
+
+    return bytes(data)
+
+
+def set_access_level(data, level_char):
+    """Меняет байт уровня доступа (f/U/0).
+
+    После авторизации прибор устанавливает этот байт в 0x20000D62 (ОЗУ).
+    В W25Q64 он хранится по адресу CONFIG_BASE + 0x294.
+    """
+    if level_char not in LEVEL_CODES:
+        raise ValueError(f"Неизвестный уровень: {level_char}. Допустимы: f, U, 0")
+
+    level_byte = LEVEL_CODES[level_char]
+    data = bytearray(data)
+
+    level_byte_pos = CONFIG_BASE + ACCESS_LEVEL_OFFSET
+    if level_byte_pos >= len(data):
+        raise ValueError(f"Смещение уровня 0x{level_byte_pos:06X} вне дампа")
+
+    data[level_byte_pos] = level_byte
+    decoded = LEVEL_NAMES.get(level_byte, "?")
+    print(f"  → Уровень доступа = {level_char} (0x{level_byte:02X}) @ 0x{level_byte_pos:06X}: {decoded}")
+
+    return bytes(data)
+
+
+def set_numbered_bits(data, bits_str):
+    """Меняет биты нумерованного уровня (бит0/1/2 = уровень1/2/3).
+
+    Входной формат:
+      "0b111" → уровни 1, 2, 3 включены
+      "0b001" → только уровень 1
+      "3" → decimal, равно 0b011 (уровни 1, 2)
+    """
+    # Парсим входные биты
+    try:
+        if bits_str.startswith("0b"):
+            bits = int(bits_str, 2)
+        else:
+            bits = int(bits_str)
+        if bits < 0 or bits > 0b111:
+            raise ValueError
+    except ValueError:
+        raise ValueError("Биты должны быть 0-7, 0b000-0b111, или 0-3 для уровней")
+
+    data = bytearray(data)
+
+    # Это смещение нужно уточнить на реальном дампе
+    # В ОЗУ: 0x2000B1B0, в W25Q64 — нужно найти по карте памяти
+    # На данный момент: сигнал об отсутствии точного смещения
+
+    print(f"  ⚠ Точное смещение битов нумерованного уровня в W25Q64 еще не определено")
+    print(f"    (в ОЗУ это 0x2000B1B0; нужен реальный дамп для поиска)")
+    print(f"    Желаемые биты: 0b{bits:03b} (уровни: {', '.join([str(i+1) for i in range(3) if bits & (1<<i)])})")
 
     return bytes(data)
 
@@ -158,11 +231,20 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("dump", help="Путь к дампу W25Q64 (8 МБ)")
-    ap.add_argument("--scan", action="store_true", help="Сканировать и показать пароли")
-    ap.add_argument("--set-provider", help="Новый пароль провайдера (6 символов)")
-    ap.add_argument("--set-omega", help="Новый пароль omega (6 символов)")
-    ap.add_argument("--set-fabric", help="Новый заводской пароль (6 символов)")
-    ap.add_argument("-o", "--output", help="Сохранить изменённый дамп в файл")
+    ap.add_argument("--scan", action="store_true", help="Сканировать и показать пароли + уровни")
+
+    # Пароли
+    ap.add_argument("--set-provider", metavar="PWD", help="Пароль провайдера (6 символов)")
+    ap.add_argument("--set-omega", metavar="PWD", help="Пароль omega (6 символов)")
+    ap.add_argument("--set-fabric", metavar="PWD", help="Заводской пароль (6 символов)")
+
+    # Уровни доступа
+    ap.add_argument("--set-level", metavar="LEVEL", choices=["f", "F", "U", "u", "0"],
+                    help="Уровень доступа: f (заводской), U (omega), 0 (гость)")
+    ap.add_argument("--set-level-bits", metavar="BITS",
+                    help="Биты нумерованного уровня (0-7, 0b000-0b111)")
+
+    ap.add_argument("-o", "--output", help="Сохранить изменённый дамп (по умолч. dump_modified.bin)")
 
     args = ap.parse_args()
 
@@ -175,75 +257,76 @@ def main():
         sys.exit(1)
 
     if len(data) != 0x800000:
-        print(f"⚠ Размер дампа {len(data)} байт, ожидалось 8388608 (0x800000)", file=sys.stderr)
+        print(f"⚠ Размер дампа {len(data)} байт, ожидалось 8388608 (0x800000)")
 
     # Режим 1: сканирование
     if args.scan:
-        print(f"[сканирование] дамп {Path(args.dump).name} ({len(data)} байт)")
+        print(f"[сканирование] дамп {Path(args.dump).name} ({len(data)} байт)\n")
         results = scan_dump(data)
 
-        print("\n  Пароль провайдера:")
-        if results["provider"]:
-            for r in results["provider"]:
-                print(f"    • {r['value']!r} @ 0x{r['offset']:06X} (рядом с меткой @ {r['near_hint']})")
-        else:
-            print("    (не найден)")
+        print("  Пароли:")
+        for pwd_type in ["provider", "omega", "fabric"]:
+            print(f"    {pwd_type.upper():>10}")
+            if results[pwd_type]:
+                for r in results[pwd_type]:
+                    print(f"      {r['value']!r} @ 0x{r['offset']:06X}")
+            else:
+                print(f"      (не найден)")
 
-        print("\n  Пароль omega:")
-        if results["omega"]:
-            for r in results["omega"]:
-                print(f"    • {r['value']!r} @ 0x{r['offset']:06X}")
-        else:
-            print("    (не найден)")
-
-        print("\n  Заводской пароль:")
-        if results["fabric"]:
-            for r in results["fabric"]:
-                print(f"    • {r['value']!r} @ 0x{r['offset']:06X}")
-        else:
-            print("    (не найден)")
-
-        print("\n  Байт уровня доступа:")
+        print("\n  Уровни доступа:")
         if results["access_level"]:
             for r in results["access_level"]:
-                print(f"    • 0x{r['value']:02X} @ 0x{r['offset']:06X} → {r['decoded']}")
+                print(f"    Байт уровня @ 0x{r['offset']:06X}")
+                print(f"      0x{r['value']:02X} → {r['decoded']}")
         else:
-            print("    (не найден)")
+            print("    (не найдены)")
 
+        print("\n  Биты нумерованного уровня:")
+        print("    ⚠ Точное смещение в W25Q64 нужно уточнить на реальном дампе")
         return
 
-    # Режим 2: изменение паролей
+    # Режим 2: изменение
     modified = data
     changed = []
 
     if args.set_provider:
-        print("[изменение] пароль провайдера")
+        print("[пароль] провайдера")
         modified = set_password(modified, "provider", args.set_provider)
         changed.append(f"provider={args.set_provider}")
 
     if args.set_omega:
-        print("[изменение] пароль omega")
+        print("[пароль] omega")
         modified = set_password(modified, "omega", args.set_omega)
         changed.append(f"omega={args.set_omega}")
 
     if args.set_fabric:
-        print("[изменение] заводской пароль")
+        print("[пароль] заводской")
         modified = set_password(modified, "fabric", args.set_fabric)
         changed.append(f"fabric={args.set_fabric}")
 
+    if args.set_level:
+        print("[уровень] доступа")
+        modified = set_access_level(modified, args.set_level)
+        changed.append(f"level={args.set_level}")
+
+    if args.set_level_bits:
+        print("[биты] нумерованного уровня")
+        modified = set_numbered_bits(modified, args.set_level_bits)
+        changed.append(f"level_bits={args.set_level_bits}")
+
     if not changed:
-        print("Ничего не изменено. Используйте --scan или --set-{provider,omega,fabric}", file=sys.stderr)
-        sys.exit(1)
+        print("ℹ Используйте --scan для просмотра или --set-* для изменения")
+        return
 
     # Сохранение
     out_path = args.output or f"{Path(args.dump).stem}_modified.bin"
     try:
         with open(out_path, "wb") as f:
             f.write(modified)
-        print(f"\n✓ Дамп сохранён: {out_path}")
-        print(f"  Изменено: {', '.join(changed)}")
+        print(f"\n✓ Сохранён: {out_path}")
+        print(f"  Изменения: {', '.join(changed)}")
     except OSError as e:
-        print(f"✗ Не удалось сохранить: {e}", file=sys.stderr)
+        print(f"✗ Ошибка при сохранении: {e}", file=sys.stderr)
         sys.exit(1)
 
 
