@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.13.0.
+"""Графический интерфейс контроллера SMT v4.13.1.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -41,13 +41,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.13.0",
+        diag_folder, application="gui", version="4.13.1",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.13.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.13.1 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
@@ -2052,6 +2052,36 @@ ENDIF
             o += 0x10
         return bytes(data), changed
 
+    def deep_search_omega(dump):
+        """Ищет ОТКРЫТУЮ omega по всему образу, а не только в кольце журнала.
+
+        Проходит весь файл и собирает записи с кодами omega (0x0220/0x02B7)
+        с валидными меткой времени/счётчиком, отбирая значения без звёздочек.
+        Возвращает (открытые_значения, всего_записей_omega).
+        """
+        clear, total = [], 0
+        limit = len(dump)
+        o = 0
+        while o < limit - 16:
+            try:
+                code = u16(dump, o + 0x0C)
+                if code in (0x0220, 0x02B7):
+                    ts = u32(dump, o)
+                    cnt = u32(dump, o + 0x08)
+                    if 100_000_000 < ts < 4_000_000_000 and cnt < 100000:
+                        total += 1
+                        vs = o + 0x0E
+                        ve = dump.find(b"\0", vs, min(limit, vs + 48))
+                        if ve < 0:
+                            ve = min(limit, vs + 48)
+                        val = dump[vs:ve].decode("ascii", errors="replace")
+                        if val and "*" not in val and val not in clear:
+                            clear.append(val)
+            except (struct.error, ValueError):
+                pass
+            o += 4  # плотный проход по всему образу
+        return clear, total
+
     # ── UI для работы с дампом ─────────────────────────────────────────────
     steps_frame = ttk.Frame(dump_pan)
     dump_pan.add(steps_frame, weight=0)
@@ -2120,12 +2150,26 @@ ENDIF
         try:
             pwds, lvls = scan_dump_journal(dump_state["data"])
 
-            # Заполняем «Сейчас в дампе» первыми найденными значениями
+            # значение считаем «замаскированным», если в нём есть звёздочки
+            def _masked(v):
+                return bool(v) and "*" in v
+            def _clear(v):
+                return bool(v) and "*" not in v
+
+            # Заполняем «Сейчас в дампе». Для omega предпочитаем ОТКРЫТУЮ копию;
+            # если открытой нет, честно пишем, что прибор хранит её замаскированной.
             prov_vals = [p["value"] for p in pwds if p["command"] == "PASSWORD_PROVIDER" and p["value"]]
-            omega_vals = [p["value"] for p in pwds if p["command"] == "PASSWORD_OMEGA" and p["value"]]
+            omega_all = [p["value"] for p in pwds if p["command"] == "PASSWORD_OMEGA" and p["value"]]
+            omega_clear = [v for v in omega_all if _clear(v)]
+            omega_masked = [v for v in omega_all if _masked(v)]
             with contextlib.suppress(Exception):
                 cur_provider_var.set(prov_vals[0] if prov_vals else "не найдено")
-                cur_omega_var.set(omega_vals[0] if omega_vals else "не найдено")
+                if omega_clear:
+                    cur_omega_var.set(omega_clear[0])
+                elif omega_masked:
+                    cur_omega_var.set("скрыт прибором (******)")
+                else:
+                    cur_omega_var.set("не найдено")
                 cur_level_var.set(lvls[0]["level_name"] if lvls else "не найдено")
 
             result_text.insert("end", "Что нашлось в журнале образа (это уже в дампе):\n\n", "ok")
@@ -2139,8 +2183,15 @@ ENDIF
                     shown.add(key)
                     human = {"PASSWORD_PROVIDER": "провайдера", "PASSWORD_OMEGA": "omega"}.get(
                         pwd["command"], pwd["command"])
+                    note = "   ← скрыт самим прибором" if _masked(pwd["value"]) else ""
                     result_text.insert("end",
-                        f"   пароль {human:10} = {pwd['value']!r}\n", "io")
+                        f"   пароль {human:10} = {pwd['value']!r}{note}\n", "io")
+                if omega_all and not omega_clear:
+                    result_text.insert("end",
+                        "\n   ⓘ omega хранится в журнале ЗАМАСКИРОВАННОЙ (******) — это делает "
+                        "сама прошивка,\n      открытого значения в дампе нет, восстановить его из "
+                        "образа нельзя.\n      Пароль провайдера (выше) прибор пишет открыто. "
+                        "Можно задать новую omega\n      ниже — она запишется открытым текстом.\n", "warn")
             else:
                 result_text.insert("end", "🔑 Пароли не найдены (возможно, template-дамп без конфига)\n", "warn")
 
@@ -2295,10 +2346,33 @@ ENDIF
         except Exception as e:
             messagebox.showerror("Дамп — ошибка", f"Ошибка при применении: {e}")
 
+    def do_deep_omega():
+        if dump_state["data"] is None:
+            messagebox.showwarning("Дамп", "Сначала загрузи файл дампа.")
+            return
+        clear, total = deep_search_omega(dump_state["data"])
+        if clear:
+            cur_omega_var.set(clear[0])
+            append("ok", f"[дамп] глубокий поиск: открытая omega = {clear[0]!r}")
+            messagebox.showinfo("Поиск omega по всему образу",
+                "Найдены ОТКРЫТЫЕ значения omega в образе:\n\n"
+                + "\n".join(f"  • {v}" for v in clear)
+                + f"\n\nВсего записей omega просмотрено: {total}.")
+        else:
+            append("warn", f"[дамп] глубокий поиск: открытая omega не найдена ({total} записей, все ******)")
+            messagebox.showwarning("Поиск omega по всему образу",
+                f"Открытого значения omega в образе нет.\n\n"
+                f"Просмотрено записей omega: {total} — все замаскированы прибором (******).\n\n"
+                "Прошивка НЕ хранит omega открытым текстом, поэтому восстановить старый "
+                "пароль из дампа невозможно. Пароль провайдера при этом читается открыто.\n\n"
+                "Выход: задать НОВУЮ omega в поле выше и «Применить» — она запишется открыто.")
+
     btn_frame = ttk.Frame(edit_frame)
     btn_frame.pack(fill="x", pady=(8, 2))
     ttk.Button(btn_frame, text="✓ Применить изменения (в память)",
                command=apply_changes).pack(side="left", padx=2)
+    ttk.Button(btn_frame, text="🔍 Искать omega по всему образу",
+               command=do_deep_omega).pack(side="left", padx=2)
 
     def save_dump_file():
         if dump_state["data"] is None:
