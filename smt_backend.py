@@ -518,9 +518,10 @@ class Backend(threading.Thread):
         self.log("ok", f"[auth] Предъявление учётных данных: {cred} …")
         raw, val = self._tx(cmd, retry_safe=False, expert=True, mutating=True, kind="auth")
         self.log("io", f">> {cred}=•••\n<< ответ получен ({len(raw)} байт; значение скрыто)")
-        if cred in ("PASSWORD_PROVIDER", "PASSWORD_OMEGA"):
-            level = "provider" if cred == "PASSWORD_PROVIDER" else "omega"
-            label = "Provider" if level == "provider" else "Omega"
+        if cred in ("PASSWORD_PROVIDER", "PASSWORD_OMEGA", "PASSWORD_FABRIC"):
+            level = {"PASSWORD_PROVIDER": "provider", "PASSWORD_OMEGA": "omega",
+                     "PASSWORD_FABRIC": "fabric"}[cred]
+            label = {"provider": "Provider", "omega": "Omega", "fabric": "Заводской"}[level]
             if sc.response_has_auth_error(raw):
                 raise PermissionError(f"Прибор отклонил пароль {label}")
             if self.mode == "sms":

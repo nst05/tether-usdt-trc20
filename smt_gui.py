@@ -1994,6 +1994,9 @@ ENDIF
                         elif verified and level == "omega":
                             level_var.set("Omega (О)")
                             auth_lbl.config(text="● Omega подтверждён", foreground="#0a7d0a")
+                        elif verified and level == "fabric":
+                            level_var.set("Заводской (f)")
+                            auth_lbl.config(text="● Заводской подтверждён", foreground="#0a7d0a")
                         else:
                             level_var.set("Гость")
                             auth_lbl.config(text="○ уровень не подтверждён", foreground="#777")

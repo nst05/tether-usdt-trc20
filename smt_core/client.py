@@ -1,7 +1,7 @@
 """Высокоуровневый клиент и штатная авторизация."""
 from __future__ import annotations
 
-__all__ = ["authenticate_provider", "authenticate_omega", "SmtClient"]
+__all__ = ["authenticate_provider", "authenticate_omega", "authenticate_fabric", "SmtClient"]
 
 import time
 
@@ -44,6 +44,22 @@ def authenticate_omega(client, password: str) -> dict:
         "level": "omega",
         "verified": True,
         "verified_by": "PASSWORD_OMEGA",
+        "verified_at": time.time(),
+    }
+
+
+def authenticate_fabric(client, password: str) -> dict:
+    """Предъявить заводской пароль PASSWORD_FABRIC."""
+    password = str(password or "")
+    if not password:
+        raise ValueError("Заводской пароль не задан")
+    raw = client.send(f"PASSWORD_FABRIC={password}", expert=True, mutating=True)
+    if response_has_auth_error(raw):
+        raise PermissionError("Прибор отклонил заводской пароль")
+    return {
+        "level": "fabric",
+        "verified": True,
+        "verified_by": "PASSWORD_FABRIC",
         "verified_at": time.time(),
     }
 
