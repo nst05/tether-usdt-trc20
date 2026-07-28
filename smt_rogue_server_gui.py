@@ -74,10 +74,16 @@ def handle_conn(conn, addr, cfg, outq):
             sent = rogue.make_response("accept", n, None, None)
     else:
         try:
-            sent = rogue.make_response(cfg["mode"], n, cfg["raw"], cfg["file"])
+            sent = rogue.make_response(cfg["mode"], n, cfg["raw"], cfg["file"],
+                                        cfg.get("server_mt"))
         except OSError as exc:
             outq.put(("log", f"  [!] не удалось прочитать файл ответа: {exc}"))
             sent = b""
+        if cfg["mode"] == "server_mt" and sent:
+            spec = (cfg.get("server_mt") or "0").strip().lower()
+            label = "forge (случайный тег)" if spec == "forge" else f"replay образец #{spec}"
+            outq.put(("log", f"  Server_MT [{label}]: токен={sent[:33].decode('ascii', 'replace')} "
+                              f"тег={sent[33:37].hex().upper()}"))
         if cfg["followup"]:
             sent += rogue._unescape(cfg["followup"])
 
@@ -151,6 +157,7 @@ class App:
         ("silent", "Ничего не отправлять (проверить таймаут прибора)"),
         ("raw", "Свой текст (ниже, с поддержкой \\r\\n\\xHH)"),
         ("file", "Из файла (байты как есть)"),
+        ("server_mt", "Server_MT: токен(33)+тег(4) — replay/forge (ниже)"),
     ]
 
     def __init__(self, root):
@@ -221,19 +228,31 @@ class App:
         self.file_btn = ttk.Button(mode_box, text="Обзор…", command=self._pick_file)
         self.file_btn.grid(row=len(self.MODES) + 1, column=2, sticky="w", padx=4)
 
-        ttk.Separator(mode_box).grid(row=len(self.MODES) + 2, column=0, columnspan=3, sticky="we", pady=4)
+        ttk.Label(mode_box, text="Server_MT образец:").grid(
+            row=len(self.MODES) + 2, column=0, sticky="w", padx=6)
+        server_mt_values = ["forge (случайный тег)"] + [
+            f"{i} — replay {tok[:10]}…" for i, (tok, _tag) in enumerate(rogue.SERVER_MT_SAMPLES)
+        ]
+        self.server_mt_var = tk.StringVar(value=server_mt_values[0])
+        self.server_mt_combo = ttk.Combobox(
+            mode_box, textvariable=self.server_mt_var, values=server_mt_values,
+            state="readonly", width=46)
+        self.server_mt_combo.grid(row=len(self.MODES) + 2, column=1, columnspan=2,
+                                   sticky="w", padx=4)
+
+        ttk.Separator(mode_box).grid(row=len(self.MODES) + 3, column=0, columnspan=3, sticky="we", pady=4)
 
         self.interactive_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             mode_box, text="Спрашивать вручную на каждое соединение (игнорирует режим выше)",
             variable=self.interactive_var, command=self._sync_mode_fields,
-        ).grid(row=len(self.MODES) + 3, column=0, columnspan=3, sticky="w", padx=6)
+        ).grid(row=len(self.MODES) + 4, column=0, columnspan=3, sticky="w", padx=6)
 
         ttk.Label(mode_box, text="Добавка после ответа (followup):").grid(
-            row=len(self.MODES) + 4, column=0, sticky="w", padx=6, pady=(4, 6))
+            row=len(self.MODES) + 5, column=0, sticky="w", padx=6, pady=(4, 6))
         self.followup_var = tk.StringVar(value="")
         ttk.Entry(mode_box, textvariable=self.followup_var, width=50).grid(
-            row=len(self.MODES) + 4, column=1, columnspan=2, sticky="we", padx=4, pady=(4, 6))
+            row=len(self.MODES) + 5, column=1, columnspan=2, sticky="we", padx=4, pady=(4, 6))
 
         mode_box.columnconfigure(1, weight=1)
 
@@ -280,9 +299,11 @@ class App:
         mode = self.mode_var.get()
         state_raw = "normal" if (not interactive and mode == "raw") else "disabled"
         state_file = "normal" if (not interactive and mode == "file") else "disabled"
+        state_server_mt = "readonly" if (not interactive and mode == "server_mt") else "disabled"
         self.raw_entry.configure(state=state_raw)
         self.file_entry.configure(state=state_file)
         self.file_btn.configure(state=state_file)
+        self.server_mt_combo.configure(state=state_server_mt)
 
     def _pick_file(self):
         path = filedialog.askopenfilename(title="Файл ответа")
@@ -314,12 +335,16 @@ class App:
             messagebox.showerror("Ошибка", "Таймауты должны быть числами")
             return
 
+        server_mt_sel = self.server_mt_var.get()
+        server_mt_spec = "forge" if server_mt_sel.startswith("forge") else server_mt_sel.split(" ", 1)[0]
+
         cfg = {
             "host": self.host_var.get().strip() or "0.0.0.0",
             "port": port,
             "mode": self.mode_var.get(),
             "raw": self.raw_var.get(),
             "file": self.file_var.get().strip() or None,
+            "server_mt": server_mt_spec,
             "followup": self.followup_var.get(),
             "interactive": self.interactive_var.get(),
             "idle": idle,
