@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.13.1.
+"""Графический интерфейс контроллера SMT v4.13.2.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -41,13 +41,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.13.1",
+        diag_folder, application="gui", version="4.13.2",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.13.1 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.13.2 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     root.geometry("1220x850")
 
     state = {"selected": None, "connected": False, "expert": False,
@@ -2256,16 +2256,31 @@ ENDIF
 
     # Пароль провайдера
     _mk_row(1, "🔑 Пароль провайдера", cur_provider_var,
-            "Основной сервисный пароль. Обычно 6 цифр (например 123456). "
-            "Меняется во всех копиях журнала сразу.")
+            "Что вписывать: РОВНО 6 символов — обычно 6 цифр, например  123456  или  000111. "
+            "Это новый сервисный пароль, запишется открытым текстом во все копии журнала.")
     provider_var = tk.StringVar()
-    ttk.Entry(edit_grid, textvariable=provider_var, width=24).grid(row=1, column=2, sticky="w", padx=2, pady=(4, 0))
+    prov_box = ttk.Frame(edit_grid); prov_box.grid(row=1, column=2, sticky="w", padx=2, pady=(4, 0))
+    ttk.Entry(prov_box, textvariable=provider_var, width=16).pack(side="left")
+    prov_len_lbl = ttk.Label(prov_box, text="0/6", foreground="#999", width=5)
+    prov_len_lbl.pack(side="left", padx=3)
 
     # Пароль omega
     _mk_row(3, "🔑 Пароль omega", cur_omega_var,
-            "Пароль расширенного доступа omega. В журнале может быть скрыт звёздочками.")
+            "Что вписывать: РОВНО 6 символов — цифры и/или латинские буквы, например  654321  или  AB12CD. "
+            "Старую omega прибор хранит скрытой (******) и показать её нельзя — но ты можешь задать "
+            "здесь НОВУЮ, она запишется открытым текстом.")
     omega_var = tk.StringVar()
-    ttk.Entry(edit_grid, textvariable=omega_var, width=24).grid(row=3, column=2, sticky="w", padx=2, pady=(4, 0))
+    omega_box = ttk.Frame(edit_grid); omega_box.grid(row=3, column=2, sticky="w", padx=2, pady=(4, 0))
+    ttk.Entry(omega_box, textvariable=omega_var, width=16).pack(side="left")
+    omega_len_lbl = ttk.Label(omega_box, text="0/6", foreground="#999", width=5)
+    omega_len_lbl.pack(side="left", padx=3)
+
+    # живой счётчик длины: зелёный при ровно 6 символах
+    def _upd_len(var, lbl):
+        n = len(var.get().strip())
+        lbl.config(text=f"{n}/6", foreground="#0a7d0a" if n == 6 else ("#999" if n == 0 else "#c47f00"))
+    provider_var.trace_add("write", lambda *_: _upd_len(provider_var, prov_len_lbl))
+    omega_var.trace_add("write", lambda *_: _upd_len(omega_var, omega_len_lbl))
 
     # Уровень доступа — выбор из списка, без байтов
     _mk_row(5, "🛡 Уровень доступа", cur_level_var,
@@ -2295,6 +2310,17 @@ ENDIF
         new_omega = omega_var.get().strip()
         level_choice = level_edit_var.get()
         level_code = _LEVEL_LABEL_TO_CODE.get(level_choice)
+
+        # Прошивка принимает пароль ровно из 6 символов — проверяем заранее
+        for label, val in (("провайдера", new_provider), ("omega", new_omega)):
+            if val and len(val) != 6:
+                messagebox.showwarning(
+                    "Проверь длину пароля",
+                    f"Пароль {label} = {val!r} содержит {len(val)} символов.\n\n"
+                    "Нужно РОВНО 6 символов (цифры и/или латинские буквы),\n"
+                    "например 123456 или AB12CD.\n\n"
+                    "Прибор пароль другой длины не примет. Исправь и попробуй снова.")
+                return
 
         if new_provider:
             plan.append((f"Пароль провайдера:  {cur_provider_var.get()}  →  {new_provider}",
