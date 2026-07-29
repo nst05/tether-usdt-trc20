@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.19.0.
+"""Графический интерфейс контроллера SMT v4.20.0.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -98,9 +98,78 @@ def _split_compound(text: str) -> list[str]:
     return [p.strip() for p in text.split(sep) if p.strip() != ""]
 
 
+def _apply_light_theme(root, tk, ttk):
+    """Светлая приглушённая тема: не белая-до-рези, не тёмная, единый вид
+    на любой ОС (базовая тема ttk 'clam' — единственная, где кастомизация
+    цветов реально применяется одинаково везде)."""
+    bg_main = "#f2f3f5"
+    bg_panel = "#ffffff"
+    bg_alt = "#e9ebee"
+    fg_main = "#2b2e33"
+    fg_muted = "#5b6270"
+    border = "#d3d6db"
+    accent = "#3d6fa5"
+    select_bg = "#dbe6f2"
+
+    root.configure(bg=bg_main)
+
+    # Виджеты классического Tk (Text/Scale/Listbox и т.п.) не следуют ttk.Style —
+    # задаём цвета по умолчанию через option database ДО создания остальных виджетов.
+    root.option_add("*Background", bg_main)
+    root.option_add("*Text.Background", bg_panel)
+    root.option_add("*Text.Foreground", fg_main)
+    root.option_add("*Listbox.Background", bg_panel)
+    root.option_add("*Scale.Background", bg_main)
+    root.option_add("*Scale.troughColor", bg_alt)
+    root.option_add("*Entry.Background", bg_panel)
+    root.option_add("*selectBackground", select_bg)
+    root.option_add("*selectForeground", fg_main)
+
+    style = ttk.Style(root)
+    with contextlib.suppress(Exception):
+        style.theme_use("clam")
+
+    style.configure(".", background=bg_main, foreground=fg_main,
+                     fieldbackground=bg_panel, bordercolor=border,
+                     lightcolor=bg_main, darkcolor=bg_main, troughcolor=bg_alt)
+    style.configure("TFrame", background=bg_main)
+    style.configure("TLabel", background=bg_main, foreground=fg_main)
+    style.configure("TLabelframe", background=bg_main, bordercolor=border)
+    style.configure("TLabelframe.Label", background=bg_main, foreground=fg_muted)
+    style.configure("TButton", background=bg_alt, foreground=fg_main,
+                     bordercolor=border, focuscolor=accent, padding=4)
+    style.map("TButton", background=[("active", "#dfe2e6"), ("pressed", "#cfd3d8")])
+    style.configure("TEntry", fieldbackground=bg_panel, foreground=fg_main,
+                     bordercolor=border, insertcolor=fg_main)
+    style.configure("TCombobox", fieldbackground=bg_panel, background=bg_panel,
+                     foreground=fg_main, arrowcolor=fg_muted, bordercolor=border)
+    style.map("TCombobox", fieldbackground=[("readonly", bg_panel)],
+              selectbackground=[("readonly", bg_panel)],
+              selectforeground=[("readonly", fg_main)])
+    style.configure("TCheckbutton", background=bg_main, foreground=fg_main)
+    style.configure("TRadiobutton", background=bg_main, foreground=fg_main)
+    style.configure("TNotebook", background=bg_main, bordercolor=border)
+    style.configure("TNotebook.Tab", background=bg_alt, foreground=fg_muted, padding=(10, 4))
+    style.map("TNotebook.Tab", background=[("selected", bg_panel)],
+              foreground=[("selected", fg_main)])
+    style.configure("TPanedwindow", background=bg_main)
+    style.configure("Treeview", background=bg_panel, fieldbackground=bg_panel,
+                     foreground=fg_main, bordercolor=border)
+    style.configure("Treeview.Heading", background=bg_alt, foreground=fg_muted,
+                     bordercolor=border)
+    style.map("Treeview", background=[("selected", select_bg)],
+              foreground=[("selected", fg_main)])
+    style.configure("TScrollbar", background=bg_alt, troughcolor=bg_main,
+                     bordercolor=border, arrowcolor=fg_muted)
+    style.configure("TSeparator", background=border)
+    style.configure("Horizontal.TScale", background=bg_main, troughcolor=bg_alt)
+
+
 def build_app(root, selftest=False):
     import tkinter as tk
     from tkinter import filedialog, messagebox, scrolledtext, ttk
+
+    _apply_light_theme(root, tk, ttk)
 
     catalog = load_catalog()
     critical = build_critical(catalog)
@@ -109,13 +178,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.19.0",
+        diag_folder, application="gui", version="4.20.0",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.19.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.20.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     # Окно не должно вылезать за экран (иначе лог внизу обрезается) — размер
     # считается от фактического разрешения, а не берётся фиксированным.
     _sw, _sh = root.winfo_screenwidth(), root.winfo_screenheight()
