@@ -35,11 +35,18 @@ Server_MT (см. smt_commands.json, handler sub_08006380) — одноразов
   5. Корреляция (Пирсон) между временем запроса и числовым значением
      префикса токена/тега — признак сидирования от времени/аптайма.
 
+При физическом доступе к прибору (оптопорт) удобнее и быстрее — без сетевых
+задержек и ограничений: --transport serial подключается напрямую тем же
+OpticTransport, что и smt_cli.py/smt_gui.py (автоопределение кадрирования по
+DevInfo), и гоняет Server_MT прямо через оптоголовку. Это даёт заметно больше
+образцов в единицу времени, что важно для χ²/корреляционных тестов ниже.
+
 Запуск
 ------
   python3 smt_server_mt_probe.py --host in.tehnomer.ru --port 40200
   python3 smt_server_mt_probe.py --host in.tehnomer.ru --port 40200 --count 30 --delay 0.1
-  python3 smt_server_mt_probe.py --host in.tehnomer.ru --port 40200 --command DevInfo
+  python3 smt_server_mt_probe.py --transport serial --serial-port COM3 --count 50 --delay 0.05
+  python3 smt_server_mt_probe.py --transport serial --serial-port /dev/ttyUSB0 --baud 9600
 """
 from __future__ import annotations
 
@@ -190,26 +197,68 @@ def analyze_predictability(samples: list[dict]) -> None:
               "предсказуемость — тест грубый)")
 
 
+def open_transport(args):
+    """Открывает транспорт (TCP-командный сервер или оптопорт) по аргументам CLI."""
+    if args.transport == "tcp":
+        if not args.host or not args.port:
+            raise SystemExit("--host и --port обязательны для --transport tcp")
+        terms = {"none": b"", "cr": b"\r", "lf": b"\n", "crlf": b"\r\n"}
+        print(f"[*] цель: {args.host}:{args.port} (TCP)")
+        return transports.TcpServerTransport(args.host, args.port, timeout=args.timeout,
+                                              terminator=terms[args.terminator])
+    if not args.serial_port:
+        raise SystemExit("--serial-port обязателен для --transport serial")
+    tr = transports.OpticTransport(
+        args.serial_port, args.baud, response_timeout=args.timeout, idle_gap=args.idle_gap,
+        read_retries=args.read_retries, bytesize=args.bytesize, parity=args.parity,
+        stopbits=args.stopbits, xonxoff=args.xonxoff, rtscts=args.rtscts,
+        dsrdtr=args.dsrdtr, dtr=args.dtr, rts=args.rts,
+    )
+    if args.framing == "auto":
+        frame_name, _probe = tr.detect_framing("DevInfo")
+    else:
+        tr.set_framing(args.framing)
+        tr.probe("DevInfo")
+        frame_name = args.framing
+    print(f"[*] цель: оптопорт {args.serial_port} · кадр {frame_name}")
+    return tr
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--host", required=True)
-    ap.add_argument("--port", type=int, required=True)
+    ap.add_argument("--transport", choices=["tcp", "serial"], default="tcp",
+                    help="tcp — командный сервер (напр. in.tehnomer.ru), serial — оптопорт")
+    tcp_g = ap.add_argument_group("--transport tcp")
+    tcp_g.add_argument("--host")
+    tcp_g.add_argument("--port", type=int)
+    tcp_g.add_argument("--terminator", choices=["none", "cr", "lf", "crlf"], default="crlf")
+    ser_g = ap.add_argument_group("--transport serial")
+    ser_g.add_argument("--serial-port", help="напр. COM3 или /dev/ttyUSB0")
+    ser_g.add_argument("--baud", type=int, default=9600)
+    ser_g.add_argument("--framing", choices=["auto", *transports.FRAMINGS], default="auto")
+    ser_g.add_argument("--bytesize", type=int, choices=[5, 6, 7, 8], default=8)
+    ser_g.add_argument("--parity", choices=["N", "E", "O", "M", "S"], default="N")
+    ser_g.add_argument("--stopbits", type=float, choices=[1, 1.5, 2], default=1)
+    ser_g.add_argument("--idle-gap", type=float, default=0.25)
+    ser_g.add_argument("--read-retries", type=int, default=1)
+    ser_g.add_argument("--xonxoff", action="store_true")
+    ser_g.add_argument("--rtscts", action="store_true")
+    ser_g.add_argument("--dsrdtr", action="store_true")
+    ser_g.add_argument("--dtr", action="store_true")
+    ser_g.add_argument("--rts", action="store_true")
     ap.add_argument("--command", default="Server_MT", help="какую команду слать (по умолчанию Server_MT)")
     ap.add_argument("--count", type=int, default=20, help="сколько раз подряд запросить")
     ap.add_argument("--delay", type=float, default=0.2, help="пауза между запросами, сек")
     ap.add_argument("--timeout", type=float, default=5.0)
-    ap.add_argument("--terminator", choices=["none", "cr", "lf", "crlf"], default="crlf")
     args = ap.parse_args(argv)
 
-    terms = {"none": b"", "cr": b"\r", "lf": b"\n", "crlf": b"\r\n"}
-    print(f"[*] цель: {args.host}:{args.port} · команда: {args.command!r} · попыток: {args.count}")
+    tr = open_transport(args)
+    print(f"    команда: {args.command!r} · попыток: {args.count}")
 
     responses: list[bytes] = []
     samples: list[dict] = []
     for i in range(1, args.count + 1):
-        tr = transports.TcpServerTransport(args.host, args.port, timeout=args.timeout,
-                                            terminator=terms[args.terminator])
         t_wall = time.time()
         t0 = time.monotonic()
         try:

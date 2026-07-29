@@ -1,3 +1,4 @@
+4.18.0 · smt_server_mt_probe: поддержка оптопорта (--transport serial) при физическом доступе к прибору
 4.17.1 · smt_server_mt_probe: анализ предсказуемости нонса (коллизии, χ², монотонность, корреляция со временем)
 4.17.0 · smt_server_mt_probe: активная проверка Server_MT на своём TCP-сервере (стабильность/replay)
 4.16.0 · smt_rogue_server: режим server_mt (replay/forge токен(33)+тег(4)) + GUI
