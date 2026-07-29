@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.18.1.
+"""Графический интерфейс контроллера SMT v4.19.0.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -29,6 +29,65 @@ from smt_gui_support import (  # noqa: F401
 )
 from smt_logging import configure_logging
 
+# Команды, чей каталог заявляет простой тип (enum/цел/f), но чей обработчик в
+# прошивке реально читает/пишет СОСТАВНОЕ значение из нескольких чисел
+# (найдено smt_catalog_audit.py, подтверждено разбором дизассемблера).
+# Запись всегда идёт через ';' (число полей проверяется прошивкой строго —
+# отправка одного числа для этих команд не пройдёт). Чтение отдаёт через ','
+# либо ';' в зависимости от обработчика — парсер ниже пробует оба варианта.
+# Там, где обработчик не даёт стопроцентной уверенности в смысле поля,
+# подпись честно помечена как предположительная — читайте текущее значение
+# и сверяйте с реальным расписанием/порогами на приборе.
+COMPOUND_FIELDS: dict[str, list[str]] = {
+    "MODE_TRANSFER": [
+        "Режим (0=расписание, 1=по событию)",
+        "Поле 2 (предположительно день)",
+        "Поле 3 (предположительно день)",
+        "Поле 4 (предположительно день)",
+        "Поле 5 (предположительно час)",
+    ],
+    "ArcNumRecords": [
+        "Поле 1 (совпадает с параметрами MODE_TRANSFER)",
+        "Поле 2 (совпадает с параметрами MODE_TRANSFER)",
+        "Поле 3 (совпадает с параметрами MODE_TRANSFER)",
+        "Поле 4 (совпадает с параметрами MODE_TRANSFER)",
+    ],
+    "SELF_BORDER": [
+        "Порог 1 (0.0–1.0)",
+        "Порог 2 (0.0–1.0)",
+        "Порог 3 (0.0–1.0)",
+    ],
+    "EXT_MAX_TEMP": [
+        "Поле 1 (крупный масштаб, до ~3600)",
+        "Поле 2 (< поля 1)",
+        "Поле 3 (< поля 2)",
+    ],
+    "REV_FL_OFF_PER_S": [
+        "Верхний порог",
+        "Нижний порог",
+        "Поле 3 (< верхнего порога)",
+    ],
+    "N_GasLMesTime": [
+        "Индекс/тип (цел)",
+        "Флаг (цел)",
+        "Значение 1 (float)",
+        "Значение 2 (float)",
+        "Значение 3 (float)",
+    ],
+    "KALMAN_BORDER_L": [
+        "Канал 1", "Канал 2", "Канал 3", "Канал 4", "Канал 5", "Канал 6",
+    ],
+}
+
+
+def _split_compound(text: str) -> list[str]:
+    """Разбирает ответ прибора на составные поля: пробует ';', затем ','."""
+    text = (text or "").strip()
+    if text.startswith("="):
+        text = text[1:]
+    sep = ";" if ";" in text else ","
+    return [p.strip() for p in text.split(sep) if p.strip() != ""]
+
 
 def build_app(root, selftest=False):
     import tkinter as tk
@@ -41,13 +100,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.18.1",
+        diag_folder, application="gui", version="4.19.0",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.18.1 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.19.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     # Окно не должно вылезать за экран (иначе лог внизу обрезается) — размер
     # считается от фактического разрешения, а не берётся фиксированным.
     _sw, _sh = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -350,6 +409,50 @@ def build_app(root, selftest=False):
     opt_cb.grid(row=1, column=2, sticky="e")
     opt_cb.bind("<<ComboboxSelected>>",
                 lambda e: val_var.set(opt_cb.get().split(" ", 1)[0]) if opt_cb.get() else None)
+
+    # Составные команды (MODE_TRANSFER и др.) — вместо одной строки показываем
+    # по подписанному полю на каждое числовое значение (см. COMPOUND_FIELDS).
+    compound_frame = ttk.Frame(io)
+    compound_frame.grid(row=1, column=0, columnspan=3, sticky="ew", padx=4)
+    compound_frame.grid_remove()
+    compound_entries: list[tuple[ttk.Label, ttk.Entry, tk.StringVar]] = []
+    for _i in range(max(len(v) for v in COMPOUND_FIELDS.values())):
+        _var = tk.StringVar()
+        _lbl = ttk.Label(compound_frame, text="", width=34, anchor="w")
+        _lbl.grid(row=_i, column=0, sticky="w", pady=1)
+        _ent = ttk.Entry(compound_frame, textvariable=_var, width=14)
+        _ent.grid(row=_i, column=1, sticky="w", padx=4, pady=1)
+        compound_entries.append((_lbl, _ent, _var))
+
+    def show_compound_fields(name: str | None):
+        labels = COMPOUND_FIELDS.get(name) if name else None
+        if not labels:
+            compound_frame.grid_remove()
+            val_ent.grid()
+            opt_cb.grid()
+            return
+        val_ent.grid_remove()
+        opt_cb.grid_remove()
+        for i, (lbl, ent, _var) in enumerate(compound_entries):
+            if i < len(labels):
+                lbl.config(text=labels[i])
+                lbl.grid(); ent.grid()
+            else:
+                lbl.grid_remove(); ent.grid_remove()
+        compound_frame.grid()
+
+    def compound_value_to_write() -> str:
+        labels = COMPOUND_FIELDS.get(state["selected"]["name"], [])
+        return ";".join(compound_entries[i][2].get().strip() for i in range(len(labels)))
+
+    def fill_compound_from_reading(name: str, value: str):
+        labels = COMPOUND_FIELDS.get(name)
+        if not labels:
+            return
+        parts = _split_compound(value)
+        for i, part in enumerate(parts[:len(labels)]):
+            compound_entries[i][2].set(part)
+
     now_btn = ttk.Button(io, text="сейчас", width=8,
         command=lambda: val_var.set(datetime.datetime.now().strftime("%d.%m.%y,%H:%M:%S")))
     now_btn.grid(row=2, column=2, sticky="e")
@@ -440,7 +543,8 @@ def build_app(root, selftest=False):
                                 else "работает в обе стороны: чтение и запись"))
         opts = value_options(c)
         opt_cb.config(values=opts); opt_cb.set("")
-        now_btn.grid() if "дата" in typ else now_btn.grid_remove()
+        show_compound_fields(c["name"])
+        now_btn.grid() if ("дата" in typ and c["name"] not in COMPOUND_FIELDS) else now_btn.grid_remove()
         read_btn.state(["!disabled"] if can_r else ["disabled"])
         write_btn.state(["!disabled"] if (can_w_dir and can_w_access) else ["disabled"])
         act_btn.state(["!disabled"] if can_a else ["disabled"])
@@ -472,6 +576,8 @@ def build_app(root, selftest=False):
         if not state["selected"]:
             return
         name = state["selected"]["name"]
+        if name in COMPOUND_FIELDS:
+            val_var.set(compound_value_to_write())
         if name in READING_COMMANDS:
             if not state["expert"]:
                 messagebox.showwarning("Запись показаний", "Включи Экспертный режим.")
@@ -2684,6 +2790,9 @@ ENDIF
                         name, value, ts = payload
                         if name == "KFACTOR" and value:
                             kf_current_lbl.config(text=value, foreground="#333")
+                        if (name in COMPOUND_FIELDS and state["selected"]
+                                and state["selected"]["name"] == name):
+                            fill_compound_from_reading(name, value)
                         if state.get("monitoring") and name in state.get("monitor_names", []):
                             row = (ts, name, value)
                             state["monitor_rows"].append(row)
