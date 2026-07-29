@@ -186,6 +186,8 @@ class Backend(threading.Thread):
                 if op == "connect" or isinstance(exc, getattr(sc, "TransportError", OSError)):
                     self._close()
                     self.post("status", ("off", ""))
+                if op == "connect":
+                    self.post("connect_error", str(exc))
             finally:
                 duration_ms = (time.perf_counter_ns() - started_ns) / 1_000_000
                 self._diag("task.end", status=outcome, details={"op": op, "task": task},

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.14.0.
+"""Графический интерфейс контроллера SMT v4.18.1.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -41,14 +41,19 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.14.0",
+        diag_folder, application="gui", version="4.18.1",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.14.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
-    root.geometry("1220x850")
+    root.title("Контроллер устройства 4.18.1 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    # Окно не должно вылезать за экран (иначе лог внизу обрезается) — размер
+    # считается от фактического разрешения, а не берётся фиксированным.
+    _sw, _sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    _win_w, _win_h = min(1220, _sw - 40), min(850, _sh - 80)
+    root.geometry(f"{_win_w}x{_win_h}+{max(0, (_sw - _win_w) // 2)}+{max(0, (_sh - _win_h) // 2)}")
+    root.minsize(min(900, _win_w), min(560, _win_h))
 
     state = {"selected": None, "connected": False, "expert": False,
              "mode": "off", "current_snapshot": {}, "loaded_snapshot": {},
@@ -2836,6 +2841,8 @@ ENDIF
                             transport_cb.state(["!disabled"])
                             audit_conn_lbl.config(text="○ прибор не подключён", foreground="#b00")
                             update_transport_fields()
+                    elif kind == "connect_error":
+                        messagebox.showerror("Подключение не удалось", str(payload))
                 except Exception:
                     import traceback
                     traceback.print_exc()
