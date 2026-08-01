@@ -550,8 +550,30 @@ class SpiWorker(QtCore.QThread):
             self.done.emit(False, str(e), None)
 
 
+# Каталог распространённых SPI-FRAM: (короткое имя, объём КБ, байт адреса).
+# Значения FM25V04B/FM25L02 — типовые, при необходимости правьте вручную.
+CHIP_CATALOG = [
+    ("MB85RS64",   8,   2),
+    ("MB85RS128B", 16,  2),
+    ("MB85RS256",  32,  2),
+    ("MB85RS512",  64,  2),
+    ("MB85RS1MT",  128, 3),
+    ("MB85RS2MTA", 256, 3),
+    ("FM25V01",    16,  2),
+    ("FM25V02",    32,  2),
+    ("FM25V04B",   64,  2),
+    ("FM25V05",    64,  2),
+    ("FM25V10",    128, 3),
+    ("FM25V20A",   256, 3),
+    ("FM25W256",   32,  2),
+    ("FM25L16B",   2,   2),
+    ("FM25L02",    32,  2),
+]
+MANUAL_CHIP = "Другая (вручную)"
+
+
 class SpiPanel(QtWidgets.QGroupBox):
-    """Панель прямой записи в SPI-память конкретной микросхемы (через CH341A)."""
+    """Панель прямой записи в SPI-память с выбором микросхемы (через CH341A)."""
 
     def __init__(self, chip_name: str, default_size_kb: int, default_addr_bytes: int,
                  editor_provider: Optional[Callable[[], Optional[bytearray]]] = None,
@@ -559,12 +581,27 @@ class SpiPanel(QtWidgets.QGroupBox):
         super().__init__(f"Прямая запись в SPI · {chip_name}", parent)
         self.chip_name = chip_name
         self.editor_provider = editor_provider
+        # карта: короткое имя -> (КБ, байт адреса)
+        self._chip_map = {name: (kb, ab) for name, kb, ab in CHIP_CATALOG}
         self.spi = Ch341Spi(0)
         self.worker: Optional[SpiWorker] = None
 
         g = QtWidgets.QGridLayout(self)
         g.setHorizontalSpacing(10)
         g.setVerticalSpacing(10)
+
+        # --- выбор микросхемы ---
+        self.combo_chip = QtWidgets.QComboBox()
+        for name, kb, ab in CHIP_CATALOG:
+            self.combo_chip.addItem(f"{name} · {kb} КБ · {ab} б", name)
+        self.combo_chip.addItem(MANUAL_CHIP, None)
+        idx = self.combo_chip.findData(chip_name)
+        if idx < 0:
+            idx = self.combo_chip.findData(MANUAL_CHIP)  # запасной вариант
+        self.combo_chip.setCurrentIndex(max(0, idx))
+        self.combo_chip.currentIndexChanged.connect(self.on_chip_changed)
+        g.addWidget(QtWidgets.QLabel("Микросхема:"), 0, 0)
+        g.addWidget(self.combo_chip, 0, 1, 1, 4)
 
         # --- строка подключения ---
         self.btn_conn = QtWidgets.QPushButton("Подключить CH341")
@@ -575,9 +612,9 @@ class SpiPanel(QtWidgets.QGroupBox):
         self.lbl_conn = QtWidgets.QLabel("Не подключено")
         self.lbl_conn.setObjectName("PillOff")
         self.lbl_conn.setAlignment(QtCore.Qt.AlignCenter)
-        g.addWidget(self.btn_conn, 0, 0)
-        g.addWidget(self.spin_index, 0, 1)
-        g.addWidget(self.lbl_conn, 0, 2, 1, 3)
+        g.addWidget(self.btn_conn, 1, 0)
+        g.addWidget(self.spin_index, 1, 1)
+        g.addWidget(self.lbl_conn, 1, 2, 1, 3)
 
         # --- параметры чипа ---
         self.spin_size = QtWidgets.QSpinBox()
@@ -589,11 +626,11 @@ class SpiPanel(QtWidgets.QGroupBox):
         self.combo_addr.setCurrentText(str(default_addr_bytes))
         self.btn_id = QtWidgets.QPushButton("ID / статус")
         self.btn_id.clicked.connect(self.read_id)
-        g.addWidget(QtWidgets.QLabel("Объём:"), 1, 0)
-        g.addWidget(self.spin_size, 1, 1)
-        g.addWidget(QtWidgets.QLabel("Адрес, байт:"), 1, 2)
-        g.addWidget(self.combo_addr, 1, 3)
-        g.addWidget(self.btn_id, 1, 4)
+        g.addWidget(QtWidgets.QLabel("Объём:"), 2, 0)
+        g.addWidget(self.spin_size, 2, 1)
+        g.addWidget(QtWidgets.QLabel("Адрес, байт:"), 2, 2)
+        g.addWidget(self.combo_addr, 2, 3)
+        g.addWidget(self.btn_id, 2, 4)
 
         # --- действия ---
         self.btn_read = QtWidgets.QPushButton("Считать чип → файл")
@@ -605,28 +642,40 @@ class SpiPanel(QtWidgets.QGroupBox):
         self.btn_write_buf.clicked.connect(self.write_from_editor)
         self.btn_verify = QtWidgets.QPushButton("Проверить с файлом")
         self.btn_verify.clicked.connect(self.verify_file)
-        g.addWidget(self.btn_read, 2, 0)
-        g.addWidget(self.btn_write_file, 2, 1)
-        g.addWidget(self.btn_write_buf, 2, 2, 1, 2)
-        g.addWidget(self.btn_verify, 2, 4)
+        g.addWidget(self.btn_read, 3, 0)
+        g.addWidget(self.btn_write_file, 3, 1)
+        g.addWidget(self.btn_write_buf, 3, 2, 1, 2)
+        g.addWidget(self.btn_verify, 3, 4)
 
         # --- прогресс + статус ---
         self.progress = QtWidgets.QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        g.addWidget(self.progress, 3, 0, 1, 5)
+        g.addWidget(self.progress, 4, 0, 1, 5)
 
         self.status = QtWidgets.QLabel(
             "CH341 не подключён. Подключите адаптер и нажмите «Подключить CH341»."
         )
         self.status.setObjectName("StatusLabel")
         self.status.setWordWrap(True)
-        g.addWidget(self.status, 4, 0, 1, 5)
+        g.addWidget(self.status, 5, 0, 1, 5)
 
         if editor_provider is None:
             self.btn_write_buf.setVisible(False)
 
         self._update_conn_ui()
+
+    def on_chip_changed(self):
+        """Подставить объём и разрядность адреса выбранной микросхемы."""
+        name = self.combo_chip.currentData()
+        if name is None:  # «Другая (вручную)» — не трогаем параметры
+            self.setTitle("Прямая запись в SPI · вручную")
+            return
+        self.chip_name = name
+        self.setTitle(f"Прямая запись в SPI · {name}")
+        kb, ab = self._chip_map[name]
+        self.spin_size.setValue(kb)
+        self.combo_addr.setCurrentText(str(ab))
 
     # ---- параметры ----
     def size_bytes(self) -> int:
@@ -668,7 +717,7 @@ class SpiPanel(QtWidgets.QGroupBox):
     def _busy(self, busy: bool):
         for w in (self.btn_conn, self.btn_id, self.btn_read, self.btn_write_file,
                   self.btn_write_buf, self.btn_verify, self.spin_size,
-                  self.combo_addr, self.spin_index):
+                  self.combo_addr, self.spin_index, self.combo_chip):
             w.setEnabled(not busy)
         if not busy:
             self._update_conn_ui()
