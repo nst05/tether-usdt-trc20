@@ -482,7 +482,7 @@ class Ch341Spi:
         # 9 «холостых» байт достаточно для manufacturer/continuation/product id
         return bytes(self._xfer(bytes([self.CMD_RDID]) + bytes(9))[1:])
 
-    def read(self, size: int, addr_bytes: int,
+    def read(self, size: int, addr_bytes: int, start: int = 0,
              progress: Optional[Callable[[int, int], None]] = None,
              should_stop: Optional[Callable[[], bool]] = None) -> bytearray:
         out = bytearray()
@@ -490,7 +490,7 @@ class Ch341Spi:
         a = 0
         while a < size:
             n = min(chunk_max, size - a)
-            cmd = bytes([self.CMD_READ]) + self._addr(a, addr_bytes) + bytes(n)
+            cmd = bytes([self.CMD_READ]) + self._addr(start + a, addr_bytes) + bytes(n)
             r = self._xfer(cmd)
             out += r[1 + addr_bytes:1 + addr_bytes + n]
             a += n
@@ -500,9 +500,10 @@ class Ch341Spi:
                 break
         return out
 
-    def write(self, data: bytes, addr_bytes: int,
+    def write(self, data: bytes, addr_bytes: int, start: int = 0,
               progress: Optional[Callable[[int, int], None]] = None,
               should_stop: Optional[Callable[[], bool]] = None) -> int:
+        """Записать data начиная с адреса start (только эти адреса)."""
         size = len(data)
         chunk_max = self.MAX_XFER - (1 + addr_bytes)
         a = 0
@@ -510,7 +511,7 @@ class Ch341Spi:
             n = min(chunk_max, size - a)
             # WREN обязателен перед каждой командой записи (WEL сбрасывается).
             self._xfer(bytes([self.CMD_WREN]))
-            cmd = bytes([self.CMD_WRITE]) + self._addr(a, addr_bytes) + bytes(data[a:a + n])
+            cmd = bytes([self.CMD_WRITE]) + self._addr(start + a, addr_bytes) + bytes(data[a:a + n])
             self._xfer(cmd)
             a += n
             if progress:
@@ -550,6 +551,40 @@ class SpiWorker(QtCore.QThread):
             self.done.emit(False, str(e), None)
 
 
+def diff_regions(original: bytes, patched: bytes, merge_gap: int = 16):
+    """Список изменённых участков (offset, bytes) между original и patched.
+
+    Возвращаются только адреса, где содержимое отличается, — чтобы писать в
+    память не весь дамп, а лишь необходимые байты. Близко расположенные участки
+    (в пределах merge_gap) объединяются, чтобы одна запись покрывала запись
+    целиком (X, Y, контрольный байт) вместо множества мелких транзакций.
+    """
+    n = min(len(original), len(patched))
+    runs = []  # список (start, end_inclusive)
+    start = None
+    last = -1
+    for i in range(n):
+        if original[i] != patched[i]:
+            if start is None:
+                start = i
+            last = i
+        elif start is not None:
+            runs.append((start, last))
+            start = None
+    if start is not None:
+        runs.append((start, last))
+    if len(patched) > n:  # patched длиннее исходного — хвост считаем изменённым
+        runs.append((n, len(patched) - 1))
+
+    merged = []
+    for s, e in runs:
+        if merged and s - merged[-1][1] - 1 <= merge_gap:
+            merged[-1] = (merged[-1][0], e)
+        else:
+            merged.append((s, e))
+    return [(s, bytes(patched[s:e + 1])) for s, e in merged]
+
+
 # Каталог распространённых SPI-FRAM: (короткое имя, объём КБ, байт адреса).
 # Значения FM25V04B/FM25L02 — типовые, при необходимости правьте вручную.
 CHIP_CATALOG = [
@@ -581,11 +616,12 @@ class SpiPanel(QtWidgets.QGroupBox):
     """
 
     def __init__(self, chip_name: str, default_size_kb: int, default_addr_bytes: int,
-                 editor_provider: Optional[Callable[[], Optional[bytearray]]] = None,
+                 region_provider: Optional[Callable[[], Optional[list]]] = None,
                  parent=None):
         super().__init__(f"Прямая запись в SPI · {chip_name}", parent)
         self.chip_name = chip_name
-        self.editor_provider = editor_provider
+        # region_provider() -> список (offset, bytes) изменённых участков, либо None
+        self.region_provider = region_provider
         self._chip_map = {name: (kb, ab) for name, kb, ab in CHIP_CATALOG}
         self.spi = Ch341Spi(0)
         self.worker: Optional[SpiWorker] = None
@@ -612,9 +648,9 @@ class SpiPanel(QtWidgets.QGroupBox):
         g.addWidget(self.lbl_conn, 0, 2)
         g.setColumnStretch(1, 1)
 
-        # --- ручные параметры (видны только для «Другая (вручную)») ---
-        self.manual_row = QtWidgets.QWidget()
-        m = QtWidgets.QHBoxLayout(self.manual_row)
+        # --- параметры памяти (общие для обоих режимов: выбор чипа и «вручную») ---
+        self.params_row = QtWidgets.QWidget()
+        m = QtWidgets.QHBoxLayout(self.params_row)
         m.setContentsMargins(0, 0, 0, 0)
         m.setSpacing(10)
         self.spin_size = QtWidgets.QSpinBox()
@@ -633,8 +669,7 @@ class SpiPanel(QtWidgets.QGroupBox):
         m.addWidget(self.combo_addr)
         m.addWidget(self.spin_index)
         m.addStretch(1)
-        self.manual_row.setVisible(False)
-        g.addWidget(self.manual_row, 1, 0, 1, 3)
+        g.addWidget(self.params_row, 1, 0, 1, 3)
 
         # --- главное действие + чтение ---
         self.btn_write = QtWidgets.QPushButton("⤓  Записать в память")
@@ -660,7 +695,7 @@ class SpiPanel(QtWidgets.QGroupBox):
         self.status.setWordWrap(True)
         g.addWidget(self.status, 4, 0, 1, 3)
 
-        if editor_provider is None:
+        if region_provider is None:
             self.btn_write.setVisible(False)
 
         self._update_conn_ui()
@@ -673,11 +708,10 @@ class SpiPanel(QtWidgets.QGroupBox):
         return int(self.combo_addr.currentText())
 
     def on_chip_changed(self):
-        """Подставить объём/адрес выбранной микросхемы; показать ручные поля."""
+        """Подставить объём/адрес выбранной микросхемы. Поля остаются видимыми и
+        редактируемыми в обоих режимах (каталог и «вручную»)."""
         name = self.combo_chip.currentData()
-        manual = name is None
-        self.manual_row.setVisible(manual)
-        if manual:
+        if name is None:  # «Другая (вручную)» — значения не трогаем, поля активны
             self.setTitle("Прямая запись в SPI · вручную")
             return
         self.chip_name = name
@@ -711,7 +745,7 @@ class SpiPanel(QtWidgets.QGroupBox):
     # ---- вспомогательное ----
     def _busy(self, busy: bool):
         for w in (self.btn_write, self.btn_read, self.combo_chip,
-                  self.manual_row):
+                  self.params_row):
             w.setEnabled(not busy)
 
     def _on_progress(self, cur: int, total: int):
@@ -735,32 +769,35 @@ class SpiPanel(QtWidgets.QGroupBox):
         self.worker.done.connect(_finished)
         self.worker.start()
 
-    def _fit_to_chip(self, data: bytearray) -> bytearray:
-        size = self.size_bytes()
-        if len(data) > size:
-            QtWidgets.QMessageBox.warning(
-                self, "Внимание",
-                f"Данные ({len(data)} байт) больше объёма {self.chip_name} "
-                f"({size} байт). Будут записаны первые {size} байт."
-            )
-            return data[:size]
-        return data
-
-    # ---- основное действие: запись буфера + автопроверка ----
+    # ---- основное действие: запись только изменённых адресов + автопроверка ----
     def write_to_memory(self):
-        if self.editor_provider is None:
+        if self.region_provider is None:
             return
-        data = self.editor_provider()
-        if not data:
+        regions = self.region_provider()
+        if regions is None:
             self.status.setText("Нет данных: откройте файл и задайте значения "
                                 "на этой вкладке, затем нажмите «Записать в память».")
             return
-        data = self._fit_to_chip(bytearray(data))
+
+        # Отбросить участки за пределами объёма выбранной микросхемы.
+        size = self.size_bytes()
+        regions = [(off, d) for off, d in regions if off < size]
+        clipped = [(off, d[:size - off]) for off, d in regions]
+        regions = [(off, d) for off, d in clipped if d]
+
+        if not regions:
+            self.status.setText("Нет изменений — запись в память не требуется.")
+            return
+
+        total = sum(len(d) for _, d in regions)
+        span_lo = min(off for off, _ in regions)
+        span_hi = max(off + len(d) for off, d in regions)
 
         r = QtWidgets.QMessageBox.question(
             self, "Запись в память",
-            f"Записать {len(data)} байт в {self.chip_name}?\n"
-            "Текущее содержимое микросхемы будет перезаписано.",
+            f"Записать только изменённые адреса в {self.chip_name}?\n"
+            f"Участков: {len(regions)}, всего {total} байт "
+            f"(диапазон 0x{span_lo:06X}–0x{span_hi - 1:06X}).",
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             QtWidgets.QMessageBox.No,
         )
@@ -770,30 +807,46 @@ class SpiPanel(QtWidgets.QGroupBox):
             return
 
         ab = self.addr_bytes()
-        payload = bytes(data)
-        n = len(payload)
 
         def fn(progress, stop):
             # фаза 1 — запись (0..50%), фаза 2 — проверка (50..100%)
-            self.spi.write(payload, ab,
-                           progress=lambda c, t: progress(c, t * 2), should_stop=stop)
-            back = self.spi.read(n, ab,
-                                 progress=lambda c, t: progress(t + c, t * 2),
-                                 should_stop=stop)
-            diff = next((i for i in range(n) if back[i] != payload[i]), None)
-            return diff
+            written = 0
+            for off, d in regions:
+                self.spi.write(d, ab, start=off,
+                               progress=lambda c, t, b=written: progress(b + c, total * 2),
+                               should_stop=stop)
+                written += len(d)
+                if stop():
+                    return None
+            verified = 0
+            bad = []
+            for off, d in regions:
+                back = self.spi.read(len(d), ab, start=off,
+                                     progress=lambda c, t, b=verified: progress(total + b + c, total * 2),
+                                     should_stop=stop)
+                if bytes(back) != bytes(d):
+                    k = next((i for i in range(len(d)) if back[i] != d[i]), 0)
+                    bad.append(off + k)
+                verified += len(d)
+            return bad
 
-        def ok(diff):
-            if diff is None:
-                self.status.setText(f"Записано и проверено: {n} байт в "
-                                    f"{self.chip_name} — совпадение OK.")
-            else:
+        def ok(bad):
+            if bad is None:
+                self.status.setText("Операция прервана.")
+            elif not bad:
                 self.status.setText(
-                    f"Записано {n} байт, но проверка не прошла: расхождение по "
-                    f"адресу 0x{diff:06X}. Проверьте контакт и питание чипа."
+                    f"Записано и проверено: {total} байт в {len(regions)} участк(ах) "
+                    f"{self.chip_name} — совпадение OK."
+                )
+            else:
+                addrs = ", ".join(f"0x{a:06X}" for a in bad[:5])
+                self.status.setText(
+                    f"Записано {total} байт, но проверка не прошла по адресам: {addrs}. "
+                    "Проверьте контакт и питание чипа."
                 )
 
-        self._run(fn, f"Запись и проверка {n} байт в {self.chip_name}…", ok)
+        self._run(fn, f"Запись и проверка {total} байт ({len(regions)} участк.) "
+                      f"в {self.chip_name}…", ok)
 
     # ---- чтение микросхемы в файл ----
     def read_to_file(self):
@@ -964,7 +1017,7 @@ class FormatATab(QtWidgets.QWidget):
         root.addWidget(self.btn_apply)
 
         # Прямая запись в SPI (MB85RS256, 32 КБ, 2 байта адреса)
-        self.spi_panel = SpiPanel("MB85RS256", 32, 2, editor_provider=self.build_patched_bytes)
+        self.spi_panel = SpiPanel("MB85RS256", 32, 2, region_provider=self.build_write_regions)
         root.addWidget(self.spi_panel)
 
         root.addStretch(1)
@@ -1116,6 +1169,19 @@ class FormatATab(QtWidgets.QWidget):
         for s in TOTAL_RECORD_OFFSETS:
             write_record(data, s, totp, totq, factor)
         return data
+
+    def build_write_regions(self):
+        """Только изменённые участки (offset, bytes) для записи в SPI."""
+        if not self._current_path:
+            return None
+        try:
+            original = open(self._current_path, "rb").read()
+        except Exception:
+            return None
+        patched = self.build_patched_bytes()
+        if patched is None:
+            return None
+        return diff_regions(original, patched)
 
     def apply_patch(self):
         if not self._current_path:
@@ -1309,7 +1375,7 @@ class FormatBTab(QtWidgets.QWidget):
         root.addWidget(hint)
 
         # Прямая запись в SPI (FM25V04B, 64 КБ, 2 байта адреса — уточните при необходимости)
-        self.spi_panel = SpiPanel("FM25V04B", 64, 2, editor_provider=self.build_patched_bytes)
+        self.spi_panel = SpiPanel("FM25V04B", 64, 2, region_provider=self.build_write_regions)
         root.addWidget(self.spi_panel)
 
         root.addStretch(1)
@@ -1438,6 +1504,15 @@ class FormatBTab(QtWidgets.QWidget):
         out_buf = bytearray(self.buf)
         patch_total_record(out_buf, new_x, new_y, factor)
         return out_buf
+
+    def build_write_regions(self):
+        """Только изменённые участки (offset, bytes) для записи в SPI."""
+        if self.buf is None:
+            return None
+        patched = self.build_patched_bytes()
+        if patched is None:
+            return None
+        return diff_regions(bytes(self.buf), patched)
 
     def save_copy(self):
         if self.buf is None or self.path_in is None:
@@ -1584,7 +1659,7 @@ class FormatCTab(QtWidgets.QWidget):
         root.addWidget(self.btn_apply)
 
         # Прямая запись в SPI (FM25L02, 32 КБ, 2 байта адреса — уточните при необходимости)
-        self.spi_panel = SpiPanel("FM25L02", 32, 2, editor_provider=self.build_patched_bytes)
+        self.spi_panel = SpiPanel("FM25L02", 32, 2, region_provider=self.build_write_regions)
         root.addWidget(self.spi_panel)
 
         root.addStretch(1)
@@ -1673,6 +1748,19 @@ class FormatCTab(QtWidgets.QWidget):
                 format_c_set_x_keep_y(data, base + blk + FORMAT_C_BLOCK_CHANNEL_A, channel_a, factor)
                 format_c_set_x_keep_y(data, base + blk + FORMAT_C_BLOCK_CHANNEL_B, channel_b, factor)
         return data
+
+    def build_write_regions(self):
+        """Только изменённые участки (offset, bytes) для записи в SPI."""
+        if not self._current_path:
+            return None
+        try:
+            original = open(self._current_path, "rb").read()
+        except Exception:
+            return None
+        patched = self.build_patched_bytes()
+        if patched is None:
+            return None
+        return diff_regions(original, patched)
 
     def apply_patch(self):
         if not self._current_path:
