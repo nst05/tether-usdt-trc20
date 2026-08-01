@@ -573,7 +573,12 @@ MANUAL_CHIP = "Другая (вручную)"
 
 
 class SpiPanel(QtWidgets.QGroupBox):
-    """Панель прямой записи в SPI-память с выбором микросхемы (через CH341A)."""
+    """Панель прямой записи в SPI-память (через CH341A).
+
+    Основное действие — одна кнопка «Записать в память»: она сама подключает
+    адаптер, пишет текущий буфер редактора в выбранную микросхему и сразу
+    проверяет результат. Дополнительно есть чтение микросхемы в файл.
+    """
 
     def __init__(self, chip_name: str, default_size_kb: int, default_addr_bytes: int,
                  editor_provider: Optional[Callable[[], Optional[bytearray]]] = None,
@@ -581,7 +586,6 @@ class SpiPanel(QtWidgets.QGroupBox):
         super().__init__(f"Прямая запись в SPI · {chip_name}", parent)
         self.chip_name = chip_name
         self.editor_provider = editor_provider
-        # карта: короткое имя -> (КБ, байт адреса)
         self._chip_map = {name: (kb, ab) for name, kb, ab in CHIP_CATALOG}
         self.spi = Ch341Spi(0)
         self.worker: Optional[SpiWorker] = None
@@ -590,33 +594,29 @@ class SpiPanel(QtWidgets.QGroupBox):
         g.setHorizontalSpacing(10)
         g.setVerticalSpacing(10)
 
-        # --- выбор микросхемы ---
+        # --- выбор микросхемы + индикатор подключения ---
         self.combo_chip = QtWidgets.QComboBox()
         for name, kb, ab in CHIP_CATALOG:
             self.combo_chip.addItem(f"{name} · {kb} КБ · {ab} б", name)
         self.combo_chip.addItem(MANUAL_CHIP, None)
         idx = self.combo_chip.findData(chip_name)
-        if idx < 0:
-            idx = self.combo_chip.findData(MANUAL_CHIP)  # запасной вариант
         self.combo_chip.setCurrentIndex(max(0, idx))
         self.combo_chip.currentIndexChanged.connect(self.on_chip_changed)
-        g.addWidget(QtWidgets.QLabel("Микросхема:"), 0, 0)
-        g.addWidget(self.combo_chip, 0, 1, 1, 4)
 
-        # --- строка подключения ---
-        self.btn_conn = QtWidgets.QPushButton("Подключить CH341")
-        self.btn_conn.clicked.connect(self.toggle_conn)
-        self.spin_index = QtWidgets.QSpinBox()
-        self.spin_index.setRange(0, 15)
-        self.spin_index.setPrefix("устр. ")
         self.lbl_conn = QtWidgets.QLabel("Не подключено")
         self.lbl_conn.setObjectName("PillOff")
         self.lbl_conn.setAlignment(QtCore.Qt.AlignCenter)
-        g.addWidget(self.btn_conn, 1, 0)
-        g.addWidget(self.spin_index, 1, 1)
-        g.addWidget(self.lbl_conn, 1, 2, 1, 3)
 
-        # --- параметры чипа ---
+        g.addWidget(QtWidgets.QLabel("Микросхема:"), 0, 0)
+        g.addWidget(self.combo_chip, 0, 1)
+        g.addWidget(self.lbl_conn, 0, 2)
+        g.setColumnStretch(1, 1)
+
+        # --- ручные параметры (видны только для «Другая (вручную)») ---
+        self.manual_row = QtWidgets.QWidget()
+        m = QtWidgets.QHBoxLayout(self.manual_row)
+        m.setContentsMargins(0, 0, 0, 0)
+        m.setSpacing(10)
         self.spin_size = QtWidgets.QSpinBox()
         self.spin_size.setRange(1, 4096)
         self.spin_size.setSuffix(" КБ")
@@ -624,58 +624,46 @@ class SpiPanel(QtWidgets.QGroupBox):
         self.combo_addr = QtWidgets.QComboBox()
         self.combo_addr.addItems(["1", "2", "3"])
         self.combo_addr.setCurrentText(str(default_addr_bytes))
-        self.btn_id = QtWidgets.QPushButton("ID / статус")
-        self.btn_id.clicked.connect(self.read_id)
-        g.addWidget(QtWidgets.QLabel("Объём:"), 2, 0)
-        g.addWidget(self.spin_size, 2, 1)
-        g.addWidget(QtWidgets.QLabel("Адрес, байт:"), 2, 2)
-        g.addWidget(self.combo_addr, 2, 3)
-        g.addWidget(self.btn_id, 2, 4)
+        self.spin_index = QtWidgets.QSpinBox()
+        self.spin_index.setRange(0, 15)
+        self.spin_index.setPrefix("устр. ")
+        m.addWidget(QtWidgets.QLabel("Объём:"))
+        m.addWidget(self.spin_size)
+        m.addWidget(QtWidgets.QLabel("Адрес, байт:"))
+        m.addWidget(self.combo_addr)
+        m.addWidget(self.spin_index)
+        m.addStretch(1)
+        self.manual_row.setVisible(False)
+        g.addWidget(self.manual_row, 1, 0, 1, 3)
 
-        # --- действия ---
-        self.btn_read = QtWidgets.QPushButton("Считать чип → файл")
+        # --- главное действие + чтение ---
+        self.btn_write = QtWidgets.QPushButton("⤓  Записать в память")
+        self.btn_write.setObjectName("PrimaryButton")
+        self.btn_write.setMinimumHeight(46)
+        self.btn_write.clicked.connect(self.write_to_memory)
+        self.btn_read = QtWidgets.QPushButton("Считать в файл")
         self.btn_read.clicked.connect(self.read_to_file)
-        self.btn_write_file = QtWidgets.QPushButton("Файл → чип")
-        self.btn_write_file.clicked.connect(self.write_from_file)
-        self.btn_write_buf = QtWidgets.QPushButton("Буфер редактора → чип")
-        self.btn_write_buf.setObjectName("PrimaryButton")
-        self.btn_write_buf.clicked.connect(self.write_from_editor)
-        self.btn_verify = QtWidgets.QPushButton("Проверить с файлом")
-        self.btn_verify.clicked.connect(self.verify_file)
-        g.addWidget(self.btn_read, 3, 0)
-        g.addWidget(self.btn_write_file, 3, 1)
-        g.addWidget(self.btn_write_buf, 3, 2, 1, 2)
-        g.addWidget(self.btn_verify, 3, 4)
+        g.addWidget(self.btn_write, 2, 0, 1, 2)
+        g.addWidget(self.btn_read, 2, 2)
 
         # --- прогресс + статус ---
         self.progress = QtWidgets.QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        g.addWidget(self.progress, 4, 0, 1, 5)
+        g.addWidget(self.progress, 3, 0, 1, 3)
 
         self.status = QtWidgets.QLabel(
-            "CH341 не подключён. Подключите адаптер и нажмите «Подключить CH341»."
+            "Готово к работе. Подключите CH341 и нажмите «Записать в память» — "
+            "адаптер подключится автоматически."
         )
         self.status.setObjectName("StatusLabel")
         self.status.setWordWrap(True)
-        g.addWidget(self.status, 5, 0, 1, 5)
+        g.addWidget(self.status, 4, 0, 1, 3)
 
         if editor_provider is None:
-            self.btn_write_buf.setVisible(False)
+            self.btn_write.setVisible(False)
 
         self._update_conn_ui()
-
-    def on_chip_changed(self):
-        """Подставить объём и разрядность адреса выбранной микросхемы."""
-        name = self.combo_chip.currentData()
-        if name is None:  # «Другая (вручную)» — не трогаем параметры
-            self.setTitle("Прямая запись в SPI · вручную")
-            return
-        self.chip_name = name
-        self.setTitle(f"Прямая запись в SPI · {name}")
-        kb, ab = self._chip_map[name]
-        self.spin_size.setValue(kb)
-        self.combo_addr.setCurrentText(str(ab))
 
     # ---- параметры ----
     def size_bytes(self) -> int:
@@ -684,51 +672,52 @@ class SpiPanel(QtWidgets.QGroupBox):
     def addr_bytes(self) -> int:
         return int(self.combo_addr.currentText())
 
+    def on_chip_changed(self):
+        """Подставить объём/адрес выбранной микросхемы; показать ручные поля."""
+        name = self.combo_chip.currentData()
+        manual = name is None
+        self.manual_row.setVisible(manual)
+        if manual:
+            self.setTitle("Прямая запись в SPI · вручную")
+            return
+        self.chip_name = name
+        self.setTitle(f"Прямая запись в SPI · {name}")
+        kb, ab = self._chip_map[name]
+        self.spin_size.setValue(kb)
+        self.combo_addr.setCurrentText(str(ab))
+
     # ---- подключение ----
-    def toggle_conn(self):
+    def _ensure_open(self) -> bool:
+        """Открыть CH341 при необходимости. Возвращает True, если подключено."""
         if self.spi.is_open:
-            self.spi.close()
-            self.status.setText("Отключено от CH341.")
-        else:
-            self.spi.index = int(self.spin_index.value())
-            try:
-                self.spi.open()
-            except Ch341Error as e:
-                self._error(str(e))
-                self._update_conn_ui()
-                return
-            self.status.setText(f"CH341 подключён (устройство {self.spi.index}). "
-                                f"Готов к работе с {self.chip_name}.")
+            return True
+        self.spi.index = int(self.spin_index.value())
+        try:
+            self.spi.open()
+        except Ch341Error as e:
+            self.status.setText("Ошибка подключения: " + str(e))
+            self._update_conn_ui()
+            return False
         self._update_conn_ui()
+        return True
 
     def _update_conn_ui(self):
         on = self.spi.is_open
-        self.btn_conn.setText("Отключить CH341" if on else "Подключить CH341")
         self.lbl_conn.setText("Подключено" if on else "Не подключено")
         self.lbl_conn.setObjectName("PillOn" if on else "PillOff")
         self.lbl_conn.style().unpolish(self.lbl_conn)
         self.lbl_conn.style().polish(self.lbl_conn)
-        self.spin_index.setEnabled(not on)
-        for b in (self.btn_id, self.btn_read, self.btn_write_file,
-                  self.btn_write_buf, self.btn_verify):
-            b.setEnabled(on)
 
     # ---- вспомогательное ----
     def _busy(self, busy: bool):
-        for w in (self.btn_conn, self.btn_id, self.btn_read, self.btn_write_file,
-                  self.btn_write_buf, self.btn_verify, self.spin_size,
-                  self.combo_addr, self.spin_index, self.combo_chip):
+        for w in (self.btn_write, self.btn_read, self.combo_chip,
+                  self.manual_row):
             w.setEnabled(not busy)
-        if not busy:
-            self._update_conn_ui()
 
     def _on_progress(self, cur: int, total: int):
         self.progress.setValue(int(cur * 100 / total) if total else 0)
 
     def _run(self, fn: Callable, busy_label: str, on_success: Callable):
-        if not self.spi.is_open:
-            self._error("Сначала подключите CH341.")
-            return
         self._busy(True)
         self.progress.setValue(0)
         self.status.setText(busy_label)
@@ -746,19 +735,6 @@ class SpiPanel(QtWidgets.QGroupBox):
         self.worker.done.connect(_finished)
         self.worker.start()
 
-    def _error(self, text: str):
-        self.status.setText(text)
-
-    def _confirm_write(self, what: str, nbytes: int) -> bool:
-        r = QtWidgets.QMessageBox.question(
-            self, "Подтверждение записи",
-            f"Записать {what} ({nbytes} байт) в микросхему {self.chip_name}?\n"
-            "Текущее содержимое чипа будет перезаписано.",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        return r == QtWidgets.QMessageBox.Yes
-
     def _fit_to_chip(self, data: bytearray) -> bytearray:
         size = self.size_bytes()
         if len(data) > size:
@@ -770,19 +746,59 @@ class SpiPanel(QtWidgets.QGroupBox):
             return data[:size]
         return data
 
-    # ---- операции ----
-    def read_id(self):
-        def fn(_progress, _stop):
-            return (self.spi.read_id(), self.spi.read_status())
+    # ---- основное действие: запись буфера + автопроверка ----
+    def write_to_memory(self):
+        if self.editor_provider is None:
+            return
+        data = self.editor_provider()
+        if not data:
+            self.status.setText("Нет данных: откройте файл и задайте значения "
+                                "на этой вкладке, затем нажмите «Записать в память».")
+            return
+        data = self._fit_to_chip(bytearray(data))
 
-        def ok(res):
-            idb, st = res
-            id_hex = " ".join(f"{b:02X}" for b in idb)
-            self.status.setText(f"ID: {id_hex}\nРегистр статуса: 0x{st:02X}")
+        r = QtWidgets.QMessageBox.question(
+            self, "Запись в память",
+            f"Записать {len(data)} байт в {self.chip_name}?\n"
+            "Текущее содержимое микросхемы будет перезаписано.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if r != QtWidgets.QMessageBox.Yes:
+            return
+        if not self._ensure_open():
+            return
 
-        self._run(fn, "Чтение ID…", ok)
+        ab = self.addr_bytes()
+        payload = bytes(data)
+        n = len(payload)
 
+        def fn(progress, stop):
+            # фаза 1 — запись (0..50%), фаза 2 — проверка (50..100%)
+            self.spi.write(payload, ab,
+                           progress=lambda c, t: progress(c, t * 2), should_stop=stop)
+            back = self.spi.read(n, ab,
+                                 progress=lambda c, t: progress(t + c, t * 2),
+                                 should_stop=stop)
+            diff = next((i for i in range(n) if back[i] != payload[i]), None)
+            return diff
+
+        def ok(diff):
+            if diff is None:
+                self.status.setText(f"Записано и проверено: {n} байт в "
+                                    f"{self.chip_name} — совпадение OK.")
+            else:
+                self.status.setText(
+                    f"Записано {n} байт, но проверка не прошла: расхождение по "
+                    f"адресу 0x{diff:06X}. Проверьте контакт и питание чипа."
+                )
+
+        self._run(fn, f"Запись и проверка {n} байт в {self.chip_name}…", ok)
+
+    # ---- чтение микросхемы в файл ----
     def read_to_file(self):
+        if not self._ensure_open():
+            return
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, f"Сохранить дамп {self.chip_name}", f"{self.chip_name}_dump.bin",
             "BIN (*.bin);;All files (*.*)")
@@ -804,79 +820,6 @@ class SpiPanel(QtWidgets.QGroupBox):
             self.status.setText(f"Считано {len(res)} байт из {self.chip_name} → {path}")
 
         self._run(fn, f"Чтение {size} байт из {self.chip_name}…", ok)
-
-    def write_from_file(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Выберите BIN для записи в чип", "", "BIN (*.bin *.BIN);;All files (*.*)")
-        if not path:
-            return
-        try:
-            data = bytearray(open(path, "rb").read())
-        except Exception as e:  # noqa: BLE001
-            self._error(f"Ошибка чтения файла: {e}")
-            return
-        data = self._fit_to_chip(data)
-        if not self._confirm_write(f"файл «{os.path.basename(path)}»", len(data)):
-            return
-        self._do_write(data, f"файла {os.path.basename(path)}")
-
-    def write_from_editor(self):
-        if self.editor_provider is None:
-            return
-        data = self.editor_provider()
-        if not data:
-            self._error("Нет данных в редакторе: откройте файл и задайте значения "
-                        "на этой вкладке.")
-            return
-        data = self._fit_to_chip(bytearray(data))
-        if not self._confirm_write("текущий буфер редактора", len(data)):
-            return
-        self._do_write(data, "буфера редактора")
-
-    def _do_write(self, data: bytearray, src_label: str):
-        ab = self.addr_bytes()
-
-        def fn(progress, stop):
-            return self.spi.write(bytes(data), ab, progress=progress, should_stop=stop)
-
-        def ok(n):
-            self.status.setText(f"Записано {n} байт ({src_label}) в {self.chip_name}. "
-                                "Рекомендуется проверка (verify).")
-
-        self._run(fn, f"Запись {len(data)} байт в {self.chip_name}…", ok)
-
-    def verify_file(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Файл для сравнения с чипом", "", "BIN (*.bin *.BIN);;All files (*.*)")
-        if not path:
-            return
-        try:
-            ref = bytearray(open(path, "rb").read())
-        except Exception as e:  # noqa: BLE001
-            self._error(f"Ошибка чтения файла: {e}")
-            return
-        ref = self._fit_to_chip(ref)
-        n = len(ref)
-        ab = self.addr_bytes()
-
-        def fn(progress, stop):
-            return self.spi.read(n, ab, progress=progress, should_stop=stop)
-
-        def ok(res):
-            chip = bytes(res)
-            if chip == bytes(ref):
-                self.status.setText(f"Проверка пройдена: {n} байт совпадают с файлом.")
-                return
-            diff = next((i for i in range(min(len(chip), n)) if chip[i] != ref[i]), None)
-            if diff is None:
-                self.status.setText("Различие: разная длина данных.")
-            else:
-                self.status.setText(
-                    f"Несовпадение по адресу 0x{diff:06X}: "
-                    f"чип=0x{chip[diff]:02X}, файл=0x{ref[diff]:02X}."
-                )
-
-        self._run(fn, f"Проверка {n} байт…", ok)
 
     def shutdown(self):
         if self.worker is not None and self.worker.isRunning():
