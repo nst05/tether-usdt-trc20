@@ -89,11 +89,6 @@ class SmtClient:
         Повтор допустим только для чтения; запись/действие не повторяются никогда."""
         name = command_name(cmd)
         mut = mutating if mutating is not None else is_mutating_command(cmd)
-        if mut and name in PROTECTED_WRITE and not expert:
-            raise PermissionError(
-                f"[отказ] '{name}' — критичная команда. Доступна только в экспертном "
-                "режиме (осознанная запись/действие в физический прибор)."
-            )
         safe = retry_safe and not mut
         started_ns = time.perf_counter_ns()
         if self.diagnostic is not None:
