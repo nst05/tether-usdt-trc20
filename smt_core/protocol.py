@@ -18,7 +18,7 @@ from collections.abc import Callable
 AUTH_ERROR_MARKERS = (
     "ERROR", "DENIED", "FAIL", "WRONG", "INVALID", "UNAUTHORIZED",
     "INCORRECT_PASSWORD", "INCORRECT_VALUE", "ACCESS_DENIED", "ERROR_COMMAND",
-    "NAK", "BUSY",
+    "NAK", "BUSY", "READ ONLY", "READONLY",
     "ОШИБ", "ОТКАЗ", "НЕВЕР", "ЗАПРЕЩ",
 )
 

@@ -286,6 +286,7 @@ def test_empty_and_protocol_auth_errors_are_rejected():
     assert sc.response_has_auth_error(b"") is True
     assert sc.response_has_auth_error(b"INCORRECT_PASSWORD\r\n") is True
     assert sc.response_has_auth_error(b"ACCESS_DENIED\r\n") is True
+    assert sc.response_has_auth_error(b"Read only\r\n") is True
     assert sc.response_has_auth_error(b"OK\r\n") is False
 
 

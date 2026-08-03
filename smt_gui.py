@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.20.4.
+"""Графический интерфейс контроллера SMT v4.20.5.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -178,13 +178,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.20.4",
+        diag_folder, application="gui", version="4.20.5",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.20.4 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.20.5 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     # Окно не должно вылезать за экран (иначе лог внизу обрезается) — размер
     # считается от фактического разрешения, а не берётся фиксированным.
     _sw, _sh = root.winfo_screenwidth(), root.winfo_screenheight()
