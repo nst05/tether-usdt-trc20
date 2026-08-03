@@ -8,6 +8,8 @@ import os
 import sys
 import tempfile
 
+import pytest
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
@@ -70,6 +72,27 @@ def test_framing_detect_via_devinfo():
     name, resp = tr.detect_framing("DevInfo")
     assert name == "cr"
     assert b"DevInfo=SIM" in resp
+
+
+def test_framing_detect_via_devinfo_passport_without_devinfo_field():
+    # часть реальных прошивок отвечает на DevInfo не полем `DevInfo=...`,
+    # а паспортным блоком из других имён (DevName/DEVICE_SN/...) — такой
+    # ответ должен приниматься как успешный, а не отбрасываться.
+    passport = (b"DevName=SMT Smart-G4\r\nDEVICE_SN=10121100048\r\n"
+                b"SW_VER=01.253587\r\nOK\r\n")
+
+    def responder(tx):
+        return passport if tx == b"DevInfo\r\n" else b""
+    tr = _transport(responder)
+    name, resp = tr.detect_framing("DevInfo")
+    assert name == "crlf"
+    assert resp == passport
+
+    def error_responder(tx):
+        return b"ERROR_CRC\tEB727940\r\n"
+    tr2 = _transport(error_responder)
+    with pytest.raises(sc.TransportError):
+        tr2.detect_framing("DevInfo")
 
 
 def test_echo_stripped_but_value_preserved():

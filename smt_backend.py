@@ -270,7 +270,7 @@ class Backend(threading.Thread):
         except Exception:
             tr.close(); raise
         self.cli = sc.SmtClient(tr); self.mode = "serial"; self._echo_noted = False
-        self._wire_log(); devinfo = sc.value_of(probe, name="DevInfo")
+        self._wire_log(); devinfo = sc.describe_passport(probe)
         self.post("status", ("serial", tr.line_description()))
         self.log("ok", f"[+] Реальный прибор подключён: {tr.line_description()} · "
                        f"кадр {frame_name} · ответ {tr.last_latency_ms} мс")
@@ -291,7 +291,7 @@ class Backend(threading.Thread):
         self.log("ok", f"[*] Подключаю реальный TCP-шлюз {host}:{port}…")
         probe = tr.probe("DevInfo")
         self.cli = sc.SmtClient(tr); self.mode = "tcp"; self._wire_log()
-        devinfo = sc.value_of(probe, name="DevInfo")
+        devinfo = sc.describe_passport(probe)
         self.post("status", ("tcp", f"{host}:{port}"))
         self.log("ok", f"[+] TCP-шлюз доступен: {host}:{port} · ответ {tr.last_latency_ms} мс")
         self.log("io", f"     DevInfo = {pretty(devinfo)!r}")
@@ -798,7 +798,7 @@ class Backend(threading.Thread):
             self.log("io", "     " + pretty(sc.decode_response(raw).strip()))
             return
         raw = tr.probe("DevInfo")
-        self._wire_log(); value = sc.value_of(raw, name="DevInfo")
+        self._wire_log(); value = sc.describe_passport(raw)
         self.log("ok", f"[OK] Канал отвечает · {self.mode} · кадр "
                        f"{getattr(tr, 'frame_name', '—') or 'ручной'} · "
                        f"{tr.last_latency_ms} мс · RX {len(tr.last_raw_rx)} байт" +

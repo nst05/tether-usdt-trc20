@@ -9,6 +9,7 @@ from __future__ import annotations
 __all__ = [
     "AUTH_ERROR_MARKERS", "FRAMINGS", "TransportError", "PortClosedError",
     "decode_response", "strip_optical_echo", "value_of", "response_has_auth_error",
+    "describe_passport",
 ]
 
 import re
@@ -92,6 +93,12 @@ def _contains_named_response(command: str, raw: bytes) -> bool:
     """Проверка ответа на безопасную пробу кадрирования."""
     text = decode_response(raw)
     name = command.strip()
+    if name.casefold() == "devinfo":
+        # Часть прошивок отвечает на DevInfo не полем `DevInfo=...`, а
+        # паспортным блоком из других имён (DevName/DEVICE_SN/...). Критерий
+        # успеха здесь — общее правило §8 протокола: ответ не пустой и без
+        # маркеров отказа, а не конкретное имя поля.
+        return not response_has_auth_error(raw)
     return bool(re.search(r"(?:^|[\r\n{;])\s*" + re.escape(name) + r"\s*=", text, re.I))
 
 _VAL_CHUNK = r"(?:(?!;\s*[A-Za-zА-Яа-я_]\w*\s*=)[^\r\n}])*"
@@ -117,6 +124,16 @@ def value_of(resp: bytes, name: str | None = None):
     if matches:
         return matches[-1].strip().rstrip(";").strip()
     return text.strip(";\r\n{} ") or None
+
+
+def describe_passport(raw: bytes) -> str:
+    """Показ ответа на DevInfo для лога: поле DevInfo, если оно есть, иначе
+    весь паспортный блок (прошивки без поля DevInfo возвращают DevName/
+    DEVICE_SN/... построчно)."""
+    value = value_of(raw, "DevInfo")
+    if value is not None:
+        return value
+    return decode_response(raw).strip("\x00 \t\r\n")
 
 
 def response_has_auth_error(raw: bytes | bytearray | str | None) -> bool:

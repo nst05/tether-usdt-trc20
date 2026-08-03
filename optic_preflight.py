@@ -104,7 +104,7 @@ def main():
         print(f"[OK] Само-эхо: {'обнаружено и снято' if transport.last_echo_removed else 'не обнаружено'}")
         print(hexdump("TX", transport.last_tx))
         print(hexdump("RX", transport.last_raw_rx))
-        print(f"DevInfo = {sc.value_of(raw, 'DevInfo')!r}")
+        print(f"DevInfo = {sc.describe_passport(raw)!r}")
 
         client = sc.SmtClient(transport)
         if args.probe and args.probe != "DevInfo":
