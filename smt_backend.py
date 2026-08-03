@@ -251,8 +251,13 @@ class Backend(threading.Thread):
         )
         try:
             if requested == "auto":
-                frame_name, probe = tr.detect_framing("DevInfo")
+                def _on_attempt(name, try_no, ok, raw):
+                    mark = "✓ ответ есть" if ok else "нет ответа"
+                    self.log("io", f"    · пробую кадр {name} (попытка {try_no}/2)… {mark}")
+                self.log("ok", "[*] Порт открыт, определяю кадрирование (auto)…")
+                frame_name, probe = tr.detect_framing("DevInfo", on_attempt=_on_attempt)
             else:
+                self.log("ok", f"[*] Порт открыт, кадрирование зафиксировано: {requested}")
                 tr.set_framing(requested); probe = tr.probe("DevInfo"); frame_name = requested
         except Exception:
             tr.close(); raise

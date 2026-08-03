@@ -78,12 +78,15 @@ class SessionRecorder:
         return datetime.datetime.now().isoformat(timespec="milliseconds")
 
     # ── публичное ──
-    def header(self, *, port: str, baud: int, framing: str, devinfo: str = "") -> None:
+    def header(self, *, port: str, baud: int, framing: str, devinfo: str = "",
+               transport: str = "", line: str = "") -> None:
         ts = self._now()
         self._write(
             {"type": "session", "ts": ts, "port": port, "baud": baud,
-             "framing": framing, "devinfo": devinfo},
-            f"# сессия {ts} · порт {port} · {baud} 8N1 · кадр {framing}"
+             "framing": framing, "devinfo": devinfo,
+             "transport": transport, "line": line},
+            f"# сессия {ts} · транспорт {transport or '?'} · порт {port} · {baud} 8N1 · кадр {framing}"
+            + (f" · {line}" if line else "")
             + (f" · DevInfo={devinfo!r}" if devinfo else ""),
         )
 

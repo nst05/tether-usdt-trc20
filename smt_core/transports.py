@@ -237,14 +237,22 @@ class OpticTransport:
         self.last_latency_ms = int((time.monotonic() - started) * 1000)
         return clean
 
-    def detect_framing(self, probe_cmd: str = "DevInfo") -> tuple[str, bytes]:
-        """Определить кадрирование только безопасной командой чтения."""
+    def detect_framing(self, probe_cmd: str = "DevInfo", on_attempt=None) -> tuple[str, bytes]:
+        """Определить кадрирование только безопасной командой чтения.
+
+        `on_attempt(name, try_no, ok, raw)` — необязательный колбэк, вызывается
+        после КАЖДОЙ попытки (успешной или нет), чтобы вызывающий код мог
+        показать живой прогресс перебора вместо тишины на 10-20 секунд."""
         with self._lock:
             for name, frame in FRAMINGS.items():
                 # Две попытки полезны при спящем оптопорте; обе являются чтением.
-                for _ in range(2):
+                for try_no in range(1, 3):
                     clean = self._exchange(probe_cmd, frame)
-                    if _contains_named_response(probe_cmd, clean):
+                    ok = _contains_named_response(probe_cmd, clean)
+                    if on_attempt is not None:
+                        with contextlib.suppress(Exception):
+                            on_attempt(name, try_no, ok, clean)
+                    if ok:
                         self.frame_name, self.frame = name, frame
                         self.last_probe_response = clean
                         return name, clean

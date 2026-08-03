@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.20.0.
+"""Графический интерфейс контроллера SMT v4.20.1.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -178,13 +178,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.20.0",
+        diag_folder, application="gui", version="4.20.1",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.20.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.20.1 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     # Окно не должно вылезать за экран (иначе лог внизу обрезается) — размер
     # считается от фактического разрешения, а не берётся фиксированным.
     _sw, _sh = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -210,6 +210,13 @@ def build_app(root, selftest=False):
     transport_cb.pack(side="left", padx=(3, 8))
     conn_btn = ttk.Button(top, text="Подключить"); conn_btn.pack(side="left")
     status_lbl = ttk.Label(top, text="● отключено", foreground="#b00"); status_lbl.pack(side="left", padx=10)
+
+    # Живой прогресс подключения/авторизации — видно сразу под кнопкой, без
+    # переключения на вкладку «Журнал сессии» внизу окна.
+    live_bar = ttk.Frame(root, padding=(6, 0, 6, 4)); live_bar.pack(fill="x")
+    ttk.Label(live_bar, text="Что сейчас происходит:", foreground="#777").pack(side="left")
+    live_status_lbl = ttk.Label(live_bar, text="—", foreground="#555")
+    live_status_lbl.pack(side="left", padx=(6, 0))
 
     def list_ports():
         try:
@@ -327,6 +334,9 @@ def build_app(root, selftest=False):
     def do_connect():
         if state["connected"]:
             task_q.put({"op":"disconnect"}); return
+        live_status_lbl.config(text="запускаю подключение…", foreground="#555")
+        with contextlib.suppress(Exception):
+            nb.select(tab_log)
         label=transport_var.get()
         try:
             common={"op":"connect", "idle_gap":float(idle_gap_var.get() or 0.25)}
@@ -369,6 +379,9 @@ def build_app(root, selftest=False):
     ttk.Entry(top2, textvariable=pw_var, width=12, show="•").pack(side="left", padx=2)
 
     def do_auth():
+        live_status_lbl.config(text="запускаю авторизацию…", foreground="#555")
+        with contextlib.suppress(Exception):
+            nb.select(tab_log)
         task_q.put({"op": "auth", "cred": cred_var.get(), "value": pw_var.get()})
     ttk.Button(top2, text="Аутентифицировать", command=do_auth).pack(side="left", padx=6)
     auth_lbl = ttk.Label(top2, text="○ Provider не подтверждён", foreground="#777")
@@ -2867,6 +2880,9 @@ ENDIF
                 try:
                     if kind == "log":
                         append(*payload)
+                        _tag, _text = payload
+                        _color = {"ok": "#0a7d0a", "err": "#b00", "warn": "#c47f00"}.get(_tag, "#555")
+                        live_status_lbl.config(text=_text.strip().splitlines()[0][:120], foreground=_color)
                     elif kind == "hex":
                         append_hex(payload)
                     elif kind == "reading":

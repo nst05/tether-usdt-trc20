@@ -141,7 +141,10 @@ def test_backend_thread_dispatches_and_quits():
 class FakeOptic(MemoryTransport):
     def __init__(self, port, baud, **kwargs):
         super().__init__(); self.port = port; self.baud = baud
-    def detect_framing(self, command): return "cr", self.probe(command)
+    def detect_framing(self, command, on_attempt=None):
+        if on_attempt is not None:
+            on_attempt("cr", 1, True, b"")
+        return "cr", self.probe(command)
     def set_framing(self, name): self.frame_name = name
 
 
