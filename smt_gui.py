@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.20.1.
+"""Графический интерфейс контроллера SMT v4.20.2.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -178,13 +178,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.20.1",
+        diag_folder, application="gui", version="4.20.2",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.20.1 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.20.2 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     # Окно не должно вылезать за экран (иначе лог внизу обрезается) — размер
     # считается от фактического разрешения, а не берётся фиксированным.
     _sw, _sh = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -411,8 +411,13 @@ def build_app(root, selftest=False):
     exp_lbl = ttk.Label(top2, text="○ эксперт выкл", foreground="#777")
     exp_lbl.pack(side="left")
 
+    # Разделитель между верхней рабочей областью и нижним журналом: обе
+    # части всегда видны и их можно перетаскивать, а не рискуют "уехать"
+    # за нижнюю границу окна на маленьких экранах.
+    vsplit = ttk.Panedwindow(root, orient="vertical"); vsplit.pack(fill="both", expand=True)
+
     # ── верхний нотбук: «Команды» и «Телеметрия» ────────────────────────
-    main_nb = ttk.Notebook(root)
+    main_nb = ttk.Notebook(vsplit)
     tab_cmd = ttk.Frame(main_nb)
     tab_terminal = ttk.Frame(main_nb, padding=6)
     tab_tele = ttk.Frame(main_nb, padding=6)
@@ -429,7 +434,7 @@ def build_app(root, selftest=False):
     main_nb.add(tab_service, text="Сервис · статус · бэкап")
     main_nb.add(tab_dump, text="Дамп W25Q64 · пароли")
     main_nb.add(tab_audit, text="Аудит · Pentest")
-    main_nb.pack(fill="both", expand=True)
+    vsplit.add(main_nb, weight=4)
 
     # ── тело вкладки «Команды»: слева каталог, справа детали+запись ──────
     body = ttk.Panedwindow(tab_cmd, orient="horizontal"); body.pack(fill="both", expand=True)
@@ -1993,7 +1998,9 @@ ENDIF
             foreground="#0a7d0a" if ok_count == len(results) else "#c47f00")
 
     # ── лог: вкладки «Журнал» и «Сырые байты (hex)» ─────────────────────
-    nb = ttk.Notebook(root); nb.pack(fill="both", expand=False)
+    # В той же нижней панели PanedWindow, что и main_nb: гарантированно
+    # видна и её можно перетаскиванием сделать больше/меньше.
+    nb = ttk.Notebook(vsplit); vsplit.add(nb, weight=2)
     tab_log = ttk.Frame(nb, padding=2); nb.add(tab_log, text="Журнал сессии")
     log = scrolledtext.ScrolledText(tab_log, height=12, wrap="word", font=("TkFixedFont", 9))
     log.pack(fill="both", expand=True)
