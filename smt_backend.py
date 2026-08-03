@@ -254,11 +254,19 @@ class Backend(threading.Thread):
                 def _on_attempt(name, try_no, ok, raw):
                     mark = "✓ ответ есть" if ok else "нет ответа"
                     self.log("io", f"    · пробую кадр {name} (попытка {try_no}/2)… {mark}")
+                    self.post("hex", hexdump(f"TX [{name} #{try_no}]", tr.last_tx))
+                    self.post("hex", hexdump(f"RX [{name} #{try_no}]", tr.last_raw_rx or b""))
                 self.log("ok", "[*] Порт открыт, определяю кадрирование (auto)…")
                 frame_name, probe = tr.detect_framing("DevInfo", on_attempt=_on_attempt)
             else:
                 self.log("ok", f"[*] Порт открыт, кадрирование зафиксировано: {requested}")
-                tr.set_framing(requested); probe = tr.probe("DevInfo"); frame_name = requested
+                tr.set_framing(requested)
+                try:
+                    probe = tr.probe("DevInfo")
+                finally:
+                    self.post("hex", hexdump(f"TX [{requested}]", tr.last_tx))
+                    self.post("hex", hexdump(f"RX [{requested}]", tr.last_raw_rx or b""))
+                frame_name = requested
         except Exception:
             tr.close(); raise
         self.cli = sc.SmtClient(tr); self.mode = "serial"; self._echo_noted = False
