@@ -2470,29 +2470,28 @@ ENDIF
 
     # Пароль провайдера
     _mk_row(1, "🔑 Пароль провайдера", cur_provider_var,
-            "Что вписывать: РОВНО 6 символов — обычно 6 цифр, например  123456  или  000111. "
-            "Это новый сервисный пароль, запишется открытым текстом во все копии журнала.")
+            "Сервисный пароль — одно число (например 30) или строка. "
+            "Запишется открытым текстом во все копии журнала.")
     provider_var = tk.StringVar()
     prov_box = ttk.Frame(edit_grid); prov_box.grid(row=1, column=2, sticky="w", padx=2, pady=(4, 0))
     ttk.Entry(prov_box, textvariable=provider_var, width=16).pack(side="left")
-    prov_len_lbl = ttk.Label(prov_box, text="0/6", foreground="#999", width=5)
+    prov_len_lbl = ttk.Label(prov_box, text="", foreground="#999", width=5)
     prov_len_lbl.pack(side="left", padx=3)
 
     # Пароль omega
     _mk_row(3, "🔑 Пароль omega", cur_omega_var,
-            "Что вписывать: РОВНО 6 символов — цифры и/или латинские буквы, например  654321  или  AB12CD. "
+            "Пароль omega — цифры и/или латинские буквы. "
             "Старую omega прибор хранит скрытой (******) и показать её нельзя — но ты можешь задать "
             "здесь НОВУЮ, она запишется открытым текстом.")
     omega_var = tk.StringVar()
     omega_box = ttk.Frame(edit_grid); omega_box.grid(row=3, column=2, sticky="w", padx=2, pady=(4, 0))
     ttk.Entry(omega_box, textvariable=omega_var, width=16).pack(side="left")
-    omega_len_lbl = ttk.Label(omega_box, text="0/6", foreground="#999", width=5)
+    omega_len_lbl = ttk.Label(omega_box, text="", foreground="#999", width=5)
     omega_len_lbl.pack(side="left", padx=3)
 
-    # живой счётчик длины: зелёный при ровно 6 символах
     def _upd_len(var, lbl):
         n = len(var.get().strip())
-        lbl.config(text=f"{n}/6", foreground="#0a7d0a" if n == 6 else ("#999" if n == 0 else "#c47f00"))
+        lbl.config(text=f"{n}", foreground="#0a7d0a" if n > 0 else "#999")
     provider_var.trace_add("write", lambda *_: _upd_len(provider_var, prov_len_lbl))
     omega_var.trace_add("write", lambda *_: _upd_len(omega_var, omega_len_lbl))
 
@@ -2526,15 +2525,9 @@ ENDIF
         level_choice = level_edit_var.get()
         level_code = _LEVEL_LABEL_TO_CODE.get(level_choice)
 
-        # Прошивка принимает пароль ровно из 6 символов — проверяем заранее
         for label, val in (("провайдера", new_provider), ("omega", new_omega)):
-            if val and len(val) != 6:
-                messagebox.showwarning(
-                    "Проверь длину пароля",
-                    f"Пароль {label} = {val!r} содержит {len(val)} символов.\n\n"
-                    "Нужно РОВНО 6 символов (цифры и/или латинские буквы),\n"
-                    "например 123456 или AB12CD.\n\n"
-                    "Прибор пароль другой длины не примет. Исправь и попробуй снова.")
+            if val and len(val) == 0:
+                messagebox.showwarning("Пароль пустой", f"Пароль {label} не может быть пустым.")
                 return
 
         if new_provider:
@@ -2781,12 +2774,14 @@ ENDIF
          "DATETIME, показания. Цель — версия прошивки и что отвечает без пароля.",
          [("▶ Выполнить Recon", _recon)]),
         ("high", "2. Дефолтные пароли провайдера",
-         "Проверить типовые заводские: 123456, 000000, 111111, 112233. Успех = "
-         "дефолт не сменён (частый реальный вход).",
-         [("123456", lambda: _try_default("123456")),
-          ("000000", lambda: _try_default("000000")),
-          ("111111", lambda: _try_default("111111")),
-          ("112233", lambda: _try_default("112233"))]),
+         "Проверить числовые короткие пароли (формат %d из прошивки): 30, 0, 1, 100, "
+         "а также типовые 6-значные: 123456, 000000. Успех = дефолт не сменён.",
+         [("30", lambda: _try_default("30")),
+          ("0", lambda: _try_default("0")),
+          ("1", lambda: _try_default("1")),
+          ("100", lambda: _try_default("100")),
+          ("123456", lambda: _try_default("123456")),
+          ("000000", lambda: _try_default("000000"))]),
         ("crit", "3. Auth-scan — утечка секрета открытым текстом",
          "Гостём запросить PASSWORD_PROVIDER/OMEGA и др. Если прибор отдаёт значение "
          "в ответе — пароль виден без авторизации (критичная утечка F7).",
@@ -2796,7 +2791,7 @@ ENDIF
          "данные, и любые ЗАПИСИ/действия, принятые прибором без авторизации.",
          [("▶ Полный опрос (гость)", lambda: task_q.put({"op": "scan_all"}))]),
         ("high", "5. Брутфорс и лок-аут",
-         "Провайдер 6 знаков. Проверить: есть ли задержка/блокировка после N неверных, "
+         "Провайдер: числовой пароль (например 30). Проверить: есть ли задержка/блокировка после N неверных, "
          "сбрасывается ли счётчик по питанию, отличается ли ответ «неверный» vs «нет "
          "доступа» (оракул). Проводится вручную/наблюдением.",
          []),
