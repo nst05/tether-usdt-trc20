@@ -19,8 +19,8 @@ def authenticate_provider(client, password: str) -> dict:
     активной сессии.
     """
     password = str(password or "")
-    if not password:
-        raise ValueError("Пароль Provider не задан")
+    if len(password) != 6 or not password.isdigit():
+        raise ValueError("Пароль Provider должен содержать ровно 6 цифр")
     raw = client.send(f"PASSWORD_PROVIDER={password}", expert=True, mutating=True)
     if response_has_auth_error(raw):
         raise PermissionError("Прибор отклонил пароль Provider")

@@ -2470,7 +2470,7 @@ ENDIF
 
     # Пароль провайдера
     _mk_row(1, "🔑 Пароль провайдера", cur_provider_var,
-            "Сервисный пароль — одно число (например 30) или строка. "
+            "Сервисный пароль — ровно 6 цифр (например 000000). "
             "Запишется открытым текстом во все копии журнала.")
     provider_var = tk.StringVar()
     prov_box = ttk.Frame(edit_grid); prov_box.grid(row=1, column=2, sticky="w", padx=2, pady=(4, 0))
@@ -2492,7 +2492,14 @@ ENDIF
     def _upd_len(var, lbl):
         n = len(var.get().strip())
         lbl.config(text=f"{n}", foreground="#0a7d0a" if n > 0 else "#999")
-    provider_var.trace_add("write", lambda *_: _upd_len(provider_var, prov_len_lbl))
+
+    def _upd_prov_len(*_):
+        n = len(provider_var.get().strip())
+        prov_len_lbl.config(
+            text=f"{n}/6",
+            foreground="#0a7d0a" if n == 6 else ("#cc0000" if n > 0 else "#999"))
+
+    provider_var.trace_add("write", _upd_prov_len)
     omega_var.trace_add("write", lambda *_: _upd_len(omega_var, omega_len_lbl))
 
     # Уровень доступа — выбор из списка, без байтов
@@ -2525,10 +2532,10 @@ ENDIF
         level_choice = level_edit_var.get()
         level_code = _LEVEL_LABEL_TO_CODE.get(level_choice)
 
-        for label, val in (("провайдера", new_provider), ("omega", new_omega)):
-            if val and len(val) == 0:
-                messagebox.showwarning("Пароль пустой", f"Пароль {label} не может быть пустым.")
-                return
+        if new_provider and (len(new_provider) != 6 or not new_provider.isdigit()):
+            messagebox.showwarning("Пароль провайдера",
+                "Пароль провайдера должен содержать ровно 6 цифр (например 000000).")
+            return
 
         if new_provider:
             plan.append((f"Пароль провайдера:  {cur_provider_var.get()}  →  {new_provider}",
