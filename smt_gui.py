@@ -192,6 +192,42 @@ def build_app(root, selftest=False):
     root.geometry(f"{_win_w}x{_win_h}+{max(0, (_sw - _win_w) // 2)}+{max(0, (_sh - _win_h) // 2)}")
     root.minsize(min(900, _win_w), min(560, _win_h))
 
+    # ── прокручиваемая область окна (Canvas + Scrollbar) ─────────────────
+    _sc_outer = ttk.Frame(root)
+    _sc_outer.pack(fill="both", expand=True)
+    _sc_bar = ttk.Scrollbar(_sc_outer, orient="vertical")
+    _sc_bar.pack(side="right", fill="y")
+    _sc_canvas = tk.Canvas(_sc_outer, yscrollcommand=_sc_bar.set,
+                           borderwidth=0, highlightthickness=0)
+    _sc_canvas.pack(side="left", fill="both", expand=True)
+    _sc_bar.config(command=_sc_canvas.yview)
+    _sc_frame = ttk.Frame(_sc_canvas)
+    _sc_win = _sc_canvas.create_window((0, 0), window=_sc_frame, anchor="nw")
+
+    def _sc_content_resize(_e=None):
+        _sc_canvas.configure(scrollregion=_sc_canvas.bbox("all"))
+
+    def _sc_viewport_resize(e):
+        _sc_canvas.itemconfig(_sc_win, width=e.width)
+        req_h = _sc_frame.winfo_reqheight()
+        _sc_canvas.itemconfig(_sc_win, height=max(req_h, e.height))
+        _sc_canvas.configure(scrollregion=_sc_canvas.bbox("all"))
+
+    _sc_frame.bind("<Configure>", _sc_content_resize)
+    _sc_canvas.bind("<Configure>", _sc_viewport_resize)
+
+    def _sc_mousewheel(event):
+        if isinstance(event.widget, (tk.Text, ttk.Treeview)):
+            return
+        _sc_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    _sc_canvas.bind_all("<MouseWheel>", _sc_mousewheel)
+    # Linux / X11 scroll events
+    _sc_canvas.bind_all("<Button-4>", lambda e: _sc_canvas.yview_scroll(-1, "units")
+                        if not isinstance(e.widget, (tk.Text, ttk.Treeview)) else None)
+    _sc_canvas.bind_all("<Button-5>", lambda e: _sc_canvas.yview_scroll(1, "units")
+                        if not isinstance(e.widget, (tk.Text, ttk.Treeview)) else None)
+
     state = {"selected": None, "connected": False, "expert": False,
              "mode": "off", "current_snapshot": {}, "loaded_snapshot": {},
              "monitoring": False, "monitor_rows": [],
@@ -202,7 +238,7 @@ def build_app(root, selftest=False):
     cmd_history = CommandHistory()
 
     # ── шапка: реальные транспорты ─────────────────────────────────────
-    top = ttk.Frame(root, padding=6); top.pack(fill="x")
+    top = ttk.Frame(_sc_frame, padding=6); top.pack(fill="x")
     ttk.Label(top, text="Транспорт:").pack(side="left")
     transport_var = tk.StringVar(value=settings.get("transport", "Оптопорт / Serial"))
     transport_cb = ttk.Combobox(top, textvariable=transport_var, state="readonly", width=18,
@@ -213,7 +249,7 @@ def build_app(root, selftest=False):
 
     # Живой прогресс подключения/авторизации — видно сразу под кнопкой, без
     # переключения на вкладку «Журнал сессии» внизу окна.
-    live_bar = ttk.Frame(root, padding=(6, 0, 6, 4)); live_bar.pack(fill="x")
+    live_bar = ttk.Frame(_sc_frame, padding=(6, 0, 6, 4)); live_bar.pack(fill="x")
     ttk.Label(live_bar, text="Что сейчас происходит:", foreground="#777").pack(side="left")
     live_status_lbl = ttk.Label(live_bar, text="—", foreground="#555")
     live_status_lbl.pack(side="left", padx=(6, 0))
@@ -249,7 +285,7 @@ def build_app(root, selftest=False):
             hist_load_path(path); main_nb.select(tab_hist)
     ttk.Button(top, text="Открыть flash-дамп…", command=do_dump).pack(side="right")
 
-    conn = ttk.LabelFrame(root, text="Параметры физического подключения", padding=(6, 3))
+    conn = ttk.LabelFrame(_sc_frame, text="Параметры физического подключения", padding=(6, 3))
     conn.pack(fill="x", padx=6, pady=(0, 4))
     for col in range(14): conn.columnconfigure(col, weight=0)
 
@@ -366,7 +402,7 @@ def build_app(root, selftest=False):
     update_transport_fields()
 
     # ── второй ряд: уровень доступа / аутентификация / экспертный режим ──
-    top2 = ttk.Frame(root, padding=(6, 0, 6, 6)); top2.pack(fill="x")
+    top2 = ttk.Frame(_sc_frame, padding=(6, 0, 6, 6)); top2.pack(fill="x")
     ttk.Label(top2, text="Уровень:").pack(side="left")
     level_var = tk.StringVar(value=LEVELS[0])
     ttk.Combobox(top2, textvariable=level_var, values=LEVELS, state="readonly",
@@ -414,7 +450,7 @@ def build_app(root, selftest=False):
     # Разделитель между верхней рабочей областью и нижним журналом: обе
     # части всегда видны и их можно перетаскивать, а не рискуют "уехать"
     # за нижнюю границу окна на маленьких экранах.
-    vsplit = ttk.Panedwindow(root, orient="vertical"); vsplit.pack(fill="both", expand=True)
+    vsplit = ttk.Panedwindow(_sc_frame, orient="vertical"); vsplit.pack(fill="both", expand=True)
 
     # ── верхний нотбук: «Команды» и «Телеметрия» ────────────────────────
     main_nb = ttk.Notebook(vsplit)
