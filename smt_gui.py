@@ -523,8 +523,38 @@ def build_app(root, selftest=False):
     search_var.trace_add("write", refill)
     grp_var.trace_add("write", refill)
 
-    # ── правая панель ───────────────────────────────────────────────────
-    right = ttk.Frame(body, padding=4); body.add(right, weight=2)
+    # ── правая панель (с вертикальным скроллом) ──────────────────────────
+    _rp_outer = ttk.Frame(body, padding=4); body.add(_rp_outer, weight=2)
+    _rp_sb = ttk.Scrollbar(_rp_outer, orient="vertical")
+    _rp_sb.pack(side="right", fill="y")
+    _rp_canvas = tk.Canvas(_rp_outer, yscrollcommand=_rp_sb.set,
+                           borderwidth=0, highlightthickness=0)
+    _rp_canvas.pack(side="left", fill="both", expand=True)
+    _rp_sb.config(command=_rp_canvas.yview)
+    right = ttk.Frame(_rp_canvas)
+    _rp_win = _rp_canvas.create_window((0, 0), window=right, anchor="nw")
+    right.bind("<Configure>",
+               lambda e: _rp_canvas.configure(scrollregion=_rp_canvas.bbox("all")))
+    _rp_canvas.bind("<Configure>",
+                    lambda e: _rp_canvas.itemconfig(_rp_win, width=e.width))
+
+    def _rp_wheel(event):
+        widget = event.widget
+        # передать скролл внутренним Text/Treeview
+        if isinstance(widget, (tk.Text, ttk.Treeview)):
+            return
+        # прокручиваем правую панель только когда мышь над ней
+        try:
+            if not str(widget).startswith(str(_rp_canvas)):
+                return
+        except Exception:
+            pass
+        _rp_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    _rp_canvas.bind("<Enter>",
+                    lambda _: _rp_canvas.bind_all("<MouseWheel>", _rp_wheel))
+    _rp_canvas.bind("<Leave>",
+                    lambda _: _rp_canvas.unbind_all("<MouseWheel>"))
     det = ttk.LabelFrame(right, text="Выбранная команда", padding=6); det.pack(fill="x")
     det_txt = tk.Text(det, height=8, wrap="word"); det_txt.pack(fill="x")
     det_txt.configure(state="disabled")
