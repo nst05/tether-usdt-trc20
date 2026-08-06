@@ -11,16 +11,20 @@ from .protocol import response_has_auth_error, value_of
 
 
 def authenticate_provider(client, password: str) -> dict:
-    """Предъявить штатный шестизначный пароль Provider.
+    """Предъявить пароль Provider.
 
     По описанию прошивки PASSWORD_PROVIDER сам сравнивает введённое значение и
     при успехе переключает внутренний уровень доступа. Дополнительное чтение
     PASWORD_PROVID_VALUE не используется: это отдельный параметр, а не признак
     активной сессии.
+
+    Анализ прошивки STM32L433: пароль хранится в RAM[0x20000709], сравнивается
+    через strcmp() @ 0x801DAD0. Длина не ограничена прошивкой; заводской
+    пароль-кандидат — ``D8B9DE96`` (8 символов, @ 0x08035C27 в flash).
     """
     password = str(password or "")
-    if len(password) != 6 or not password.isdigit():
-        raise ValueError("Пароль Provider должен содержать ровно 6 цифр")
+    if not password or len(password) > 16:
+        raise ValueError("Пароль Provider: от 1 до 16 символов")
     raw = client.send(f"PASSWORD_PROVIDER={password}", expert=True, mutating=True)
     if response_has_auth_error(raw):
         raise PermissionError("Прибор отклонил пароль Provider")

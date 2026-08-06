@@ -179,6 +179,8 @@ class Backend(threading.Thread):
                 elif op == "gsm_init_apn":
                     self._gsm_init_apn(task.get("apn", ""), task.get("user", ""),
                                        task.get("password", ""))
+                elif op == "stlink_write":
+                    self._stlink_write(task)
             except Exception as exc:
                 outcome = "error"
                 failure = exc
@@ -531,8 +533,10 @@ class Backend(threading.Thread):
     }
 
     def _auth(self, cred, value):
-        if cred == "PASSWORD_PROVIDER" and len(str(value)) != 6:
-            raise ValueError("Пароль Provider должен содержать ровно 6 символов")
+        if cred == "PASSWORD_PROVIDER":
+            s = str(value)
+            if not s or len(s) > 16:
+                raise ValueError("Пароль Provider: от 1 до 16 символов")
         self.auth_state = {"level": "guest", "verified": False, "verified_at": 0.0}
         self.post("auth_state", dict(self.auth_state))
         if self.mode != "sms":
@@ -968,6 +972,58 @@ class Backend(threading.Thread):
                 import contextlib as _cl
                 with _cl.suppress(Exception):
                     s.close()
+
+    def _stlink_write(self, task):
+        """Записать байты в RAM прибора через STM32_Programmer_CLI (ST-LINK / SWD).
+
+        Прошивка STM32L433:
+          RAM[0x20000D62] = ACCESS_LEVEL (0x55 = провайдер, сбрасывается при разрыве)
+          RAM[0x20000709] = строка пароля (strcmp @ 0x801DAD0)
+        """
+        import subprocess
+
+        cli_path = str(task.get("cli_path") or "STM32_Programmer_CLI").strip()
+        freq = int(task.get("freq") or 4000)
+        address = int(task.get("address", 0))
+        data_bytes = list(task.get("data_bytes") or [])
+
+        if not data_bytes:
+            raise ValueError("Нет данных для записи")
+        if not 0x20000000 <= address <= 0x2000FFFF:
+            raise ValueError(f"Адрес {hex(address)} вне диапазона RAM STM32L433 "
+                             "(0x20000000 – 0x2000FFFF)")
+
+        hex_data = [hex(b & 0xFF) for b in data_bytes]
+        cmd = [cli_path, "-c", "port=SWD", f"freq={freq}",
+               "-w8", hex(address)] + hex_data
+
+        self.log("ok", f"[ST-LINK] {' '.join(cmd)}")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        except FileNotFoundError:
+            raise RuntimeError(
+                f"STM32_Programmer_CLI не найден: «{cli_path}».\n"
+                "Установи STM32CubeProgrammer и укажи полный путь к CLI.")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("STM32_Programmer_CLI: таймаут 30 с")
+
+        if result.stdout.strip():
+            self.log("io", f"[ST-LINK] stdout: {result.stdout.strip()}")
+        if result.stderr.strip():
+            self.log("warn" if result.returncode == 0 else "err",
+                     f"[ST-LINK] stderr: {result.stderr.strip()}")
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"STM32_Programmer_CLI завершился с кодом {result.returncode}.\n"
+                "Проверь: ST-LINK подключён, прибор питается, SWD не заблокирован.")
+
+        self.log("ok",
+                 f"[ST-LINK] Записано {len(data_bytes)} байт @ {hex(address)} — успешно.")
+        self.post("stlink_done", {
+            "ok": True, "address": address,
+            "data_bytes": data_bytes,
+            "stdout": result.stdout.strip(),
+        })
 
     def _gsm_init_apn(self, apn, user, password):
         send_at = getattr(self.cli.t, "send_at", None)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Графический интерфейс контроллера SMT v4.20.6.
+"""Графический интерфейс контроллера SMT v4.21.0.
 
 Визуальный модуль содержит только построение Tk-интерфейса и обработку событий.
 Транспорт и фоновые операции вынесены в ``smt_backend``/``smt_core``.
@@ -178,13 +178,13 @@ def build_app(root, selftest=False):
     diag_folder = os.path.join(HERE, "diagnostics")
     rotate_diagnostics(diag_folder, max_files=50, max_total_mb=200.0)
     diagnostic = DiagnosticRecorder(
-        diag_folder, application="gui", version="4.20.6",
+        diag_folder, application="gui", version="4.21.0",
         live_sink=lambda event: out_q.put(("diag_event", event)),
     )
     task_q = InstrumentedQueue(queue.Queue(), diagnostic, component="gui")
     backend = Backend(task_q, out_q, critical, actions, catalog, diagnostic=diagnostic); backend.start()
 
-    root.title("Контроллер устройства 4.20.6 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
+    root.title("Контроллер устройства 4.21.0 · 160 команд · AUTH-MODEL/KFACTOR/телеметрия")
     # Окно не должно вылезать за экран (иначе лог внизу обрезается) — размер
     # считается от фактического разрешения, а не берётся фиксированным.
     _sw, _sh = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -414,6 +414,12 @@ def build_app(root, selftest=False):
     pw_var = tk.StringVar()
     ttk.Entry(top2, textvariable=pw_var, width=12, show="•").pack(side="left", padx=2)
 
+    def _fill_fw_default():
+        pw_var.set("D8B9DE96")
+        cred_var.set("PASSWORD_PROVIDER")
+    ttk.Button(top2, text="D8B9DE96 (прошивка)", command=_fill_fw_default,
+               width=16).pack(side="left", padx=(2, 0))
+
     def do_auth():
         live_status_lbl.config(text="запускаю авторизацию…", foreground="#555")
         with contextlib.suppress(Exception):
@@ -462,6 +468,7 @@ def build_app(root, selftest=False):
     tab_service = ttk.Frame(main_nb, padding=6)
     tab_dump = ttk.Frame(main_nb, padding=6)
     tab_audit = ttk.Frame(main_nb, padding=6)
+    tab_stlink = ttk.Frame(main_nb, padding=6)
     main_nb.add(tab_cmd, text="Команды (160)")
     main_nb.add(tab_terminal, text="Транспорт · RAW · SMS")
     main_nb.add(tab_tele, text="Телеметрия")
@@ -470,6 +477,7 @@ def build_app(root, selftest=False):
     main_nb.add(tab_service, text="Сервис · статус · бэкап")
     main_nb.add(tab_dump, text="Дамп W25Q64 · пароли")
     main_nb.add(tab_audit, text="Аудит · Pentest")
+    main_nb.add(tab_stlink, text="Прошивка · ST-LINK")
     vsplit.add(main_nb, weight=4)
 
     # ── тело вкладки «Команды»: слева каталог, справа детали+запись ──────
@@ -2063,6 +2071,231 @@ ENDIF
             text=f"Выполнено {ok_count}/{len(results)} шагов",
             foreground="#0a7d0a" if ok_count == len(results) else "#c47f00")
 
+    # ── вкладка «Прошивка · ST-LINK» ────────────────────────────────────
+    _FW_ACCESS_LEVEL_ADDR = 0x20000D62
+    _FW_PASSWORD_ADDR     = 0x20000709
+    _FW_DEFAULT_PASSWORD  = "D8B9DE96"
+
+    ttk.Label(tab_stlink, wraplength=1100, justify="left",
+              foreground="#8a4b08",
+              text="ST-LINK / SWD — прямая запись в RAM STM32L433 через STM32_Programmer_CLI. "
+                   "Требует физического доступа к отладочному разъёму на плате прибора "
+                   "и подключённого программатора ST-LINK. "
+                   "Не требует оптического подключения и знания актуального пароля."
+              ).pack(anchor="w", pady=(0, 6))
+
+    # ── путь к CLI ────────────────────────────────────────────────────────
+    cli_frame = ttk.LabelFrame(tab_stlink, text="STM32_Programmer_CLI", padding=5)
+    cli_frame.pack(fill="x", pady=(0, 6))
+    cli_bar = ttk.Frame(cli_frame); cli_bar.pack(fill="x")
+    ttk.Label(cli_bar, text="Путь:").pack(side="left")
+    stlink_cli_var = tk.StringVar(value=settings.get("stlink_cli_path", "STM32_Programmer_CLI"))
+    stlink_cli_ent = ttk.Entry(cli_bar, textvariable=stlink_cli_var, width=55)
+    stlink_cli_ent.pack(side="left", padx=3, fill="x", expand=True)
+
+    def _stlink_browse():
+        path = filedialog.askopenfilename(
+            title="STM32_Programmer_CLI",
+            filetypes=[("STM32_Programmer_CLI", "STM32_Programmer_CLI* STM32_Programmer_CLI.exe"),
+                       ("все", "*.*")])
+        if path:
+            stlink_cli_var.set(path)
+    ttk.Button(cli_bar, text="Обзор…", command=_stlink_browse).pack(side="left", padx=2)
+
+    stlink_freq_var = tk.StringVar(value=str(settings.get("stlink_freq", "4000")))
+    ttk.Label(cli_bar, text="freq (кГц):").pack(side="left", padx=(8, 2))
+    ttk.Entry(cli_bar, textvariable=stlink_freq_var, width=6).pack(side="left", padx=2)
+
+    def _stlink_save_cli():
+        save_settings({
+            "stlink_cli_path": stlink_cli_var.get().strip(),
+            "stlink_freq": stlink_freq_var.get().strip(),
+        })
+        append("ok", "[ST-LINK] Настройки CLI сохранены.")
+    ttk.Button(cli_bar, text="Сохранить", command=_stlink_save_cli).pack(side="left", padx=4)
+
+    ttk.Label(cli_frame, foreground="#555", justify="left",
+              text="Windows: полный путь до STM32_Programmer_CLI.exe (например "
+                   "C:\\Program Files\\STMicroelectronics\\STM32Cube\\STM32CubeProgrammer"
+                   "\\bin\\STM32_Programmer_CLI.exe). "
+                   "Linux / macOS: STM32_Programmer_CLI если в PATH."
+              ).pack(anchor="w", pady=(3, 0))
+
+    # ── ACCESS_LEVEL bypass ────────────────────────────────────────────────
+    al_frame = ttk.LabelFrame(tab_stlink,
+                               text="Сброс блокировки — ACCESS_LEVEL = 0x55 (Провайдер)",
+                               padding=5)
+    al_frame.pack(fill="x", pady=(0, 6))
+
+    al_info = ttk.Frame(al_frame); al_info.pack(fill="x", pady=(0, 4))
+    ttk.Label(al_info,
+              text=f"RAM  0x{_FW_ACCESS_LEVEL_ADDR:08X}  ←  0x55",
+              font=("TkFixedFont", 10, "bold"), foreground="#2b2e33").pack(side="left")
+    ttk.Label(al_info,
+              foreground="#8a4b08",
+              text="  ⚠  Временный эффект: ACCESS_LEVEL автоматически обнуляется при "
+                   "разрыве оптической сессии (addr 0x80078F8 прошивки). "
+                   "После записи немедленно подключайся оптически.").pack(side="left", padx=6)
+
+    def _do_stlink_access_level():
+        cli = stlink_cli_var.get().strip()
+        if not cli:
+            messagebox.showwarning("ST-LINK", "Укажи путь к STM32_Programmer_CLI.")
+            return
+        if not messagebox.askyesno(
+                "Запись ACCESS_LEVEL",
+                f"Записать 0x55 в RAM[{hex(_FW_ACCESS_LEVEL_ADDR)}]?\n\n"
+                "Это даст уровень «Провайдер» без знания пароля.\n"
+                "Действие сбрасывается при следующем разрыве/перезагрузке.\n\n"
+                "Требует: ST-LINK подключён, прибор питается.",
+                parent=root):
+            return
+        try:
+            freq = int(stlink_freq_var.get() or 4000)
+        except ValueError:
+            freq = 4000
+        task_q.put({
+            "op": "stlink_write",
+            "cli_path": cli,
+            "freq": freq,
+            "address": _FW_ACCESS_LEVEL_ADDR,
+            "data_bytes": [0x55],
+        })
+        with contextlib.suppress(Exception):
+            nb.select(tab_log)
+
+    ttk.Button(al_frame, text="Записать ACCESS_LEVEL = 0x55  →  немедленный доступ Provider",
+               command=_do_stlink_access_level).pack(anchor="w")
+
+    ttk.Label(al_frame, foreground="#555", justify="left",
+              text="Альтернативное значение 0x66 = уровень «Завод» (factory). "
+                   "Любое другое значение (0x00) = нет доступа."
+              ).pack(anchor="w", pady=(3, 0))
+
+    # ── восстановление пароля ────────────────────────────────────────────
+    pw_frame = ttk.LabelFrame(tab_stlink,
+                               text="Восстановление пароля — запись в RAM",
+                               padding=5)
+    pw_frame.pack(fill="x", pady=(0, 6))
+
+    pw_bar = ttk.Frame(pw_frame); pw_bar.pack(fill="x")
+    ttk.Label(pw_bar,
+              text=f"RAM  0x{_FW_PASSWORD_ADDR:08X}  ←  пароль (strlen ≤ 8 + нулевой байт)",
+              font=("TkFixedFont", 10), foreground="#2b2e33").pack(side="left")
+
+    pw_entry_frame = ttk.Frame(pw_frame); pw_entry_frame.pack(fill="x", pady=4)
+    ttk.Label(pw_entry_frame, text="Новый пароль:").pack(side="left")
+    stlink_pw_var = tk.StringVar(value=_FW_DEFAULT_PASSWORD)
+    ttk.Entry(pw_entry_frame, textvariable=stlink_pw_var, width=14,
+              font=("TkFixedFont", 10)).pack(side="left", padx=4)
+    ttk.Button(pw_entry_frame, text=f"← {_FW_DEFAULT_PASSWORD} (заводской)",
+               command=lambda: stlink_pw_var.set(_FW_DEFAULT_PASSWORD)).pack(side="left", padx=2)
+
+    def _do_stlink_password():
+        cli = stlink_cli_var.get().strip()
+        if not cli:
+            messagebox.showwarning("ST-LINK", "Укажи путь к STM32_Programmer_CLI.")
+            return
+        pw = stlink_pw_var.get()
+        if not pw or len(pw) > 8:
+            messagebox.showwarning("ST-LINK",
+                "Пароль: 1–8 символов (соответствует прошивке STM32L433).")
+            return
+        # Build bytes: password string + null terminator
+        pw_bytes = list(pw.encode("ascii", "replace")) + [0x00]
+        if not messagebox.askyesno(
+                "Запись пароля в RAM",
+                f"Записать пароль «{pw}» ({len(pw_bytes)} байт) в RAM[{hex(_FW_PASSWORD_ADDR)}]?\n\n"
+                "Байты: " + " ".join(f"{b:02X}" for b in pw_bytes) + "\n\n"
+                "После записи используй этот же пароль для оптической авторизации "
+                "(кнопка «D8B9DE96 (прошивка)» в строке аутентификации).",
+                parent=root):
+            return
+        try:
+            freq = int(stlink_freq_var.get() or 4000)
+        except ValueError:
+            freq = 4000
+        task_q.put({
+            "op": "stlink_write",
+            "cli_path": cli,
+            "freq": freq,
+            "address": _FW_PASSWORD_ADDR,
+            "data_bytes": pw_bytes,
+        })
+        with contextlib.suppress(Exception):
+            nb.select(tab_log)
+
+    ttk.Button(pw_entry_frame, text="Записать пароль в RAM",
+               command=_do_stlink_password).pack(side="left", padx=8)
+
+    ttk.Label(pw_frame, foreground="#555", justify="left", wraplength=1100,
+              text=f"Заводской пароль-кандидат «{_FW_DEFAULT_PASSWORD}» обнаружен в прошивке "
+                   f"@ flash 0x08035C27 (между строками INCORRECT_PASSWORD и PASSWORD_PROVIDER). "
+                   "После записи этого пароля в RAM — подключись оптически и нажми "
+                   "«D8B9DE96 (прошивка)» → «Аутентифицировать»."
+              ).pack(anchor="w", pady=(3, 0))
+
+    # ── справка по AUTH-модели прошивки ──────────────────────────────────
+    fw_info_frame = ttk.LabelFrame(tab_stlink,
+                                    text="AUTH-модель STM32L433 · выводы из дизассемблера",
+                                    padding=5)
+    fw_info_frame.pack(fill="both", expand=True, pady=(0, 0))
+
+    fw_info_text = """Модель авторизации (из дизассемблера firmware 256KB, STM32L433 / Technomer SMT40)
+═══════════════════════════════════════════════════════════════════════════════════════════
+
+ACCESS_LEVEL  RAM[0x20000D62]
+  0x55 = Провайдер (provider) — полный доступ по оптопорту
+  0x66 = Завод (factory)      — расширенный сервисный доступ
+  0x00 = Нет доступа          — только «публичные» команды (тип 7, 8, 0x0F)
+
+Гейт авторизации @ 0x8004750:
+  ldr  r0, [0x20000D62]     ; читаем ACCESS_LEVEL
+  cmp  r0, #0x55            ; провайдер?
+  beq  0x8004782            ; → разрешено
+  cmp  r0, #0x66            ; завод?
+  beq  0x8004782            ; → разрешено
+  ; CMD_TYPE == 7 | 8 | 0x0F → тоже разрешено (публичные команды)
+  b    0x80047c2             ; → отказ
+
+Пароль       RAM[0x20000709]
+  Сравнивается через strcmp() @ 0x801DAD0 с данными из оптического фрейма.
+  AUTH-команда принимает значение через optical frame, хэндлер @ 0x800B4B6.
+
+Запись ACCESS_LEVEL=0x55 при успешной авторизации @ 0x8021108.
+Очистка ACCESS_LEVEL=0x00 при разрыве / ошибке @ 0x80078F8  ← важно!
+
+Стек авторизации:
+  GSM-сервер аутентифицировался 3 раза (2026-07-21/22), каждый раз изменяя
+  пароль RAM[0x20000709] через AUTH_CHANGE → оптический пароль перестал совпадать.
+
+Заводской пароль-кандидат: «D8B9DE96» @ flash 0x08035C27
+  Находится между строками INCORRECT_PASSWORD (0x08035C08) и PASSWORD_PROVIDER (0x08035C30).
+
+Идентификатор устройства IEC 62056-21: «SMT-Smart» device @ flash 0x0803520C
+IAR project: D:\\IARProject\\Technomer\\SMT40\\SMT_BootLoader_L433VC_LCD_8\\Src\\main.c
+"""
+
+    fw_info_st = scrolledtext.ScrolledText(fw_info_frame, wrap="none",
+                                           font=("TkFixedFont", 9), height=18)
+    fw_info_st.pack(fill="both", expand=True)
+    fw_info_st.insert("1.0", fw_info_text)
+    fw_info_st.configure(state="disabled")
+
+    # ── обработчик результата ST-LINK ─────────────────────────────────────
+    def _stlink_result(data):
+        if data.get("ok"):
+            addr = data.get("address", 0)
+            n = len(data.get("data_bytes", []))
+            append("ok", f"[ST-LINK] Успешно записано {n} байт @ {hex(addr)}")
+            if addr == _FW_ACCESS_LEVEL_ADDR:
+                append("ok", "[ST-LINK] ACCESS_LEVEL = 0x55 — теперь подключайся оптически!")
+            elif addr == _FW_PASSWORD_ADDR:
+                pw_written = bytes(b for b in data.get("data_bytes", []) if b != 0)
+                pw_str = pw_written.decode("ascii", "replace")
+                append("ok", f"[ST-LINK] Пароль «{pw_str}» записан. "
+                             "Используй его в поле «Логин» → кнопка «D8B9DE96 (прошивка)».")
+
     # ── лог: вкладки «Журнал» и «Сырые байты (hex)» ─────────────────────
     # В той же нижней панели PanedWindow, что и main_nb: гарантированно
     # видна и её можно перетаскиванием сделать больше/меньше.
@@ -3082,6 +3315,8 @@ ENDIF
                     elif kind == "gsm_init_done":
                         _gsm_render(payload)
                         main_nb.select(tab_service)
+                    elif kind == "stlink_done":
+                        _stlink_result(payload)
                     elif kind == "session_file":
                         state["session_file"] = payload
                     elif kind == "password":
