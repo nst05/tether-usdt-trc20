@@ -979,6 +979,11 @@ class Backend(threading.Thread):
         Прошивка STM32L433:
           RAM[0x20000D62] = ACCESS_LEVEL (0x55 = провайдер, сбрасывается при разрыве)
           RAM[0x20000709] = строка пароля (strcmp @ 0x801DAD0)
+
+        ВАЖНО: используется режим HotPlug — CPU не останавливается.
+        Без HotPlug подключение по SWD останавливает ядро (HALT), после
+        отключения отладчика прибор зависает и требует передёргивания питания.
+        Power cycle → RAM сбрасывается → запись теряется. HotPlug решает это.
         """
         import subprocess
 
@@ -986,6 +991,7 @@ class Backend(threading.Thread):
         freq = int(task.get("freq") or 4000)
         address = int(task.get("address", 0))
         data_bytes = list(task.get("data_bytes") or [])
+        hotplug = bool(task.get("hotplug", True))
 
         if not data_bytes:
             raise ValueError("Нет данных для записи")
@@ -994,10 +1000,14 @@ class Backend(threading.Thread):
                              "(0x20000000 – 0x2000FFFF)")
 
         hex_data = [hex(b & 0xFF) for b in data_bytes]
-        cmd = [cli_path, "-c", "port=SWD", f"freq={freq}",
-               "-w8", hex(address)] + hex_data
+        connect_args = ["port=SWD", f"freq={freq}"]
+        if hotplug:
+            connect_args.append("mode=HotPlug")
+        cmd = [cli_path, "-c"] + connect_args + ["-w8", hex(address)] + hex_data
 
-        self.log("ok", f"[ST-LINK] {' '.join(cmd)}")
+        mode_note = " (HotPlug — CPU не останавливается)" if hotplug else " (Normal — CPU остановится!)"
+        self.log("ok", f"[ST-LINK]{mode_note}")
+        self.log("io", f"[ST-LINK] {' '.join(cmd)}")
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         except FileNotFoundError:
@@ -1013,15 +1023,42 @@ class Backend(threading.Thread):
             self.log("warn" if result.returncode == 0 else "err",
                      f"[ST-LINK] stderr: {result.stderr.strip()}")
         if result.returncode != 0:
-            raise RuntimeError(
-                f"STM32_Programmer_CLI завершился с кодом {result.returncode}.\n"
-                "Проверь: ST-LINK подключён, прибор питается, SWD не заблокирован.")
+            # HotPlug может не работать если CPU уже остановлен — пробуем без него
+            if hotplug:
+                self.log("warn", "[ST-LINK] HotPlug не удался — пробую Normal mode (CPU остановится)…")
+                connect_args_fallback = ["port=SWD", f"freq={freq}"]
+                cmd_fb = [cli_path, "-c"] + connect_args_fallback + ["-w8", hex(address)] + hex_data
+                self.log("io", f"[ST-LINK] {' '.join(cmd_fb)}")
+                try:
+                    result = subprocess.run(cmd_fb, capture_output=True, text=True, timeout=30)
+                except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+                    raise RuntimeError(str(exc)) from exc
+                if result.stdout.strip():
+                    self.log("io", f"[ST-LINK] stdout: {result.stdout.strip()}")
+                if result.stderr.strip():
+                    self.log("warn" if result.returncode == 0 else "err",
+                             f"[ST-LINK] stderr: {result.stderr.strip()}")
+                if result.returncode != 0:
+                    raise RuntimeError(
+                        f"STM32_Programmer_CLI завершился с кодом {result.returncode}.\n"
+                        "Проверь: ST-LINK подключён, прибор питается, SWD не заблокирован.")
+                self.log("warn",
+                         "[ST-LINK] Записано через Normal mode — CPU остановлен! "
+                         "После отключения отладчика прибор потребует передёргивания питания, "
+                         "RAM сбросится и запись потеряется. Используй HotPlug.")
+            else:
+                raise RuntimeError(
+                    f"STM32_Programmer_CLI завершился с кодом {result.returncode}.\n"
+                    "Проверь: ST-LINK подключён, прибор питается, SWD не заблокирован.")
 
-        self.log("ok",
-                 f"[ST-LINK] Записано {len(data_bytes)} байт @ {hex(address)} — успешно.")
+        if hotplug and result.returncode == 0:
+            self.log("ok",
+                     f"[ST-LINK] HotPlug: записано {len(data_bytes)} байт @ {hex(address)}. "
+                     "CPU продолжает работать — подключайся оптически СЕЙЧАС, не передёргивай питание!")
         self.post("stlink_done", {
             "ok": True, "address": address,
             "data_bytes": data_bytes,
+            "hotplug": hotplug,
             "stdout": result.stdout.strip(),
         })
 

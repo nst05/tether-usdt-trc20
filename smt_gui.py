@@ -2106,10 +2106,22 @@ ENDIF
     ttk.Label(cli_bar, text="freq (кГц):").pack(side="left", padx=(8, 2))
     ttk.Entry(cli_bar, textvariable=stlink_freq_var, width=6).pack(side="left", padx=2)
 
+    stlink_hotplug_var = tk.BooleanVar(value=bool(settings.get("stlink_hotplug", True)))
+    ttk.Checkbutton(cli_bar, text="HotPlug (CPU не останавливается)",
+                    variable=stlink_hotplug_var).pack(side="left", padx=(12, 2))
+
+    ttk.Label(cli_frame, foreground="#c0392b", wraplength=1100, justify="left",
+              font=("TkDefaultFont", 9, "bold"),
+              text="⚠ HotPlug ОБЯЗАТЕЛЕН если после подключения отладчика требуется "
+                   "передёргивание питания. Без HotPlug SWD останавливает CPU → power cycle → "
+                   "RAM сбрасывается → запись теряется. HotPlug пишет в живую RAM без остановки ядра."
+              ).pack(anchor="w", pady=(3, 0))
+
     def _stlink_save_cli():
         save_settings({
             "stlink_cli_path": stlink_cli_var.get().strip(),
             "stlink_freq": stlink_freq_var.get().strip(),
+            "stlink_hotplug": stlink_hotplug_var.get(),
         })
         append("ok", "[ST-LINK] Настройки CLI сохранены.")
     ttk.Button(cli_bar, text="Сохранить", command=_stlink_save_cli).pack(side="left", padx=4)
@@ -2160,6 +2172,7 @@ ENDIF
             "freq": freq,
             "address": _FW_ACCESS_LEVEL_ADDR,
             "data_bytes": [0x55],
+            "hotplug": stlink_hotplug_var.get(),
         })
         with contextlib.suppress(Exception):
             nb.select(tab_log)
@@ -2221,6 +2234,7 @@ ENDIF
             "freq": freq,
             "address": _FW_PASSWORD_ADDR,
             "data_bytes": pw_bytes,
+            "hotplug": stlink_hotplug_var.get(),
         })
         with contextlib.suppress(Exception):
             nb.select(tab_log)
