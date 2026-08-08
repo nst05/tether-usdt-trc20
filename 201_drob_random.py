@@ -12,12 +12,48 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QColor
 
-# --- База для путей (для CH341A.DLL внутри exe) ---
+# --- База для путей (для CH341 DLL внутри exe) ---
 if getattr(sys, "frozen", False):
-    BASE_DIR = os.path.dirname(sys.executable)
-    os.environ["PATH"] = sys._MEIPASS + os.pathsep + os.environ.get("PATH", "")
+    BASE_DIR = os.path.dirname(sys.executable)          # папка, где лежит .exe
+    BUNDLE_DIR = getattr(sys, "_MEIPASS", BASE_DIR)     # распакованные ресурсы onefile
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    BUNDLE_DIR = BASE_DIR
+
+
+def _setup_ch341_dll():
+    """Указать i2cpy точный путь к CH341 DLL.
+
+    Начиная с Python 3.8 ctypes ищет DLL по одному лишь имени только в
+    системных папках, в папке самой программы и в каталогах, добавленных
+    через os.add_dll_directory(). Переменная PATH больше НЕ используется,
+    поэтому одного добавления _MEIPASS в PATH для .exe недостаточно.
+
+    Имя DLL зависит от разрядности Python (так её ищет сам i2cpy):
+        64 бита -> CH341DLLA64.dll
+        32 бита -> CH341DLL.dll
+    Найденный файл передаём в i2cpy через переменную окружения CH341DLL —
+    абсолютный путь грузится напрямую, без всякого поиска.
+    """
+    os.environ["PATH"] = BUNDLE_DIR + os.pathsep + os.environ.get("PATH", "")
+
+    if sys.platform != "win32":
+        return
+
+    dll_name = "CH341DLLA64.dll" if sys.maxsize > 2 ** 31 - 1 else "CH341DLL.dll"
+    for folder in (BUNDLE_DIR, BASE_DIR):
+        candidate = os.path.join(folder, dll_name)
+        if os.path.isfile(candidate):
+            # setdefault: если пользователь сам задал CH341DLL, не перебиваем
+            os.environ.setdefault("CH341DLL", candidate)
+            try:
+                os.add_dll_directory(folder)
+            except (AttributeError, OSError):
+                pass
+            return
+
+
+_setup_ch341_dll()
 
 # Пытаемся подключить i2cpy (CH341 I2C)
 try:
