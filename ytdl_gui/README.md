@@ -18,26 +18,55 @@
 
 ## Установка
 
-Нужен Python 3.9 или новее.
+Нужен Python 3.9 или новее. Ниже — команды для каждой системы; выполняйте
+только строки для своей. Команды с `sudo apt` работают **лишь в Linux** — в
+Windows их вводить не нужно, там нет ни `sudo`, ни `apt`.
 
-```bash
-pip install -r requirements-ytdl.txt
+### Windows
+
+В командной строке, находясь в папке программы:
+
+```bat
+python -m pip install yt-dlp
 ```
+
+tkinter в Windows уже входит в состав Python, отдельно ставить не надо.
 
 Для склейки видео со звуком и конвертации в MP3 нужен **ffmpeg**:
 
-- Ubuntu/Debian: `sudo apt install ffmpeg`
-- macOS: `brew install ffmpeg`
-- Windows: `winget install Gyan.FFmpeg` или https://ffmpeg.org/download.html
+```bat
+winget install Gyan.FFmpeg
+```
 
-Без ffmpeg программа работает, но сможет скачивать только готовые дорожки
-(обычно не выше 720p) и не будет конвертировать звук — при запуске об этом
-появится предупреждение в журнале.
+Либо скачайте вручную с https://ffmpeg.org/download.html и добавьте папку `bin`
+в переменную `PATH`. После установки ffmpeg закройте и снова откройте
+командную строку, иначе программа его не увидит.
 
-Если при запуске появляется `ModuleNotFoundError: No module named 'tkinter'`,
-установите tkinter отдельно: `sudo apt install python3-tk` (Ubuntu/Debian) или
-`brew install python-tk` (macOS). В сборках Python для Windows и в
-официальном установщике tkinter уже есть.
+### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt install python3-tk ffmpeg
+python3 -m pip install yt-dlp
+```
+
+Для Fedora — `sudo dnf install python3-tkinter ffmpeg`, для Arch —
+`sudo pacman -S tk ffmpeg`.
+
+### macOS
+
+```bash
+brew install python-tk ffmpeg
+python3 -m pip install yt-dlp
+```
+
+### Если ffmpeg не установлен
+
+Программа запустится и будет работать, но сможет скачивать только готовые
+дорожки (обычно не выше 720p) и не будет конвертировать звук в MP3 — при
+запуске об этом появится предупреждение в журнале.
+
+Если чего-то не хватает, программа при запуске сама напишет, что именно
+установить, вместо сообщения об ошибке Python.
 
 ## Запуск
 
@@ -67,6 +96,7 @@ python -m ytdl_gui
 | `youtube_downloader.py` | запуск программы из корня репозитория |
 | `ytdl_gui/core.py` | загрузка и настройки yt-dlp, рабочий поток, без tkinter |
 | `ytdl_gui/gui.py` | окно, виджеты, обработка событий |
+| `ytdl_gui/startup.py` | проверка зависимостей с понятной подсказкой |
 | `ytdl_gui/__main__.py` | точка входа для `python -m ytdl_gui` |
 
 Рабочий поток не трогает виджеты напрямую: события складываются в
