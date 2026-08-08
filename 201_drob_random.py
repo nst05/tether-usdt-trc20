@@ -200,19 +200,37 @@ class ColorSwatchButton(QPushButton):
     def __init__(self, hex_color: str, parent=None):
         super().__init__(parent)
         self.hex_color = hex_color
+        self.setObjectName("colorSwatch")
         self.setFixedSize(72, 32)
         self.setCursor(Qt.PointingHandCursor)
         self._refresh()
         self.clicked.connect(self.pick_color)
 
     def _refresh(self):
+        # ВАЖНО: селектор QPushButton#colorSwatch обязателен.
+        # Стиль без селектора ("background-color: ...") наследуется ВСЕМИ
+        # дочерними виджетами, включая открытый отсюда QColorDialog —
+        # из-за этого окно выбора цвета целиком красилось в выбранный цвет.
         self.setStyleSheet(
-            f"background-color: {self.hex_color}; border: 1px solid #999; border-radius: 6px;"
+            f"QPushButton#colorSwatch {{"
+            f" background-color: {self.hex_color};"
+            f" border: 1px solid #999999;"
+            f" border-radius: 6px;"
+            f" color: {self._text_color()};"
+            f"}}"
         )
         self.setText(self.hex_color)
 
+    def _text_color(self) -> str:
+        """Чёрная или белая подпись — смотря насколько тёмный сам цвет."""
+        c = QColor(self.hex_color)
+        luma = 0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue()
+        return "#000000" if luma > 140 else "#ffffff"
+
     def pick_color(self):
-        color = QColorDialog.getColor(QColor(self.hex_color), self, "Выберите цвет")
+        # Родитель — окно настроек, а не сама кнопка: так палитра диалога
+        # не зависит от стиля кнопки.
+        color = QColorDialog.getColor(QColor(self.hex_color), self.window(), "Выберите цвет")
         if color.isValid():
             self.hex_color = color.name()
             self._refresh()
@@ -450,6 +468,7 @@ class EEPROMTool(QWidget):
     # ---------- UI ----------
 
     def init_ui(self):
+        self.setObjectName("mainWindow")
         self.setWindowTitle('201 RANDOM')
         w = int(self.settings["window"].get("width", 620))
         h = int(self.settings["window"].get("height", 420))
@@ -565,8 +584,13 @@ class EEPROMTool(QWidget):
         s = self._scale
         return f"""
         QWidget {{
-            background-color: {c['bg']};
             font-family: 'Segoe UI', 'Arial';
+        }}
+        /* Фон задаём только самому главному окну (#mainWindow).
+           Если написать просто QWidget {{ background-color }}, этот фон
+           получат ВСЕ дочерние окна — настройки, выбор цвета, MessageBox. */
+        QWidget#mainWindow {{
+            background-color: {c['bg']};
         }}
         #titleLabel {{
             color: {c['title']};
