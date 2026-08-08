@@ -1,23 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-Собирает icon.ico из логотипа, нарисованного в 201_drob_random.py.
+Собирает icon.ico с логотипом «микросхема + точки».
 
 Запуск:  python make_icon.py
 
-Дополнительных библиотек не нужно — только PyQt5, который и так требуется
-программе. Файл .ico подхватывается сборкой (см. 201_drob_random.spec).
+Скрипт самодостаточен: логотип рисуется прямо здесь и не зависит ни от одной
+из программ, поэтому его можно положить в любую папку (и к 201_drob_random,
+и к all_tabs_ch341). Нужен только PyQt5 — Pillow не требуется.
 
 Формат: размеры до 128 пишутся классическим DIB (BMP), 256 — PNG.
 Так .ico понимают и старые инструменты, и Windows.
 """
 
-import importlib.util
 import os
 import struct
 import sys
 
-from PyQt5.QtCore import QBuffer
-from PyQt5.QtGui import QImage
+from PyQt5.QtCore import Qt, QBuffer, QRectF
+from PyQt5.QtGui import (
+    QImage, QPixmap, QPainter, QColor, QLinearGradient, QBrush,
+)
 from PyQt5.QtWidgets import QApplication
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -25,14 +27,50 @@ ICON_PATH = os.path.join(ROOT, "icon.ico")
 SIZES = [16, 24, 32, 48, 64, 128, 256]
 PNG_FROM = 256          # начиная с этого размера пишем PNG, ниже — DIB
 
+LOGO_TOP = "#5c7cfa"
+LOGO_BOTTOM = "#3b5bdb"
 
-def load_app_module():
-    """Имя модуля начинается с цифры, обычный import не годится."""
-    spec = importlib.util.spec_from_file_location(
-        "tool", os.path.join(ROOT, "201_drob_random.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+
+def paint_logo(painter, size):
+    """Тот же логотип, что рисуют программы: микросхема с точками игральной кости."""
+    sz = float(size)
+    compact = size < 40
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setPen(Qt.NoPen)
+
+    gradient = QLinearGradient(0, 0, sz, sz)
+    gradient.setColorAt(0.0, QColor(LOGO_TOP))
+    gradient.setColorAt(1.0, QColor(LOGO_BOTTOM))
+    painter.setBrush(QBrush(gradient))
+    painter.drawRoundedRect(QRectF(0, 0, sz, sz), sz * 0.22, sz * 0.22)
+
+    painter.setBrush(QColor("#ffffff"))
+    if compact:
+        margin, dot_r, dots = 0.21, 0.070, (0.355, 0.50, 0.645)
+    else:
+        margin, dot_r, dots = 0.26, 0.047, (0.385, 0.50, 0.615)
+        pin_w, pin_h = sz * 0.11, sz * 0.055
+        for center in (0.37, 0.50, 0.63):
+            y = sz * center - pin_h / 2
+            painter.drawRoundedRect(QRectF(sz * 0.17, y, pin_w, pin_h), pin_h / 2, pin_h / 2)
+            painter.drawRoundedRect(QRectF(sz * 0.72, y, pin_w, pin_h), pin_h / 2, pin_h / 2)
+
+    side = sz * (1 - 2 * margin)
+    painter.drawRoundedRect(QRectF(sz * margin, sz * margin, side, side), sz * 0.08, sz * 0.08)
+
+    painter.setBrush(QColor(LOGO_BOTTOM))
+    r = sz * dot_r
+    for center in dots:
+        painter.drawEllipse(QRectF(center * sz - r, center * sz - r, 2 * r, 2 * r))
+
+
+def logo_pixmap(size):
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    paint_logo(painter, size)
+    painter.end()
+    return pixmap
 
 
 def png_bytes(pixmap):
@@ -77,10 +115,10 @@ def dib_bytes(pixmap):
     return header + pixels + mask
 
 
-def build_ico(module, path):
+def build_ico(path):
     entries = []
     for size in SIZES:
-        pixmap = module.logo_pixmap(size)
+        pixmap = logo_pixmap(size)
         data = png_bytes(pixmap) if size >= PNG_FROM else dib_bytes(pixmap)
         entries.append((size, data))
 
@@ -112,8 +150,7 @@ def main():
     global _app
     _app = QApplication(sys.argv)
 
-    module = load_app_module()
-    entries = build_ico(module, ICON_PATH)
+    entries = build_ico(ICON_PATH)
 
     print(f"Готово: {ICON_PATH}")
     for size, data in entries:
