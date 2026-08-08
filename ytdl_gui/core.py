@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 from dataclasses import dataclass
 from typing import Callable, Iterable, Sequence
@@ -47,18 +48,29 @@ def preset_by_label(label: str) -> QualityPreset:
     return QUALITY_PRESETS[DEFAULT_PRESET_INDEX]
 
 
-def build_format_selector(preset: QualityPreset) -> str:
-    """Строка -f для yt-dlp по выбранному пресету."""
+def build_format_selector(preset: QualityPreset, has_ffmpeg: bool = True) -> str:
+    """Строка -f для yt-dlp по выбранному пресету.
+
+    Без ffmpeg склеивать видео и звук нечем, поэтому селектор не должен содержать
+    ``+``: любой такой вариант yt-dlp отклонит с ошибкой "requested merging of
+    multiple formats". В этом режиме берём только готовые дорожки, где видео и
+    звук уже в одном файле (``best`` — в отличие от ``bestvideo`` — выбирает
+    именно такие).
+    """
     if preset.kind == "audio":
+        # Одна аудиодорожка — это тоже один файл, склейка не нужна.
         return "bestaudio/best"
+
     height = preset.value
+
+    if not has_ffmpeg:
+        if height is None:
+            return "best"
+        return f"best[height<={height}]/best"
+
     if height is None:
-        return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
-    return (
-        f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/"
-        f"bestvideo[height<={height}]+bestaudio/"
-        f"best[height<={height}]/best"
-    )
+        return "bestvideo+bestaudio/best"
+    return f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
 
 
 def build_ydl_opts(
@@ -82,7 +94,11 @@ def build_ydl_opts(
         template = os.path.join(output_dir, "%(title)s.%(ext)s")
 
     opts: dict = {
-        "format": build_format_selector(preset),
+        "format": build_format_selector(preset, has_ffmpeg=has_ffmpeg),
+        # Сначала разрешение, и только при равном — mp4/m4a как более совместимый
+        # контейнер. Фильтр [ext=mp4] внутри селектора так делать нельзя: он
+        # отбросил бы 4K, которое YouTube отдаёт только в webm/av01.
+        "format_sort": ["res", "ext:mp4:m4a"],
         "outtmpl": template,
         "noplaylist": not download_playlist,
         "ignoreerrors": download_playlist,  # один битый ролик не должен рушить плейлист
@@ -92,6 +108,7 @@ def build_ydl_opts(
         "restrictfilenames": False,
         "windowsfilenames": os.name == "nt",
         "noprogress": True,   # свой прогресс рисуем в GUI
+        "color": "no_color",  # в тексте лога цветовые escape-последовательности не нужны
         "quiet": True,
         "no_warnings": False,
         "progress_hooks": list(progress_hooks),
@@ -283,6 +300,14 @@ class DownloadWorker(threading.Thread):
             self.emit("stage", text=f"Обработка: {name}")
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def strip_ansi(text: str) -> str:
+    """Убирает escape-последовательности цвета: в текстовом логе они мусор."""
+    return _ANSI_RE.sub("", text)
+
+
 class _YdlLogger:
     """Переадресует сообщения yt-dlp в лог интерфейса."""
 
@@ -293,17 +318,17 @@ class _YdlLogger:
         # yt-dlp дублирует info-сообщения в debug с префиксом "[debug] "
         if msg.startswith("[debug] "):
             return
-        text = msg.strip()
+        text = strip_ansi(msg).strip()
         if text:
             self.emit("log", text=f"   {text}")
 
     def info(self, msg: str) -> None:
-        text = msg.strip()
+        text = strip_ansi(msg).strip()
         if text:
             self.emit("log", text=f"   {text}")
 
     def warning(self, msg: str) -> None:
-        self.emit("log", text=f"   ⚠ {msg.strip()}")
+        self.emit("log", text=f"   ⚠ {strip_ansi(msg).strip()}")
 
     def error(self, msg: str) -> None:
-        self.emit("log", text=f"   ✖ {msg.strip()}")
+        self.emit("log", text=f"   ✖ {strip_ansi(msg).strip()}")
