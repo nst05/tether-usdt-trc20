@@ -151,13 +151,36 @@ def load_settings():
     return settings
 
 
+# Текст последней ошибки записи — чтобы показать пользователю причину,
+# а не просто «не удалось сохранить».
+LAST_SAVE_ERROR = None
+
+
 def save_settings(settings) -> bool:
+    """Записать settings.json. Пишем во временный файл и переименовываем,
+    чтобы при сбое не остался обрезанный/битый файл настроек."""
+    global LAST_SAVE_ERROR
+    tmp_path = SETTINGS_PATH + ".tmp"
     try:
-        os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
-        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+        folder = os.path.dirname(SETTINGS_PATH)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, SETTINGS_PATH)
+
+        LAST_SAVE_ERROR = None
         return True
-    except Exception:
+    except Exception as e:
+        LAST_SAVE_ERROR = f"{type(e).__name__}: {e}"
+        try:
+            if os.path.isfile(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
         return False
 
 
@@ -365,6 +388,21 @@ class SettingsDialog(QDialog):
 
         outer.addLayout(counter_form)
 
+        # --- Где лежит файл настроек ---
+        path_row = QHBoxLayout()
+        path_label = QLabel(f"Файл настроек:\n{SETTINGS_PATH}", self)
+        path_label.setWordWrap(True)
+        path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        path_label.setStyleSheet("color: #7b8199; font-size: 11px;")
+        path_row.addWidget(path_label, 1)
+
+        if hasattr(os, "startfile"):  # только Windows
+            self.btn_open_folder = QPushButton("Открыть папку", self)
+            self.btn_open_folder.clicked.connect(self.open_settings_folder)
+            path_row.addWidget(self.btn_open_folder, 0)
+
+        outer.addLayout(path_row)
+
         # --- Кнопки ---
         btn_row = QHBoxLayout()
         self.btn_reset = QPushButton("Сбросить по умолчанию", self)
@@ -397,6 +435,14 @@ class SettingsDialog(QDialog):
         self.font_scale_spin.setValue(defaults["window"]["font_scale"])
         self.always_on_top_check.setChecked(defaults["window"]["always_on_top"])
         self.persist_counter_check.setChecked(defaults["counter"]["persist"])
+
+    def open_settings_folder(self):
+        folder = os.path.dirname(SETTINGS_PATH)
+        try:
+            os.makedirs(folder, exist_ok=True)
+            os.startfile(folder)
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось открыть папку:\n{folder}\n\n{e}")
 
     def reset_counter(self):
         answer = QMessageBox.question(
@@ -456,6 +502,12 @@ class EEPROMTool(QWidget):
         self._last_status_kind = "info"
 
         self.settings = load_settings()
+
+        # Создаём settings.json сразу при первом запуске, не дожидаясь,
+        # пока пользователь что-то поменяет — так файл сразу видно рядом
+        # с программой, и его можно править вручную.
+        if not os.path.isfile(SETTINGS_PATH):
+            save_settings(self.settings)
 
         # счётчик: восстанавливаем из настроек, если включено сохранение
         if self.settings["counter"].get("persist", False):
@@ -737,9 +789,9 @@ class EEPROMTool(QWidget):
         if not save_settings(new_settings):
             QMessageBox.warning(
                 self, "Ошибка сохранения",
-                f"Настройки применены, но не удалось записать settings.json в:\n{SETTINGS_PATH}\n\n"
-                "Проверьте права на запись в эту папку — иначе настройки "
-                "не сохранятся до следующего запуска."
+                f"Настройки применены, но не удалось записать файл:\n{SETTINGS_PATH}\n\n"
+                f"Причина: {LAST_SAVE_ERROR}\n\n"
+                "До следующего запуска настройки работают, но не сохранятся."
             )
 
     def apply_settings(self, new_settings):
