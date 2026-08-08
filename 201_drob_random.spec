@@ -31,6 +31,12 @@ if os.path.isfile(DLL_PATH):
 else:
     print(f"[spec] ВНИМАНИЕ: {DLL_NAME} не найдена в {ROOT} — .exe будет без драйвера CH341")
 
+# Иконка .exe. Пересобрать её можно командой:  python make_icon.py
+ICON_PATH = os.path.join(ROOT, "icon.ico")
+icon = ICON_PATH if os.path.isfile(ICON_PATH) else None
+if icon is None:
+    print("[spec] icon.ico не найден — .exe будет с иконкой по умолчанию")
+
 a = Analysis(
     ["201_drob_random.py"],
     pathex=[ROOT],
@@ -87,5 +93,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon="icon.ico",
+    icon=icon,
 )

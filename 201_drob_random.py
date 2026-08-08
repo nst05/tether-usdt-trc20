@@ -13,8 +13,13 @@ import random
 import sys
 import time
 
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtSignal
-from PyQt5.QtGui import QColor
+from PyQt5.QtCore import (
+    Qt, QPropertyAnimation, QEasingCurve, QRectF, QSize,
+    QParallelAnimationGroup, QSequentialAnimationGroup, pyqtSignal, pyqtProperty,
+)
+from PyQt5.QtGui import (
+    QColor, QPainter, QPixmap, QIcon, QLinearGradient, QBrush, QFont,
+)
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
     QPushButton, QLineEdit, QLabel, QProgressBar, QGroupBox, QFrame,
@@ -133,6 +138,7 @@ DEFAULT_SETTINGS = {
         "height": 420,
         "font_scale": 100,       # проценты, 100 = обычный размер
         "always_on_top": False,
+        "splash": True,          # заставка при запуске
     },
     "counter": {
         "persist": False,        # помнить счётчик между запусками
@@ -342,6 +348,199 @@ def readable_text_color(hex_color):
     c = QColor(hex_color)
     luma = 0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue()
     return "#000000" if luma > 140 else "#ffffff"
+
+
+# ============================================================================
+#  Логотип и заставка
+# ============================================================================
+
+LOGO_TOP = "#5c7cfa"
+LOGO_BOTTOM = "#3b5bdb"
+
+
+def paint_logo(painter, size):
+    """Микросхема с точками как на игральной кости: память + случайность.
+
+    Рисуется кодом, а не картинкой — иконка не зависит от внешних файлов
+    и остаётся чёткой в любом размере.
+    """
+    s = float(size)
+    compact = size < 40          # на мелких размерах ножки сливаются в кашу
+
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setPen(Qt.NoPen)
+
+    gradient = QLinearGradient(0, 0, s, s)
+    gradient.setColorAt(0.0, QColor(LOGO_TOP))
+    gradient.setColorAt(1.0, QColor(LOGO_BOTTOM))
+    painter.setBrush(QBrush(gradient))
+    painter.drawRoundedRect(QRectF(0, 0, s, s), s * 0.22, s * 0.22)
+
+    painter.setBrush(QColor("#ffffff"))
+    if compact:
+        margin, dot_r, dots = 0.21, 0.070, (0.355, 0.50, 0.645)
+    else:
+        margin, dot_r, dots = 0.26, 0.047, (0.385, 0.50, 0.615)
+        pin_w, pin_h = s * 0.11, s * 0.055
+        for center in (0.37, 0.50, 0.63):
+            y = s * center - pin_h / 2
+            painter.drawRoundedRect(QRectF(s * 0.17, y, pin_w, pin_h), pin_h / 2, pin_h / 2)
+            painter.drawRoundedRect(QRectF(s * 0.72, y, pin_w, pin_h), pin_h / 2, pin_h / 2)
+
+    side = s * (1 - 2 * margin)
+    painter.drawRoundedRect(QRectF(s * margin, s * margin, side, side), s * 0.08, s * 0.08)
+
+    painter.setBrush(QColor(LOGO_BOTTOM))
+    r = s * dot_r
+    for center in dots:
+        painter.drawEllipse(QRectF(center * s - r, center * s - r, 2 * r, 2 * r))
+
+
+def logo_pixmap(size):
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    paint_logo(painter, size)
+    painter.end()
+    return pixmap
+
+
+def app_icon():
+    icon = QIcon()
+    for size in (16, 24, 32, 48, 64, 128, 256):
+        icon.addPixmap(logo_pixmap(size))
+    return icon
+
+
+class SplashScreen(QWidget):
+    """Заставка при запуске: логотип проявляется, полоска заполняется,
+    затем окно плавно гаснет. Клик пропускает анимацию."""
+
+    WIDTH = 440
+    HEIGHT = 260
+
+    def __init__(self, colors):
+        super().__init__(None, Qt.FramelessWindowHint | Qt.SplashScreen)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(self.WIDTH, self.HEIGHT)
+
+        self.colors = colors
+        self._progress = 0.0
+        self._animation = None
+        self._on_finished = None
+        self._finished = False
+
+        self._center_on_screen()
+
+    def _center_on_screen(self):
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        area = screen.availableGeometry()
+        self.move(area.center().x() - self.WIDTH // 2,
+                  area.center().y() - self.HEIGHT // 2)
+
+    # анимируемое свойство: 0.0 -> 1.0
+    def get_progress(self):
+        return self._progress
+
+    def set_progress(self, value):
+        self._progress = value
+        self.update()
+
+    progress = pyqtProperty(float, fget=get_progress, fset=set_progress)
+
+    def paintEvent(self, event):
+        c = self.colors
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        # карточка
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(c["card"]))
+        card = QRectF(0, 0, self.WIDTH, self.HEIGHT)
+        painter.drawRoundedRect(card, 18, 18)
+
+        # логотип: слегка подрастает по ходу анимации
+        logo_size = 96
+        scale = 0.86 + 0.14 * self._progress
+        drawn = logo_size * scale
+        painter.save()
+        painter.translate((self.WIDTH - drawn) / 2, 30 + (logo_size - drawn) / 2)
+        painter.scale(scale, scale)
+        paint_logo(painter, logo_size)
+        painter.restore()
+
+        # надписи
+        painter.setPen(QColor(c["title"]))
+        font = QFont("Segoe UI", 17, QFont.Bold)
+        painter.setFont(font)
+        painter.drawText(QRectF(0, 140, self.WIDTH, 30), Qt.AlignCenter, "201 RANDOM")
+
+        painter.setPen(QColor(c["field_label"]))
+        painter.setFont(QFont("Segoe UI", 9))
+        painter.drawText(QRectF(0, 168, self.WIDTH, 22), Qt.AlignCenter,
+                         "EEPROM · случайная дробная часть")
+
+        # полоса загрузки
+        track = QRectF(70, 208, self.WIDTH - 140, 6)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(c["input_border"]))
+        painter.drawRoundedRect(track, 3, 3)
+        if self._progress > 0:
+            fill = QRectF(track.x(), track.y(), track.width() * self._progress, track.height())
+            painter.setBrush(QColor(c["accent"]))
+            painter.drawRoundedRect(fill, 3, 3)
+        painter.end()
+
+    def start(self, on_finished):
+        """Проиграть заставку и вызвать on_finished в конце."""
+        self._on_finished = on_finished
+        self.setWindowOpacity(0.0)
+        self.show()
+
+        fade_in = QPropertyAnimation(self, b"windowOpacity", self)
+        fade_in.setDuration(260)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+
+        sweep = QPropertyAnimation(self, b"progress", self)
+        sweep.setDuration(950)
+        sweep.setStartValue(0.0)
+        sweep.setEndValue(1.0)
+        sweep.setEasingCurve(QEasingCurve.OutCubic)
+
+        appear = QParallelAnimationGroup()
+        appear.addAnimation(fade_in)
+        appear.addAnimation(sweep)
+
+        fade_out = QPropertyAnimation(self, b"windowOpacity", self)
+        fade_out.setDuration(280)
+        fade_out.setStartValue(1.0)
+        fade_out.setEndValue(0.0)
+        fade_out.setEasingCurve(QEasingCurve.InCubic)
+
+        sequence = QSequentialAnimationGroup(self)
+        sequence.addAnimation(appear)
+        sequence.addPause(200)
+        sequence.addAnimation(fade_out)
+        sequence.finished.connect(self.finish)
+
+        self._animation = sequence
+        sequence.start()
+
+    def mousePressEvent(self, event):
+        self.finish()   # клик пропускает заставку
+
+    def finish(self):
+        if self._finished:
+            return
+        self._finished = True
+        if self._animation is not None:
+            self._animation.stop()
+        self.close()
+        if self._on_finished is not None:
+            self._on_finished()
 
 
 # ============================================================================
@@ -595,6 +794,10 @@ class SettingsDialog(QDialog):
         self.always_on_top = QCheckBox("Окно поверх остальных", group)
         self.always_on_top.setChecked(bool(w.get("always_on_top", False)))
         form.addRow(self.always_on_top)
+
+        self.show_splash = QCheckBox("Заставка при запуске", group)
+        self.show_splash.setChecked(bool(w.get("splash", True)))
+        form.addRow(self.show_splash)
         return group
 
     def _counter_group(self):
@@ -671,6 +874,7 @@ class SettingsDialog(QDialog):
         self.height_spin.setValue(d["window"]["height"])
         self.font_scale.setValue(d["window"]["font_scale"])
         self.always_on_top.setChecked(d["window"]["always_on_top"])
+        self.show_splash.setChecked(d["window"]["splash"])
         self.persist_counter.setChecked(d["counter"]["persist"])
 
     def reset_counter(self):
@@ -716,6 +920,7 @@ class SettingsDialog(QDialog):
             "height": self.height_spin.value(),
             "font_scale": self.font_scale.value(),
             "always_on_top": self.always_on_top.isChecked(),
+            "splash": self.show_splash.isChecked(),
         }
         self.settings["counter"] = {
             "persist": self.persist_counter.isChecked(),
@@ -753,6 +958,7 @@ class EEPROMTool(QWidget):
     def build_ui(self):
         self.setObjectName("mainWindow")
         self.setWindowTitle("201 RANDOM")
+        self.setWindowIcon(app_icon())
         self.setMinimumSize(420, 320)
 
         outer = QVBoxLayout(self)
@@ -764,6 +970,10 @@ class EEPROMTool(QWidget):
         title.setAlignment(Qt.AlignCenter)
         title.setWordWrap(True)
 
+        logo = QLabel(self)
+        logo.setPixmap(logo_pixmap(34))
+        logo.setFixedSize(34, 34)
+
         self.btn_settings = QPushButton("⚙", self)
         self.btn_settings.setObjectName("settingsButton")
         self.btn_settings.setFixedSize(40, 40)
@@ -772,6 +982,7 @@ class EEPROMTool(QWidget):
         self.btn_settings.clicked.connect(self.open_settings)
 
         header = QHBoxLayout()
+        header.addWidget(logo, 0)
         header.addWidget(title, 1)
         header.addWidget(self.btn_settings, 0)
         outer.addLayout(header)
@@ -1075,9 +1286,17 @@ def main():
     # Родной стиль Windows частично игнорирует QSS для кнопок, полей ввода
     # и прогресс-баров. Fusion подчиняется стилям полностью.
     app.setStyle("Fusion")
+    app.setWindowIcon(app_icon())
 
     window = EEPROMTool()
-    window.show()
+
+    if window.settings["window"].get("splash", True):
+        # ссылку держим на окне, иначе заставку соберёт сборщик мусора
+        window.splash = SplashScreen(window.settings["colors"])
+        window.splash.start(window.show)
+    else:
+        window.show()
+
     sys.exit(app.exec_())
 
 
