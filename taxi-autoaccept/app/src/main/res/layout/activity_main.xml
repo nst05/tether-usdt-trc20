@@ -358,6 +358,80 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Скорость приёма -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            style="@style/Card.Section">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/card_padding">
+
+                <TextView
+                    style="@style/Text.SectionTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/section_speed" />
+
+                <TextView
+                    style="@style/Text.Hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/speed_hint" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:baselineAligned="false"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Field"
+                        android:layout_width="0dp"
+                        android:layout_marginEnd="@dimen/gap"
+                        android:layout_weight="1"
+                        android:hint="@string/accept_delay_min">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/acceptDelayMinEdit"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:importantForAutofill="no"
+                            android:inputType="numberDecimal" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Field"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:hint="@string/accept_delay_max">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/acceptDelayMaxEdit"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:importantForAutofill="no"
+                            android:inputType="numberDecimal" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Field"
+                    android:hint="@string/scan_interval">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/scanIntervalEdit"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:importantForAutofill="no"
+                        android:inputType="number" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Ограничители -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"

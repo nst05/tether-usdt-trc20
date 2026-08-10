@@ -130,6 +130,9 @@ class MainActivity : AppCompatActivity() {
         minTripKmEdit.setNum(prefs.minTripKm)
         maxTripKmEdit.setNum(prefs.maxTripKm)
         minSurgeEdit.setNum(prefs.minSurge)
+        acceptDelayMinEdit.setNum(prefs.acceptDelayMinSec)
+        acceptDelayMaxEdit.setNum(prefs.acceptDelayMaxSec)
+        scanIntervalEdit.setInt(prefs.scanIntervalMs)
         blacklistEdit.setText(prefs.blacklist)
         requiredEdit.setText(prefs.requiredWords)
         cooldownEdit.setInt(prefs.cooldownSec)
@@ -157,6 +160,16 @@ class MainActivity : AppCompatActivity() {
         prefs.minTripKm = minTripKmEdit.num()
         prefs.maxTripKm = maxTripKmEdit.num()
         prefs.minSurge = minSurgeEdit.num()
+
+        // «до» не может быть меньше «от», иначе диапазон задержки бессмысленный.
+        val delayMin = acceptDelayMinEdit.num().coerceIn(0.0, 60.0)
+        prefs.acceptDelayMinSec = delayMin
+        prefs.acceptDelayMaxSec = acceptDelayMaxEdit.num().coerceIn(delayMin, 60.0)
+        prefs.scanIntervalMs = scanIntervalEdit.int(250).coerceIn(50, 5000)
+        // Показываем то, что реально сохранилось после подгонки границ.
+        acceptDelayMaxEdit.setNum(prefs.acceptDelayMaxSec)
+        scanIntervalEdit.setInt(prefs.scanIntervalMs)
+
         prefs.blacklist = blacklistEdit.text.toString()
         prefs.requiredWords = requiredEdit.text.toString()
         prefs.cooldownSec = cooldownEdit.int(20).coerceIn(0, 600)

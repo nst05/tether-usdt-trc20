@@ -38,6 +38,19 @@ class Prefs(context: Context) {
     var maxTripKm: Double by DoublePref(KEY_MAX_TRIP_KM, 0f)
     var minSurge: Double by DoublePref(KEY_MIN_SURGE, 0f)
 
+    /**
+     * Задержка перед нажатием. Хранится диапазоном: каждый раз берётся случайное
+     * значение между «от» и «до», чтобы темп приёма не был машинно-ровным.
+     * Оба нуля — нажимать сразу.
+     */
+    var acceptDelayMinSec: Double by DoublePref(KEY_DELAY_MIN, 0f)
+    var acceptDelayMaxSec: Double by DoublePref(KEY_DELAY_MAX, 0f)
+
+    /** Как часто перечитывать экран, мс. Меньше — быстрее реакция и выше расход батареи. */
+    var scanIntervalMs: Int
+        get() = sp.getInt(KEY_SCAN_INTERVAL, 250)
+        set(value) = sp.edit().putInt(KEY_SCAN_INTERVAL, value).apply()
+
     var cooldownSec: Int
         get() = sp.getInt(KEY_COOLDOWN, 20)
         set(value) = sp.edit().putInt(KEY_COOLDOWN, value).apply()
@@ -140,6 +153,9 @@ class Prefs(context: Context) {
         private const val KEY_MIN_TRIP_KM = "min_trip_km"
         private const val KEY_MAX_TRIP_KM = "max_trip_km"
         private const val KEY_MIN_SURGE = "min_surge"
+        private const val KEY_DELAY_MIN = "accept_delay_min_sec"
+        private const val KEY_DELAY_MAX = "accept_delay_max_sec"
+        private const val KEY_SCAN_INTERVAL = "scan_interval_ms"
         private const val KEY_COOLDOWN = "cooldown_sec"
         private const val KEY_MAX_PER_HOUR = "max_per_hour"
         private const val KEY_CONFIRM_WINDOW = "confirm_window_sec"

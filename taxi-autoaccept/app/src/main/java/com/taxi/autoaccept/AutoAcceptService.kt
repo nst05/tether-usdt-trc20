@@ -9,6 +9,8 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -17,6 +19,7 @@ import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import java.util.Calendar
+import kotlin.random.Random
 
 /**
  * Ядро автоприёма.
@@ -39,6 +42,9 @@ class AutoAcceptService : AccessibilityService() {
     private var pendingSince = 0L
     private var pendingSummary = ""
 
+    private val handler = Handler(Looper.getMainLooper())
+    private var scheduledAccept: Runnable? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         prefs = Prefs(this)
@@ -48,6 +54,7 @@ class AutoAcceptService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        cancelScheduledAccept("служба остановлена")
         speaker?.shutdown()
         speaker = null
         Notifications.hide(this)
@@ -57,13 +64,17 @@ class AutoAcceptService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (!::prefs.isInitialized || !prefs.enabled) return
+        if (!::prefs.isInitialized) return
+        if (!prefs.enabled) {
+            cancelScheduledAccept("автоприём выключен")
+            return
+        }
 
         val target = prefs.targetPackage
         if (target.isEmpty() || event?.packageName?.toString() != target) return
 
         val now = SystemClock.elapsedRealtime()
-        if (now - lastScanAt < SCAN_THROTTLE_MS) return
+        if (now - lastScanAt < prefs.scanIntervalMs) return
         lastScanAt = now
 
         val root = rootInActiveWindow ?: return
@@ -75,6 +86,8 @@ class AutoAcceptService : AccessibilityService() {
 
         expirePendingConfirm(now)
         if (pendingSince != 0L) return
+        // Пока тикает отложенное нажатие, новые карточки не рассматриваем.
+        if (scheduledAccept != null) return
         if (now - lastAcceptAt < prefs.cooldownSec * 1000L) return
         if (!prefs.isWithinWorkHours(currentHour())) return
         if (hourlyLimitReached()) return
@@ -94,7 +107,8 @@ class AutoAcceptService : AccessibilityService() {
 
             Decision.Accept -> {
                 if (prefs.autoMode) {
-                    acceptNow(acceptNode, order)
+                    val delay = randomAcceptDelayMs()
+                    if (delay <= 0L) acceptNow(acceptNode, order) else scheduleAccept(delay, order)
                 } else {
                     armConfirm(order)
                 }
@@ -157,6 +171,57 @@ class AutoAcceptService : AccessibilityService() {
     private fun clearPending() {
         pendingSince = 0L
         pendingSummary = ""
+    }
+
+    /**
+     * Случайная пауза между появлением заказа и нажатием.
+     * Диапазон вместо одного числа — чтобы темп приёма не был машинно-ровным.
+     */
+    private fun randomAcceptDelayMs(): Long {
+        val minMs = (prefs.acceptDelayMinSec * 1000).toLong().coerceAtLeast(0L)
+        val maxMs = (prefs.acceptDelayMaxSec * 1000).toLong().coerceAtLeast(minMs)
+        return when {
+            maxMs <= 0L -> 0L
+            maxMs == minMs -> minMs
+            else -> Random.nextLong(minMs, maxMs + 1)
+        }
+    }
+
+    private fun scheduleAccept(delayMs: Long, order: OrderInfo) {
+        val plannedSummary = summary(order)
+        EventLog.add(this, "нажму через ${delayMs / 1000.0} с · $plannedSummary")
+
+        val task = Runnable {
+            scheduledAccept = null
+            if (!prefs.enabled) return@Runnable
+
+            val root = rootInActiveWindow
+            val node = root?.let { NodeTools.findAcceptNode(it, acceptRegex(), denyRegex()) }
+            if (root == null || node == null) {
+                EventLog.add(this, "заказ ушёл за время задержки · $plannedSummary")
+                return@Runnable
+            }
+
+            // За время паузы карточка могла смениться, поэтому решение
+            // пересчитывается по свежему экрану, а не по старым данным.
+            val fresh = OrderParser.parse(NodeTools.collectText(root))
+            when (val decision = OrderFilter.decide(fresh, prefs.toFilterConfig())) {
+                is Decision.Reject ->
+                    EventLog.add(this, "заказ изменился за время задержки: ${decision.reason}")
+
+                Decision.Accept -> acceptNow(node, fresh)
+            }
+        }
+
+        scheduledAccept = task
+        handler.postDelayed(task, delayMs)
+    }
+
+    private fun cancelScheduledAccept(reason: String) {
+        val task = scheduledAccept ?: return
+        handler.removeCallbacks(task)
+        scheduledAccept = null
+        EventLog.add(this, "отложенное нажатие отменено: $reason")
     }
 
     private fun acceptNow(
@@ -245,7 +310,6 @@ class AutoAcceptService : AccessibilityService() {
     }
 
     companion object {
-        private const val SCAN_THROTTLE_MS = 250L
         private const val DUMP_INTERVAL_MS = 3000L
     }
 }

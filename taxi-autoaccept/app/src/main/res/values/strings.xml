@@ -44,6 +44,13 @@
     <string name="blacklist">Стоп-слова</string>
     <string name="required_words">Обязательные слова</string>
 
+    <!-- Скорость -->
+    <string name="section_speed">Скорость приёма</string>
+    <string name="speed_hint">Задержка — сколько ждать от появления заказа до нажатия. Обе нули — жать мгновенно. Разные значения «от» и «до» дают случайную паузу в этом диапазоне, то есть неровный, человеческий темп. Опрос экрана: меньше значение — быстрее реакция и выше расход батареи.</string>
+    <string name="accept_delay_min">Задержка от, сек</string>
+    <string name="accept_delay_max">Задержка до, сек</string>
+    <string name="scan_interval">Опрос экрана, мс</string>
+
     <!-- Безопасность -->
     <string name="section_safety">Ограничители</string>
     <string name="safety_hint">Страховка от лавины заказов и от работы в нерабочее время. Часы 0 и 0 — ограничение по времени выключено.</string>
