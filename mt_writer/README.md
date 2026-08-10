@@ -30,12 +30,36 @@ python mt_writer.py
 
 ## Сборка .exe
 
-```bash
-pip install pyinstaller
-pyinstaller mt_writer.spec
+Проще всего — запустить `build_all.bat` (соберёт оба exe сразу).
+
+Вручную:
+
+```bat
+python -m pip install -r requirements.txt pyinstaller
+python -m PyInstaller mt_writer.spec     ->  dist\MT_Writer.exe
+python -m PyInstaller keygen_mt.spec     ->  dist\keygen_mt.exe
 ```
 
-Готовый файл: `dist/MT_Writer.exe` (одиночный exe, без окна консоли).
+Собираются **только два** файла:
+
+| Файл                 | Кому                                              |
+|----------------------|---------------------------------------------------|
+| `dist\MT_Writer.exe` | клиенту — сама программа                          |
+| `dist\keygen_mt.exe` | только вам — генератор ключей                     |
+
+Остальные модули (`mt_license.py`, `mt_counters.py`, `mt_storage.py`)
+отдельно компилировать не нужно: PyInstaller уже упаковал их внутрь
+`MT_Writer.exe`. Клиенту достаточно одного файла `MT_Writer.exe` —
+ни Python, ни исходников на его компьютере не требуется.
+
+Если команда `pyinstaller` не находится (Python из Microsoft Store ставит
+её в папку, которой нет в PATH), запускайте через `python -m PyInstaller`,
+как показано выше. Если сборка ругается на `WindowsApps` — поставьте
+обычный Python с python.org, Store-версия для PyInstaller не годится.
+
+`keygen_mt.exe` можно запускать и двойным кликом: он спросит код
+компьютера и срок в диалоге. Из командной строки работают те же ключи,
+что и у `keygen_mt.py`.
 
 ## Счётчики прошивок
 

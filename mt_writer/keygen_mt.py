@@ -23,6 +23,51 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mt_license  # noqa: E402
 
 
+def print_key(machine_code, days, key):
+    print('=' * 52)
+    print('  Ключ активации MT Writer')
+    print('=' * 52)
+    print('  Компьютер:  %s' % mt_license.normalize(machine_code))
+    print('  Срок:       %s' % ('бессрочно' if days <= 0 else '%d дн.' % days))
+    print('  Ключ:       %s' % key)
+    print('=' * 52)
+
+
+def interactive():
+    """Диалог для запуска двойным кликом, без командной строки."""
+    print('=' * 52)
+    print('  Генератор ключей MT Writer')
+    print('=' * 52)
+    print('  Код этого компьютера: %s' % mt_license.get_machine_code())
+    print()
+
+    code = input('  Код компьютера клиента: ').strip()
+    if not code:
+        print('  Код не введён.')
+        input('\n  Нажмите Enter для выхода...')
+        return 2
+
+    days_text = input('  Срок в днях (Enter — бессрочно): ').strip()
+    try:
+        days = int(days_text) if days_text else 0
+    except ValueError:
+        print('  Срок должен быть числом.')
+        input('\n  Нажмите Enter для выхода...')
+        return 2
+
+    print()
+    try:
+        key = mt_license.generate_key(code, days)
+    except ValueError as exc:
+        print('  Ошибка: %s' % exc)
+        input('\n  Нажмите Enter для выхода...')
+        return 1
+
+    print_key(code, days, key)
+    input('\n  Нажмите Enter для выхода...')
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description='Генератор ключей активации MT Writer')
     parser.add_argument('machine_code', nargs='?',
@@ -57,6 +102,9 @@ def main():
         return 1
 
     if not args.machine_code:
+        # Запуск двойным кликом (или без аргументов) — спрашиваем всё вручную.
+        if sys.stdin and sys.stdin.isatty():
+            return interactive()
         parser.print_help()
         return 2
 
@@ -66,13 +114,7 @@ def main():
         print('Ошибка: %s' % exc)
         return 1
 
-    print('=' * 52)
-    print('  Ключ активации MT Writer')
-    print('=' * 52)
-    print('  Компьютер:  %s' % mt_license.normalize(args.machine_code))
-    print('  Срок:       %s' % ('бессрочно' if args.days <= 0 else '%d дн.' % args.days))
-    print('  Ключ:       %s' % key)
-    print('=' * 52)
+    print_key(args.machine_code, args.days, key)
     return 0
 
 
