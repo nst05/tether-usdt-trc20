@@ -25,6 +25,13 @@ a = Analysis(
         # (os.path.join(PKG, 'static'), 'static'),
     ],
     hiddenimports=[
+        # Application package (relative imports inside require the package)
+        'crm_islamic',
+        'crm_islamic.app',
+        'crm_islamic.models',
+        'crm_islamic.forms',
+        'crm_islamic.backup',
+        'crm_islamic.licensing',
         # Flask internals
         'flask',
         'flask.templating',
@@ -59,6 +66,14 @@ a = Analysis(
         'json',
         'os',
         'sys',
+        # Licensing / привязка к компьютеру
+        'hmac',
+        'hashlib',
+        'base64',
+        'struct',
+        'platform',
+        'ctypes',
+        'winreg',
     ],
     hookspath=[],
     hooksconfig={},

@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% block title %}Лицензия — Мурабаха CRM{% endblock %}
+{% block breadcrumb %}<li class="breadcrumb-item active">Лицензия</li>{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4>Лицензия</h4>
+  <p class="subtitle">Программа привязана к этому компьютеру</p>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-3 mb-4">
+          {% if status.valid %}
+            <i class="bi bi-shield-check" style="font-size:2.5rem;color:var(--primary)"></i>
+            <div>
+              <div class="fw-600">Программа активирована</div>
+              <div style="font-size:.85rem;color:var(--text-muted)">
+                {% if status.perpetual %}
+                  Бессрочная лицензия
+                {% else %}
+                  Действует до {{ status.expires.strftime('%d.%m.%Y') }}
+                  ({{ status.days_left }} дн.)
+                {% endif %}
+              </div>
+            </div>
+          {% else %}
+            <i class="bi bi-shield-exclamation" style="font-size:2.5rem;color:var(--danger)"></i>
+            <div>
+              <div class="fw-600">Программа не активирована</div>
+              <div style="font-size:.85rem;color:var(--text-muted)">{{ status.reason }}</div>
+            </div>
+          {% endif %}
+        </div>
+
+        <table class="table table-sm mb-0">
+          <tbody>
+            <tr>
+              <th style="width:210px;font-weight:600">Код компьютера</th>
+              <td>
+                <span id="machineCode"
+                      style="font-family:ui-monospace,Menlo,monospace;font-weight:600;letter-spacing:.05em">
+                  {{ status.machine_code }}
+                </span>
+                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyCode(event)">
+                  <i class="bi bi-clipboard"></i>
+                </button>
+              </td>
+            </tr>
+            <tr>
+              <th style="font-weight:600">Тип лицензии</th>
+              <td>
+                {% if not status.valid %}—
+                {% elif status.perpetual %}Бессрочная
+                {% else %}Срочная, до {{ status.expires.strftime('%d.%m.%Y') }}{% endif %}
+              </td>
+            </tr>
+            <tr>
+              <th style="font-weight:600">Дата активации</th>
+              <td>{{ status.activated_at or '—' }}</td>
+            </tr>
+            <tr>
+              <th style="font-weight:600">Источник отпечатка</th>
+              <td><span class="text-muted">{{ status.source }}</span></td>
+            </tr>
+            <tr>
+              <th style="font-weight:600">Проверка лицензии</th>
+              <td>
+                {% if enforced %}
+                  <span class="badge bg-success">включена</span>
+                {% else %}
+                  <span class="badge bg-warning text-dark">отключена (режим разработки)</span>
+                {% endif %}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="fw-600 mb-2">Ввести другой ключ</div>
+        <div style="font-size:.85rem;color:var(--text-muted)" class="mb-3">
+          Например, при продлении лицензии на новый срок.
+        </div>
+        <a href="{{ url_for('license_activate') }}" class="btn btn-primary w-100">
+          <i class="bi bi-key me-1"></i>Ввести ключ активации
+        </a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="fw-600 mb-2">Перенос на другой компьютер</div>
+        <div style="font-size:.85rem;color:var(--text-muted)" class="mb-3">
+          Удалите лицензию здесь, затем активируйте программу на новом компьютере
+          новым ключом. Данные (база и файлы) при этом не удаляются.
+        </div>
+        <form method="post" action="{{ url_for('license_deactivate') }}"
+              onsubmit="return confirm('Удалить лицензию с этого компьютера?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-outline-danger w-100">
+            <i class="bi bi-x-octagon me-1"></i>Удалить лицензию
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyCode(event) {
+  const text = document.getElementById('machineCode').textContent.trim();
+  navigator.clipboard.writeText(text);
+  const btn = event.target.closest('button');
+  const old = btn.innerHTML;
+  btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+  setTimeout(() => btn.innerHTML = old, 1500);
+}
+</script>
+{% endblock %}

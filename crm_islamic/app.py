@@ -22,6 +22,7 @@ from .forms import (
     PAYMENT_METHOD_CHOICES
 )
 from . import backup as backup_module
+from . import licensing
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'heic'}
 
@@ -64,6 +65,11 @@ def create_app(config=None):
 
     db.init_app(app)
     csrf = CSRFProtect(app)
+
+    # Привязка к компьютеру: гейт активации + страницы /activate и /license.
+    # Регистрируется до остальных обработчиков, чтобы неактивированная копия
+    # не обращалась к данным.
+    licensing.init_app(app, db_dir)
 
     # ── helpers ────────────────────────────────────────────────────────────────
 

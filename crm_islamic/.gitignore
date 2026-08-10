@@ -7,3 +7,4 @@ backups/
 uploads/
 instance/
 .env
+license.key

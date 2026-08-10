@@ -751,6 +751,17 @@
       <i class="bi bi-shield-check nav-icon" style="color:#34d399;"></i>
       <span class="nav-label">Резервные копии</span>
     </a>
+
+    <div class="nav-section">Система</div>
+    <a href="{{ url_for('license_info') }}"
+       class="sidebar-link {% if 'license' in (request.endpoint or '') %}active{% endif %}">
+      <i class="bi bi-key-fill nav-icon" style="color:#f59e0b;"></i>
+      <span class="nav-label">Лицензия</span>
+      {% if license_status and not license_status.perpetual and license_status.days_left is not none
+            and license_status.days_left <= 14 %}
+        <span class="badge bg-warning text-dark">{{ license_status.days_left }} дн.</span>
+      {% endif %}
+    </a>
   </div>
 
   <div class="sidebar-footer">
