@@ -46,6 +46,47 @@
 APK ставится вручную (sideload). В Google Play такое приложение не пустят —
 это нормально и ожидаемо.
 
+### Если Gradle не скачивается («Premature EOF»)
+
+Ошибка `Could not install Gradle distribution ... Premature EOF` — это оборванная
+закачка самого Gradle, к проекту она отношения не имеет. Ссылка
+`services.gradle.org` редиректит на GitHub Releases, и рвётся обычно он.
+Варианты по возрастанию мороки:
+
+1. **Убрать битый кусок и повторить.** Незавершённая закачка остаётся на диске
+   и мешает следующей попытке:
+
+   ```bash
+   rm -rf ~/.gradle/wrapper/dists/gradle-8.7-bin     # Windows: %USERPROFILE%\.gradle\wrapper\dists\gradle-8.7-bin
+   ./gradlew --version
+   ```
+
+   В обёртке уже стоит `networkTimeout=120000` вместо стандартных 10 секунд.
+
+2. **Собрать в Android Studio.** Она качает Gradle сама, с повторами и своими
+   настройками прокси: File → Settings → Build, Execution, Deployment → Gradle.
+
+3. **Скачать архив руками** (браузером, с VPN, с другого канала) и подсунуть
+   локально — тогда сеть при сборке вообще не нужна:
+
+   ```properties
+   # gradle/wrapper/gradle-wrapper.properties
+   distributionUrl=file\:/home/user/Downloads/gradle-8.7-bin.zip
+   # Windows: distributionUrl=file\:/C\:/Users/имя/Downloads/gradle-8.7-bin.zip
+   ```
+
+4. **Свой установленный Gradle** — обёртка не нужна совсем, только версия
+   должна быть 8.7 или новее (этого требует AGP 8.5):
+
+   ```bash
+   gradle assembleDebug
+   ```
+
+5. **Зеркало.** В том же `distributionUrl` можно указать зеркало Gradle
+   (например, у Tencent Cloud или Aliyun лежат те же архивы). Доступность
+   зеркал зависит от вашего провайдера — проверить их из окружения, где
+   собирался проект, не получилось, так что это вариант «на попробовать».
+
 ## Настройка на телефоне
 
 1. Установить APK.
