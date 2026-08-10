@@ -1,46 +1,44 @@
 @echo off
-chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
 echo ============================================================
-echo   Сборка VF Gen
+echo   VF Gen - build
 echo ============================================================
 
 echo.
-echo [1/4] Установка зависимостей...
+echo [1/4] Installing dependencies...
 python -m pip install -r requirements.txt pyinstaller
 if errorlevel 1 goto error
 
 echo.
-echo [2/4] Компиляция ядра в машинный код (защита исходника)...
-echo       Если Cython/компилятор не установлены — шаг пропускается,
-echo       exe всё равно соберётся (без нативного ядра).
+echo [2/4] Compiling core to native code (source protection)...
+echo       If Cython or a C compiler is missing, this step is skipped
+echo       and the exe is still built (without the native core).
 python -m pip install cython >nul 2>&1
 python compile_core.py
-REM ошибку компиляции ядра не считаем фатальной
 
 echo.
-echo [3/4] Сборка программы (VF_Gen.exe)...
+echo [3/4] Building the program (VF_Gen.exe)...
 python -m PyInstaller --noconfirm vf_gen.spec
 if errorlevel 1 goto error
 
 echo.
-echo [4/4] Сборка генератора ключей (keygen_vf.exe)...
+echo [4/4] Building the key generator (keygen_vf.exe)...
 python -m PyInstaller --noconfirm keygen_vf.spec
 if errorlevel 1 goto error
 
 echo.
 echo ============================================================
-echo   Готово:
-echo     dist\VF_Gen.exe     - программа для клиента
-echo     dist\keygen_vf.exe  - генератор ключей, КЛИЕНТУ НЕ ДАВАТЬ
+echo   Done:
+echo     dist\VF_Gen.exe     - program for the client
+echo     dist\keygen_vf.exe  - key generator, DO NOT give to client
 echo ============================================================
 pause
 exit /b 0
 
 :error
 echo.
-echo ОШИБКА СБОРКИ. Смотрите сообщения выше.
+echo BUILD FAILED. See the messages above.
 pause
 exit /b 1
