@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Боковые поля экрана. На планшетах переопределяются в values-sw600dp. -->
+    <dimen name="screen_padding">16dp</dimen>
+    <dimen name="card_padding">16dp</dimen>
+    <dimen name="gap">10dp</dimen>
+    <!-- Минимальная высота кликабельных элементов: попасть пальцем не глядя. -->
+    <dimen name="touch_target">56dp</dimen>
+</resources>

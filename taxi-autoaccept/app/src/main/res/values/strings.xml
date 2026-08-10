@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Авто-приём заказов</string>
+    <string name="service_label">Авто-приём заказов</string>
+    <string name="tile_label">Авто-приём</string>
+    <string name="service_description">Читает экран выбранного приложения такси и нажимает кнопку приёма заказа по вашим правилам. Работает только когда включён переключатель в приложении.</string>
+
+    <string name="warning">Автоматический приём заказов обычно нарушает правила сервиса такси и может привести к блокировке аккаунта. Решение за вами.</string>
+
+    <!-- Статус -->
+    <string name="enable_master">Автоприём</string>
+    <string name="status_on">Работает</string>
+    <string name="status_off">Выключен</string>
+    <string name="service_needed">Служба спец. возможностей выключена</string>
+    <string name="service_ready">Служба спец. возможностей включена</string>
+    <string name="open_accessibility">Включить службу в настройках</string>
+
+    <!-- Приложение -->
+    <string name="section_app">Приложение такси</string>
+    <string name="app_hint">Похожие на такси подняты наверх списка. Подойдёт любое: Яндекс Про, inDrive, Максим, Bolt, Анжи Такси и другие местные службы.</string>
+    <string name="no_app_selected">приложение не выбрано</string>
+
+    <!-- Режим -->
+    <string name="section_mode">Режим работы</string>
+    <string name="mode_auto">Авто — нажимать сразу</string>
+    <string name="mode_confirm">Спросить голосом: громкость + принять, громкость − пропустить</string>
+    <string name="confirm_window">Ждать ответа, сек</string>
+
+    <!-- Фильтры -->
+    <string name="section_money">Фильтры заказа</string>
+    <string name="money_hint">Пустое поле или 0 — правило выключено. Если нужное число на экране не распозналось, заказ не берётся.</string>
+    <string name="min_price">Сумма от</string>
+    <string name="max_price">Сумма до</string>
+    <string name="min_price_per_km">За км маршрута</string>
+    <string name="min_price_per_total_km">За км с подачей</string>
+    <string name="max_pickup_km">Подача до, км</string>
+    <string name="max_pickup_min">Подача до, мин</string>
+    <string name="min_trip_km">Маршрут от, км</string>
+    <string name="max_trip_km">Маршрут до, км</string>
+    <string name="min_surge">Коэффициент от</string>
+
+    <string name="section_words">Слова в заказе</string>
+    <string name="words_hint">Через запятую. Стоп-слова отсекают заказ, обязательные — наоборот, требуются в тексте карточки.</string>
+    <string name="blacklist">Стоп-слова</string>
+    <string name="required_words">Обязательные слова</string>
+
+    <!-- Безопасность -->
+    <string name="section_safety">Ограничители</string>
+    <string name="safety_hint">Страховка от лавины заказов и от работы в нерабочее время. Часы 0 и 0 — ограничение по времени выключено.</string>
+    <string name="cooldown_sec">Пауза, сек</string>
+    <string name="max_per_hour">Заказов в час</string>
+    <string name="work_from">Работать с, ч</string>
+    <string name="work_to">Работать до, ч</string>
+    <string name="require_price">Не брать заказ без распознанной суммы</string>
+    <string name="speak">Озвучивать заказы</string>
+
+    <!-- Распознавание -->
+    <string name="section_recognition">Распознавание кнопки</string>
+    <string name="recognition_hint">Если кнопка приёма подписана иначе, впишите её текст. Режим обучения записывает в журнал всё дерево экрана — по нему видно точные подписи.</string>
+    <string name="accept_regex">Шаблон кнопки приёма</string>
+    <string name="deny_regex">Стоп-шаблон кнопки</string>
+    <string name="learn_mode">Режим обучения</string>
+
+    <!-- Журнал -->
+    <string name="section_log">Журнал</string>
+    <string name="log_empty">Пока пусто</string>
+    <string name="refresh_log">Обновить</string>
+    <string name="share_log">Отправить</string>
+    <string name="clear_log">Очистить</string>
+
+    <!-- Правила -->
+    <string name="section_rules">Перенос настроек</string>
+    <string name="rules_hint">Правила выгружаются обычным текстом — можно отправить себе в мессенджер и восстановить на другом телефоне.</string>
+    <string name="export_rules">Выгрузить</string>
+    <string name="import_rules">Загрузить из буфера</string>
+    <string name="rules_imported">Правила загружены</string>
+    <string name="rules_import_failed">В буфере обмена нет правил</string>
+
+    <string name="save">Сохранить</string>
+    <string name="saved">Сохранено</string>
+
+    <!-- Уведомление -->
+    <string name="notif_channel">Статус автоприёма</string>
+    <string name="notif_on">Автоприём включён</string>
+    <string name="notif_off">Автоприём выключен</string>
+    <string name="notif_toggle">Переключить</string>
+</resources>

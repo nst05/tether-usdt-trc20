@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Таксишный жёлтый как основной акцент, графит как «шашечный» контраст. -->
+    <color name="brand">#FFC93C</color>
+    <color name="on_brand">#1A1B1E</color>
+    <color name="brand_container">#FFF0C2</color>
+    <color name="on_brand_container">#3D2E00</color>
+
+    <color name="graphite">#1A1B1E</color>
+    <color name="graphite_soft">#2A2C31</color>
+
+    <color name="ok_green">#1E8E4E</color>
+    <color name="warn_red">#B3261E</color>
+
+    <color name="card_light">#FFFFFF</color>
+    <color name="bg_light">#F6F6F8</color>
+</resources>
