@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+build/
+dist/
+license_vf.key
+counters_vf.json
+*.hex
