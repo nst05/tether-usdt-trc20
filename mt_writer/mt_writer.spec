@@ -11,24 +11,31 @@
 иначе ключи сможет выпустить кто угодно, у кого есть эта программа.
 """
 
+import glob
 import os
 
 block_cipher = None
 ROOT = os.path.abspath('.')
 
-# CH341DLL.DLL — драйвер программатора. Если файл лежит рядом со spec,
-# он упаковывается внутрь exe (при запуске окажется в _MEIPASS), и на
-# компьютере клиента отдельная установка CH341PAR больше не нужна.
-# ВАЖНО: имя файла должно быть именно CH341DLL.DLL, а его разрядность
-# (32/64) — совпадать с разрядностью Python, которым идёт сборка.
-# 64-битную CH341DLLA64.DLL переименуйте в CH341DLL.DLL.
+# DLL драйвера CH341. Любой файл рядом со spec, чьё имя начинается на
+# CH341 и заканчивается на .dll, упаковывается внутрь exe (при запуске
+# окажется в _MEIPASS), и на компьютере клиента отдельная установка
+# CH341PAR больше не нужна. Имя можно НЕ менять — программа найдёт файл
+# сама (CH341A.DLL, CH341DLL.DLL, CH341DLLA64.DLL...).
+# ВАЖНО: разрядность DLL (32/64) должна совпадать с разрядностью Python,
+# которым идёт сборка. Для 64-битного Python нужна 64-битная DLL.
 binaries = []
-_dll = os.path.join(ROOT, 'CH341DLL.DLL')
-if os.path.exists(_dll):
-    binaries.append((_dll, '.'))
-    print('  [spec] CH341DLL.DLL найдена и будет упакована в exe')
+_seen = set()
+for _pat in ('CH341*.dll', 'CH341*.DLL', 'ch341*.dll'):
+    for _f in glob.glob(os.path.join(ROOT, _pat)):
+        _key = os.path.basename(_f).lower()
+        if _key not in _seen:
+            _seen.add(_key)
+            binaries.append((_f, '.'))
+if binaries:
+    print('  [spec] упакованы DLL драйвера:', ', '.join(os.path.basename(b) for b, _ in binaries))
 else:
-    print('  [spec] CH341DLL.DLL рядом не найдена — положите её сюда, '
+    print('  [spec] DLL драйвера CH341 рядом не найдена — положите CH341*.DLL сюда, '
           'иначе на чистом ПК будет ошибка загрузки драйвера')
 
 a = Analysis(

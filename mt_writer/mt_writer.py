@@ -25,14 +25,26 @@ else:
     sys.path.insert(0, BASE_DIR)
 
 
-def prepare_ch341_dll():
-    """Находит CH341DLL.DLL рядом с программой и предзагружает её.
+# Возможные имена файла драйвера CH341 (регистр в Windows не важен).
+# i2cpy по умолчанию ищет CH341DLLA64.dll (64-бит) или CH341DLL.dll (32-бит),
+# но берёт и путь из переменной окружения CH341DLL — этим и пользуемся,
+# чтобы подхватить файл с любым из привычных имён.
+_CH341_DLL_NAMES = (
+    "CH341DLLA64.dll",   # 64-бит, стандартное имя WCH
+    "CH341DLL.dll",      # 32-бит, стандартное имя WCH
+    "CH341A.dll",        # частое переименование
+    "ch341dll.dll",
+)
 
-    i2cpy грузит библиотеку по имени «CH341DLL.DLL». Если положить её рядом
-    с exe (или упаковать в сборку — тогда она окажется в _MEIPASS), эта
-    функция добавит папки в путь поиска и предзагрузит DLL по абсолютному
-    пути. После этого i2cpy находит её по имени, и системная установка
-    CH341PAR больше не нужна. Возвращает путь к загруженной DLL или None.
+
+def prepare_ch341_dll():
+    """Находит DLL драйвера CH341 рядом с программой и указывает её i2cpy.
+
+    Ищет файл по нескольким привычным именам в папке программы и в
+    распакованной сборке (_MEIPASS). Найдя, прописывает абсолютный путь в
+    переменную окружения CH341DLL — i2cpy загрузит именно её, без установки
+    CH341PAR в систему и без переименований. Вызывать ДО импорта i2cpy.
+    Возвращает путь к DLL или None.
     """
     if os.name != "nt":
         return None
@@ -54,16 +66,25 @@ def prepare_ch341_dll():
         except OSError:
             pass
 
-    # Предзагрузка по абсолютному пути: имя файла обязательно CH341DLL.DLL,
-    # иначе Windows не сопоставит его с запросом i2cpy по имени.
+    # Уважаем уже заданный пользователем путь.
+    forced = os.environ.get("CH341DLL")
+    if forced and os.path.isfile(forced):
+        try:
+            ctypes.WinDLL(forced)
+            return forced
+        except OSError:
+            pass
+
     for d in search_dirs:
-        dll = os.path.join(d, "CH341DLL.DLL")
-        if os.path.isfile(dll):
-            try:
-                ctypes.WinDLL(dll)
+        for name in _CH341_DLL_NAMES:
+            dll = os.path.join(d, name)
+            if os.path.isfile(dll):
+                try:
+                    ctypes.WinDLL(dll)          # проверяем разрядность/загрузку
+                except OSError:
+                    continue                    # не та разрядность — пробуем дальше
+                os.environ["CH341DLL"] = dll    # i2cpy возьмёт этот путь
                 return dll
-            except OSError:
-                pass
     return None
 
 
