@@ -16,10 +16,25 @@ import os
 block_cipher = None
 ROOT = os.path.abspath('.')
 
+# CH341DLL.DLL — драйвер программатора. Если файл лежит рядом со spec,
+# он упаковывается внутрь exe (при запуске окажется в _MEIPASS), и на
+# компьютере клиента отдельная установка CH341PAR больше не нужна.
+# ВАЖНО: имя файла должно быть именно CH341DLL.DLL, а его разрядность
+# (32/64) — совпадать с разрядностью Python, которым идёт сборка.
+# 64-битную CH341DLLA64.DLL переименуйте в CH341DLL.DLL.
+binaries = []
+_dll = os.path.join(ROOT, 'CH341DLL.DLL')
+if os.path.exists(_dll):
+    binaries.append((_dll, '.'))
+    print('  [spec] CH341DLL.DLL найдена и будет упакована в exe')
+else:
+    print('  [spec] CH341DLL.DLL рядом не найдена — положите её сюда, '
+          'иначе на чистом ПК будет ошибка загрузки драйвера')
+
 a = Analysis(
     [os.path.join(ROOT, 'mt_writer.py')],
     pathex=[ROOT],
-    binaries=[],
+    binaries=binaries,
     datas=[],
     hiddenimports=[
         'mt_license',

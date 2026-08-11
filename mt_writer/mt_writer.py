@@ -7,6 +7,7 @@ MT Writer — запись значения в EEPROM 24C16 через прог�
 Программа привязана к компьютеру: без ключа активации записать нельзя.
 """
 
+import ctypes
 import gc
 import os
 import random
@@ -16,10 +17,57 @@ import time
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 if getattr(sys, "frozen", False):
-    os.environ["PATH"] = sys._MEIPASS + os.pathsep + os.environ.get("PATH", "")
-    sys.path.insert(0, sys._MEIPASS)
+    BASE_DIR = sys._MEIPASS
+    os.environ["PATH"] = BASE_DIR + os.pathsep + os.environ.get("PATH", "")
+    sys.path.insert(0, BASE_DIR)
 else:
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, BASE_DIR)
+
+
+def prepare_ch341_dll():
+    """Находит CH341DLL.DLL рядом с программой и предзагружает её.
+
+    i2cpy грузит библиотеку по имени «CH341DLL.DLL». Если положить её рядом
+    с exe (или упаковать в сборку — тогда она окажется в _MEIPASS), эта
+    функция добавит папки в путь поиска и предзагрузит DLL по абсолютному
+    пути. После этого i2cpy находит её по имени, и системная установка
+    CH341PAR больше не нужна. Возвращает путь к загруженной DLL или None.
+    """
+    if os.name != "nt":
+        return None
+
+    exe_dir = (os.path.dirname(os.path.abspath(sys.executable))
+               if getattr(sys, "frozen", False) else BASE_DIR)
+    search_dirs = []
+    for d in (BASE_DIR, exe_dir):
+        if d and d not in search_dirs:
+            search_dirs.append(d)
+
+    for d in search_dirs:
+        if not os.path.isdir(d):
+            continue
+        os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+        try:
+            if hasattr(os, "add_dll_directory"):
+                os.add_dll_directory(d)
+        except OSError:
+            pass
+
+    # Предзагрузка по абсолютному пути: имя файла обязательно CH341DLL.DLL,
+    # иначе Windows не сопоставит его с запросом i2cpy по имени.
+    for d in search_dirs:
+        dll = os.path.join(d, "CH341DLL.DLL")
+        if os.path.isfile(dll):
+            try:
+                ctypes.WinDLL(dll)
+                return dll
+            except OSError:
+                pass
+    return None
+
+
+prepare_ch341_dll()
 
 import mt_license
 from mt_counters import Counters
@@ -325,7 +373,17 @@ class WriterTab(QtWidgets.QWidget):
             raise RuntimeError("Не установлена библиотека i2cpy.")
 
         self.close_programmer()
-        self.i2c = I2C(driver="ch341")
+        try:
+            self.i2c = I2C(driver="ch341")
+        except Exception as exc:
+            # Чаще всего — не найдена CH341DLL.DLL.
+            if "ch341" in str(exc).lower() or "load" in str(exc).lower():
+                raise RuntimeError(
+                    "Не найдена библиотека CH341DLL.DLL. "
+                    "Положите CH341DLL.DLL (нужной разрядности) рядом с программой "
+                    "или пересоберите exe с упакованной DLL."
+                ) from exc
+            raise
 
     def close_programmer(self):
         obj = self.i2c
