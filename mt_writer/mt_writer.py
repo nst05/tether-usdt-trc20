@@ -37,17 +37,42 @@ _CH341_DLL_NAMES = (
 )
 
 
+def _suppress_win_error_dialogs():
+    """Гасит системное окно «Bad Image», чтобы DLL не той разрядности не
+    роняла программу, а просто отбраковывалась в коде."""
+    try:
+        SEM_FAILCRITICALERRORS = 0x0001
+        SEM_NOOPENFILEERRORBOX = 0x8000
+        ctypes.windll.kernel32.SetErrorMode(
+            SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX)
+    except Exception:
+        pass
+
+
+def _dll_loads(path):
+    """True, если DLL загружается в текущий процесс (совпадает разрядность)."""
+    try:
+        ctypes.WinDLL(path)
+        return True
+    except OSError:
+        # 193 (ERROR_BAD_EXE_FORMAT) / 0xC000012F — не та разрядность.
+        return False
+
+
 def prepare_ch341_dll():
     """Находит DLL драйвера CH341 рядом с программой и указывает её i2cpy.
 
     Ищет файл по нескольким привычным именам в папке программы и в
-    распакованной сборке (_MEIPASS). Найдя, прописывает абсолютный путь в
-    переменную окружения CH341DLL — i2cpy загрузит именно её, без установки
-    CH341PAR в систему и без переименований. Вызывать ДО импорта i2cpy.
-    Возвращает путь к DLL или None.
+    распакованной сборке (_MEIPASS), проверяет, что он подходит по
+    разрядности, и прописывает абсолютный путь в переменную окружения
+    CH341DLL — i2cpy загрузит именно её, без установки CH341PAR в систему
+    и без переименований. Вызывать ДО импорта i2cpy.
+    Возвращает путь к рабочей DLL или None.
     """
     if os.name != "nt":
         return None
+
+    _suppress_win_error_dialogs()
 
     exe_dir = (os.path.dirname(os.path.abspath(sys.executable))
                if getattr(sys, "frozen", False) else BASE_DIR)
@@ -66,25 +91,21 @@ def prepare_ch341_dll():
         except OSError:
             pass
 
-    # Уважаем уже заданный пользователем путь.
+    # Уважаем уже заданный пользователем путь, если он подходит.
     forced = os.environ.get("CH341DLL")
-    if forced and os.path.isfile(forced):
-        try:
-            ctypes.WinDLL(forced)
-            return forced
-        except OSError:
-            pass
+    if forced and os.path.isfile(forced) and _dll_loads(forced):
+        return forced
 
     for d in search_dirs:
         for name in _CH341_DLL_NAMES:
             dll = os.path.join(d, name)
-            if os.path.isfile(dll):
-                try:
-                    ctypes.WinDLL(dll)          # проверяем разрядность/загрузку
-                except OSError:
-                    continue                    # не та разрядность — пробуем дальше
+            if os.path.isfile(dll) and _dll_loads(dll):
                 os.environ["CH341DLL"] = dll    # i2cpy возьмёт этот путь
                 return dll
+
+    # Ничего подходящего не нашли — снимаем возможный неверный путь,
+    # чтобы i2cpy не пытался грузить DLL не той разрядности и не падал.
+    os.environ.pop("CH341DLL", None)
     return None
 
 
@@ -94,9 +115,12 @@ import mt_license
 from mt_counters import Counters
 from mt_storage import app_data_dir
 
+# i2cpy при импорте сразу грузит DLL; если подходящей нет, ловим ЛЮБУЮ
+# ошибку (не только ImportError), чтобы окно программы всё равно открылось,
+# а про драйвер сообщили уже при попытке записи.
 try:
     from i2cpy import I2C
-except ImportError:
+except Exception:
     I2C = None
 
 
