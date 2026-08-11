@@ -7,7 +7,6 @@ MT Writer — запись значения в EEPROM 24C16 через прог�
 Программа привязана к компьютеру: без ключа активации записать нельзя.
 """
 
-import ctypes
 import gc
 import os
 import random
@@ -16,6 +15,10 @@ import time
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+# Ровно как в исходных 200_MT/310_MT: при запуске из exe добавляем папку
+# распаковки в PATH, чтобы i2cpy нашёл CH341DLL. Разрядность DLL должна
+# совпадать с разрядностью exe (для этого её берут из системы/CH341PAR
+# или кладут рядом), никакой дополнительной обработки не требуется.
 if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
     os.environ["PATH"] = BASE_DIR + os.pathsep + os.environ.get("PATH", "")
@@ -24,103 +27,13 @@ else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, BASE_DIR)
 
-
-# Возможные имена файла драйвера CH341 (регистр в Windows не важен).
-# i2cpy по умолчанию ищет CH341DLLA64.dll (64-бит) или CH341DLL.dll (32-бит),
-# но берёт и путь из переменной окружения CH341DLL — этим и пользуемся,
-# чтобы подхватить файл с любым из привычных имён.
-_CH341_DLL_NAMES = (
-    "CH341DLLA64.dll",   # 64-бит, стандартное имя WCH
-    "CH341DLL.dll",      # 32-бит, стандартное имя WCH
-    "CH341A.dll",        # частое переименование
-    "ch341dll.dll",
-)
-
-
-def _suppress_win_error_dialogs():
-    """Гасит системное окно «Bad Image», чтобы DLL не той разрядности не
-    роняла программу, а просто отбраковывалась в коде."""
-    try:
-        SEM_FAILCRITICALERRORS = 0x0001
-        SEM_NOOPENFILEERRORBOX = 0x8000
-        ctypes.windll.kernel32.SetErrorMode(
-            SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX)
-    except Exception:
-        pass
-
-
-def _dll_loads(path):
-    """True, если DLL загружается в текущий процесс (совпадает разрядность)."""
-    try:
-        ctypes.WinDLL(path)
-        return True
-    except OSError:
-        # 193 (ERROR_BAD_EXE_FORMAT) / 0xC000012F — не та разрядность.
-        return False
-
-
-def prepare_ch341_dll():
-    """Находит DLL драйвера CH341 рядом с программой и указывает её i2cpy.
-
-    Ищет файл по нескольким привычным именам в папке программы и в
-    распакованной сборке (_MEIPASS), проверяет, что он подходит по
-    разрядности, и прописывает абсолютный путь в переменную окружения
-    CH341DLL — i2cpy загрузит именно её, без установки CH341PAR в систему
-    и без переименований. Вызывать ДО импорта i2cpy.
-    Возвращает путь к рабочей DLL или None.
-    """
-    if os.name != "nt":
-        return None
-
-    _suppress_win_error_dialogs()
-
-    exe_dir = (os.path.dirname(os.path.abspath(sys.executable))
-               if getattr(sys, "frozen", False) else BASE_DIR)
-    search_dirs = []
-    for d in (BASE_DIR, exe_dir):
-        if d and d not in search_dirs:
-            search_dirs.append(d)
-
-    for d in search_dirs:
-        if not os.path.isdir(d):
-            continue
-        os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
-        try:
-            if hasattr(os, "add_dll_directory"):
-                os.add_dll_directory(d)
-        except OSError:
-            pass
-
-    # Уважаем уже заданный пользователем путь, если он подходит.
-    forced = os.environ.get("CH341DLL")
-    if forced and os.path.isfile(forced) and _dll_loads(forced):
-        return forced
-
-    for d in search_dirs:
-        for name in _CH341_DLL_NAMES:
-            dll = os.path.join(d, name)
-            if os.path.isfile(dll) and _dll_loads(dll):
-                os.environ["CH341DLL"] = dll    # i2cpy возьмёт этот путь
-                return dll
-
-    # Ничего подходящего не нашли — снимаем возможный неверный путь,
-    # чтобы i2cpy не пытался грузить DLL не той разрядности и не падал.
-    os.environ.pop("CH341DLL", None)
-    return None
-
-
-prepare_ch341_dll()
-
 import mt_license
 from mt_counters import Counters
 from mt_storage import app_data_dir
 
-# i2cpy при импорте сразу грузит DLL; если подходящей нет, ловим ЛЮБУЮ
-# ошибку (не только ImportError), чтобы окно программы всё равно открылось,
-# а про драйвер сообщили уже при попытке записи.
 try:
     from i2cpy import I2C
-except Exception:
+except ImportError:
     I2C = None
 
 
@@ -418,17 +331,7 @@ class WriterTab(QtWidgets.QWidget):
             raise RuntimeError("Не установлена библиотека i2cpy.")
 
         self.close_programmer()
-        try:
-            self.i2c = I2C(driver="ch341")
-        except Exception as exc:
-            # Чаще всего — не найдена CH341DLL.DLL.
-            if "ch341" in str(exc).lower() or "load" in str(exc).lower():
-                raise RuntimeError(
-                    "Не найдена библиотека CH341DLL.DLL. "
-                    "Положите CH341DLL.DLL (нужной разрядности) рядом с программой "
-                    "или пересоберите exe с упакованной DLL."
-                ) from exc
-            raise
+        self.i2c = I2C(driver="ch341")
 
     def close_programmer(self):
         obj = self.i2c
