@@ -2,5 +2,7 @@ __pycache__/
 *.pyc
 build/
 dist/
+.venv32/
+.venv/
 license.key
 counters.json

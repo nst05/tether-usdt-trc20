@@ -28,17 +28,34 @@ pip install -r requirements.txt
 python mt_writer.py
 ```
 
-## Сборка .exe
+## Сборка .exe (32-битная — как оригиналы 200_MT/310_MT)
 
-Проще всего — запустить `build_all.bat` (соберёт оба exe сразу).
+Оригиналы 32-битные и берут 32-битную `CH341DLL.DLL`, уже стоящую на
+компьютере. Чтобы наша сборка работала так же (без докладывания
+64-битной DLL), собирайте её **32-битным** Python.
 
-Вручную:
+Проще всего — двойной клик по **`build_all.bat`**. Он сам:
+1. находит 32-битный Python (`py -3-32` или 32-битный `python`);
+2. создаёт изолированное окружение `.venv32`;
+3. ставит зависимости;
+4. собирает `dist\MT_Writer.exe` и `dist\keygen_mt.exe` — обе 32-битные.
+
+**Единственное требование** — один раз поставить 32-битный Python:
+https://www.python.org/downloads/windows/ → «Windows installer (32-bit)»
+(вариант x86), при установке отметить «Add python.exe to PATH». Если
+32-битного Python нет, батник напишет об этом и подскажет ссылку.
+
+Вручную (в 32-битном Python):
 
 ```bat
 python -m pip install -r requirements.txt pyinstaller
 python -m PyInstaller mt_writer.spec     ->  dist\MT_Writer.exe
 python -m PyInstaller keygen_mt.spec     ->  dist\keygen_mt.exe
 ```
+
+> 64-битная сборка тоже возможна, но тогда i2cpy требует файл
+> `CH341DLLA64.dll` (64-бит) рядом с exe — 32-битная `CH341DLL.dll` для
+> 64-битного exe не подходит (ошибка «Bad Image» / `0xC000012F`).
 
 Собираются **только два** файла:
 
