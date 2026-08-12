@@ -11,8 +11,11 @@ Intel HEX и сохраняет .hex. В отличие от старой вер
   • привязка к компьютеру (ключ активации).
 """
 
+import glob
 import os
+import subprocess
 import sys
+import tempfile
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -28,6 +31,27 @@ from vf_counters import Counters
 from vf_storage import app_data_dir
 
 COUNTER_NAME = "hex"
+
+# ── Прошивка через PICkit (ipecmd) ────────────────────────────────────────────
+PIC_DEVICE = "16F1934"       # модель чипа (параметр -P)
+PIC_TOOL = "PPK3"            # PICkit 3 (для PK4 → PPK4, PK5 → PPK5)
+EEPROM_ONLY = True           # писать ТОЛЬКО EEPROM, не трогая прошивку (-ME)
+POWER_FROM_TOOL = False      # питать чип от PICkit? обычно нет
+VDD = "5.0"
+
+
+def find_ipecmd():
+    """Ищет ipecmd.exe от MPLAB IPE. Можно задать путь в env IPECMD."""
+    env = os.environ.get("IPECMD")
+    if env and os.path.isfile(env):
+        return env
+    if os.name != "nt":
+        return None
+    found = []
+    for root in (r"C:\Program Files\Microchip\MPLABX",
+                 r"C:\Program Files (x86)\Microchip\MPLABX"):
+        found += glob.glob(os.path.join(root, "v*", "mplab_platform", "bin", "ipecmd.exe"))
+    return sorted(found)[-1] if found else None
 
 # ── Палитра и стиль ───────────────────────────────────────────────────────────
 APP_STYLE = """
@@ -239,6 +263,41 @@ class SolveWorker(QtCore.QThread):
             self.failed.emit(str(exc))
 
 
+class FlashWorker(QtCore.QThread):
+    """Запускает ipecmd и шьёт EEPROM, не блокируя окно."""
+
+    line = QtCore.pyqtSignal(str)
+    done = QtCore.pyqtSignal(int)
+
+    def __init__(self, ipecmd, hex_path):
+        super().__init__()
+        self.ipecmd = ipecmd
+        self.hex_path = hex_path
+
+    def run(self):
+        args = [self.ipecmd, "-T" + PIC_TOOL, "-P" + PIC_DEVICE,
+                "-F" + self.hex_path, "-ME" if EEPROM_ONLY else "-M"]
+        if POWER_FROM_TOOL:
+            args.append("-A" + VDD)
+        args.append("-OL")
+        flags = 0x08000000 if os.name == "nt" else 0     # CREATE_NO_WINDOW
+        try:
+            proc = subprocess.Popen(
+                args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace",
+                cwd=os.path.dirname(self.hex_path) or None,
+                creationflags=flags)
+            for ln in proc.stdout:
+                ln = ln.rstrip()
+                if ln:
+                    self.line.emit(ln)
+            proc.wait()
+            self.done.emit(proc.returncode)
+        except Exception as exc:              # noqa: BLE001
+            self.line.emit("Ошибка запуска ipecmd: %s" % exc)
+            self.done.emit(-1)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Карточка варианта
 # ══════════════════════════════════════════════════════════════════════════════
@@ -429,7 +488,7 @@ class MainWindow(QtWidgets.QWidget):
         tbox.setSpacing(2)
         title = QtWidgets.QLabel("Генератор прошивок")
         title.setObjectName("Title")
-        sub = QtWidgets.QLabel("ce101 r5 145 · введите показание → подбор → сохранение .hex")
+        sub = QtWidgets.QLabel("ce101 r5 145 · авторежим: введите показание → «Записать в прибор»")
         sub.setObjectName("Subtitle")
         tbox.addWidget(title)
         tbox.addWidget(sub)
@@ -440,7 +499,7 @@ class MainWindow(QtWidgets.QWidget):
         cc = QtWidgets.QVBoxLayout(counter_card)
         cc.setContentsMargins(18, 8, 18, 8)
         cc.setSpacing(0)
-        cap = QtWidgets.QLabel("СОЗДАНО ФАЙЛОВ")
+        cap = QtWidgets.QLabel("ЗАПИСАНО")
         cap.setObjectName("CounterCap")
         cap.setAlignment(QtCore.Qt.AlignCenter)
         self.counter_lbl = QtWidgets.QLabel("0")
@@ -468,13 +527,13 @@ class MainWindow(QtWidgets.QWidget):
         self.inp = QtWidgets.QLineEdit("7035")
         self.inp.setValidator(QtGui.QDoubleValidator(0.0, 1e12, 2))
         self.inp.setMinimumHeight(56)
-        self.inp.returnPressed.connect(self.on_solve)
+        self.inp.returnPressed.connect(self.on_write_auto)   # Enter = записать
         row.addWidget(self.inp, 1)
-        self.solve_btn = QtWidgets.QPushButton("Подобрать")
-        self.solve_btn.setMinimumWidth(150)
-        self.solve_btn.setMinimumHeight(56)
-        self.solve_btn.clicked.connect(self.on_solve)
-        row.addWidget(self.solve_btn)
+        self.auto_btn = QtWidgets.QPushButton("ЗАПИСАТЬ В ПРИБОР")
+        self.auto_btn.setMinimumWidth(210)
+        self.auto_btn.setMinimumHeight(56)
+        self.auto_btn.clicked.connect(self.on_write_auto)
+        row.addWidget(self.auto_btn)
         ic.addLayout(row)
 
         opts = QtWidgets.QHBoxLayout()
@@ -491,6 +550,11 @@ class MainWindow(QtWidgets.QWidget):
         opts.addWidget(self.chk_frac)
         opts.addWidget(self.chk_full)
         opts.addStretch(1)
+        # ручной подбор без записи — оставлен для проверки/сохранения .hex
+        self.solve_btn = QtWidgets.QPushButton("Только подобрать")
+        self.solve_btn.setObjectName("Ghost")
+        self.solve_btn.clicked.connect(self.on_solve)
+        opts.addWidget(self.solve_btn)
         ic.addLayout(opts)
         root.addWidget(input_card)
 
@@ -607,7 +671,7 @@ class MainWindow(QtWidgets.QWidget):
     def _on_solved(self, candidates):
         self.candidates = candidates
         self.solve_btn.setEnabled(True)
-        self.solve_btn.setText("Подобрать")
+        self.solve_btn.setText("Только подобрать")
         if not candidates:
             QtWidgets.QMessageBox.warning(self, "Не найдено", "Не удалось подобрать вариант.")
             return
@@ -622,7 +686,7 @@ class MainWindow(QtWidgets.QWidget):
 
     def _on_solve_failed(self, message):
         self.solve_btn.setEnabled(True)
-        self.solve_btn.setText("Подобрать")
+        self.solve_btn.setText("Только подобрать")
         QtWidgets.QMessageBox.critical(self, "Ошибка", message)
 
     def on_save(self, index):
@@ -655,9 +719,95 @@ class MainWindow(QtWidgets.QWidget):
         self._refresh_counter()
         self.log.append("Сохранено (%d): %s" % (total, path))
 
+    # ── АВТОРЕЖИМ: ввёл → «Записать» → подбор + прошивка EEPROM ──────────────
+
+    def on_write_auto(self):
+        if getattr(self, "flash_worker", None) and self.flash_worker.isRunning():
+            return
+        if not self.license_status["valid"]:
+            QtWidgets.QMessageBox.critical(
+                self, "Нет лицензии",
+                "Запись заблокирована: %s" % self.license_status["reason"])
+            return
+        try:
+            target = float(self.inp.text().strip().replace(",", "."))
+        except ValueError:
+            QtWidgets.QMessageBox.warning(self, "Ошибка", "Введите число.")
+            return
+        if target < 0:
+            QtWidgets.QMessageBox.warning(self, "Ошибка", "Значение не может быть отрицательным.")
+            return
+
+        b3_max = core.B3_MAX_FULL if self.chk_full.isChecked() else core.B3_MAX_ORIGINAL
+        if target > core.max_reading(b3_max):
+            QtWidgets.QMessageBox.warning(
+                self, "Вне диапазона",
+                "Максимум — %s. Включите «Полный диапазон»." % core.format_value(core.max_reading(b3_max)))
+            return
+
+        ipecmd = find_ipecmd()
+        if not ipecmd:
+            QtWidgets.QMessageBox.critical(
+                self, "PICkit не найден",
+                "Не найден ipecmd.exe.\n\nУстановите MPLAB IPE (MPLAB X v6.15 или старее — "
+                "в v6.20+ PICkit 3 не поддерживается) либо задайте путь в переменной "
+                "окружения IPECMD.")
+            return
+
+        cands = core.solve(target, use_frac=self.chk_frac.isChecked(),
+                           b3_max=b3_max, max_results=3)
+        if not cands:
+            QtWidgets.QMessageBox.warning(self, "Не найдено", "Не удалось подобрать вариант.")
+            return
+        self.candidates = cands
+        for i, card in enumerate(self.cards):
+            card.set_candidate(cands[i] if i < len(cands) else None, i == 0)
+        cand = cands[0]
+
+        out_dir = self.outdir.text().strip()
+        if not os.path.isdir(out_dir):
+            out_dir = tempfile.gettempdir()
+        name = "ce101 r5 145_%s__%s.hex" % ("V2" if cand.n_frac > 0 else "V1",
+                                            core.format_value(cand.value))
+        path = os.path.join(out_dir, name)
+        try:
+            with open(path, "w", encoding="ascii", newline="\n") as fh:
+                fh.write(core.build_hex_for(cand))
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(self, "Запись", "Не удалось сохранить .hex:\n%s" % exc)
+            return
+
+        self._flash_value = cand.value
+        self.log.append("Подобрано %s (%s) → прошиваю EEPROM в PIC%s…"
+                        % (core.format_value(cand.value),
+                           "точно" if cand.exact else "±%.2f" % cand.error, PIC_DEVICE))
+        self.auto_btn.setEnabled(False)
+        self.auto_btn.setText("ПРОШИВКА…")
+        self.solve_btn.setEnabled(False)
+
+        self.flash_worker = FlashWorker(ipecmd, path)
+        self.flash_worker.line.connect(self.log.append)
+        self.flash_worker.done.connect(self.on_flash_done)
+        self.flash_worker.start()
+
+    def on_flash_done(self, rc):
+        self.auto_btn.setEnabled(True)
+        self.auto_btn.setText("ЗАПИСАТЬ В ПРИБОР")
+        self.solve_btn.setEnabled(True)
+        if rc == 0:
+            total = self.counters.increment(COUNTER_NAME, getattr(self, "_flash_value", 0))
+            self._refresh_counter()
+            self.log.append("✓ EEPROM записан (№ %d). Основная прошивка не тронута." % total)
+            self.inp.selectAll()
+            self.inp.setFocus()
+        else:
+            self.log.append("✗ Ошибка прошивки (код %d). См. сообщения выше." % rc)
+
     def closeEvent(self, event):
         if self.worker and self.worker.isRunning():
             self.worker.wait(2000)
+        if getattr(self, "flash_worker", None) and self.flash_worker.isRunning():
+            self.flash_worker.wait(3000)
         event.accept()
 
 
