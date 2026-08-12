@@ -908,11 +908,31 @@ COUNTER_NAME = "hex"
 
 
 # ── Прошивка через PICkit (ipecmd) ────────────────────────────────────────────
+# Ключи ipecmd (см. ipecmd -?):
+#   -ME  программировать ТОЛЬКО EEPROM
+#   -OH  НЕ стирать всю память перед программированием (по умолчанию стирает!)
+#   -W   питать чип от программатора (как галка «VDD PICkit 3 On»)
+#   -OL  отпустить сброс после записи
 PIC_DEVICE = "16F1934"       # модель чипа (параметр -P)
 PIC_TOOL = "PPK3"            # PICkit 3 (для PK4 → PPK4, PK5 → PPK5)
 EEPROM_ONLY = True           # писать ТОЛЬКО EEPROM, не трогая прошивку (-ME)
-POWER_FROM_TOOL = False      # питать чип от PICkit? обычно нет
-VDD = "5.0"
+NO_ERASE = True              # -OH: не стирать чип (обязательно, иначе снесёт прошивку)
+POWER_FROM_TOOL = True       # -W: питание от PICkit (как в PICkit 3 Programmer)
+PRESERVE_PROGRAM = True      # -OP0-1FFF: явно сохранить программную память
+
+
+def build_flash_args(ipecmd, hex_path):
+    """Команда ipecmd: только EEPROM, без стирания, с питанием от PICkit."""
+    args = list(ipecmd) + ["-P" + PIC_DEVICE, "-T" + PIC_TOOL, "-F" + hex_path]
+    args.append("-ME" if EEPROM_ONLY else "-M")
+    if NO_ERASE:
+        args.append("-OH")          # не стирать всю память
+    if PRESERVE_PROGRAM:
+        args.append("-OP0-1FFF")    # сохранить программную память
+    if POWER_FROM_TOOL:
+        args.append("-W")           # питание от программатора
+    args.append("-OL")              # отпустить сброс
+    return args
 
 
 def _microchip_glob(name):
@@ -1226,11 +1246,7 @@ class FlashWorker(QtCore.QThread):
         self.hex_path = hex_path
 
     def run(self):
-        args = list(self.ipecmd) + ["-T" + PIC_TOOL, "-P" + PIC_DEVICE,
-                "-F" + self.hex_path, "-ME" if EEPROM_ONLY else "-M"]
-        if POWER_FROM_TOOL:
-            args.append("-A" + VDD)
-        args.append("-OL")
+        args = build_flash_args(self.ipecmd, self.hex_path)
         flags = 0x08000000 if os.name == "nt" else 0     # CREATE_NO_WINDOW
         try:
             proc = subprocess.Popen(
@@ -1734,11 +1750,7 @@ class MainWindow(QtWidgets.QWidget):
 
         # Команда прошивки: используется и внутри (FlashWorker), и сохраняется
         # рядом как flash_last.bat — можно запустить вручную в консоли.
-        flash_cmd = list(ipecmd) + ["-T" + PIC_TOOL, "-P" + PIC_DEVICE,
-                                    "-F" + path, "-ME" if EEPROM_ONLY else "-M"]
-        if POWER_FROM_TOOL:
-            flash_cmd.append("-A" + VDD)
-        flash_cmd.append("-OL")
+        flash_cmd = build_flash_args(ipecmd, path)
         try:
             def _q(a):
                 return '"%s"' % a if (" " in a) else a
