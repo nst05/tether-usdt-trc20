@@ -3,8 +3,10 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 REM ============================================================
-REM  Flash a .hex into PIC16F1934 with PICkit 3 (one click)
-REM  Uses ipecmd.exe from MPLAB IPE / MPLAB X.
+REM  Write ONLY the EEPROM of PIC16F1934 with PICkit 3 (one click)
+REM  The main firmware (program flash) is NOT touched or erased:
+REM  the -ME option programs the EEPROM region only, with no bulk
+REM  chip erase. Uses ipecmd.exe from MPLAB IPE / MPLAB X.
 REM  NOTE: PICkit 3 works only in MPLAB X v6.15 or older
 REM        (removed in v6.20+). Install v6.15 or v5.50.
 REM ============================================================
@@ -55,15 +57,18 @@ echo ============================================================
 echo   Device : PIC%DEVICE%
 echo   Tool   : PICkit 3
 echo   File   : %HEX%
+echo   Region : EEPROM ONLY  (program flash is preserved)
 echo ============================================================
 echo.
 
-"%IPECMD%" -T%TOOL% -P%DEVICE% -F"%HEX%" -M -Y %POWERARG% -OL
+REM -ME = program EEPROM region only. No -E (no bulk erase), so the
+REM       main firmware in program flash stays intact.
+"%IPECMD%" -T%TOOL% -P%DEVICE% -F"%HEX%" -ME %POWERARG% -OL
 set "RC=%errorlevel%"
 
 echo.
 if "%RC%"=="0" (
-    echo   OK - programmed and verified.
+    echo   OK - EEPROM written. Main firmware untouched.
 ) else (
     echo   FAILED ^(code %RC%^). See the messages above.
 )
