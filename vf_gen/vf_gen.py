@@ -100,6 +100,16 @@ def find_ipecmd():
         return [w]
     if os.name != "nt":
         return None
+    for pf in (os.environ.get("ProgramW6432"), os.environ.get("ProgramFiles"),
+               os.environ.get("ProgramFiles(x86)"),
+               r"C:\Program Files", r"C:\Program Files (x86)"):
+        if not pf:
+            continue
+        for sub in (r"MPLABX\*\mplab_platform\mplab_ipe\ipecmd.exe",
+                    r"MPLABX\*\mplab_platform\bin\ipecmd.exe"):
+            g = sorted(glob.glob(os.path.join(pf, "Microchip", sub)))
+            if g:
+                return [g[-1]]
     exes = _microchip_glob("ipecmd.exe")
     if exes:
         return [exes[-1]]
