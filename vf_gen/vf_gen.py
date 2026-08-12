@@ -13,6 +13,7 @@ Intel HEX и сохраняет .hex. В отличие от старой вер
 
 import glob
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -41,17 +42,41 @@ VDD = "5.0"
 
 
 def find_ipecmd():
-    """Ищет ipecmd.exe от MPLAB IPE. Можно задать путь в env IPECMD."""
+    """Ищет ipecmd.exe от MPLAB IPE где угодно в папке Microchip.
+    Можно жёстко задать путь env IPECMD или файлом ipecmd_path.txt рядом."""
     env = os.environ.get("IPECMD")
     if env and os.path.isfile(env):
         return env
+    try:
+        base = (os.path.dirname(os.path.abspath(sys.executable))
+                if getattr(sys, "frozen", False)
+                else os.path.dirname(os.path.abspath(__file__)))
+        txt = os.path.join(base, "ipecmd_path.txt")
+        if os.path.isfile(txt):
+            p = open(txt, encoding="utf-8").read().strip().strip('"')
+            if p and os.path.isfile(p):
+                return p
+    except Exception:
+        pass
+    w = shutil.which("ipecmd") or shutil.which("ipecmd.exe")
+    if w:
+        return w
     if os.name != "nt":
         return None
-    found = []
-    for root in (r"C:\Program Files\Microchip\MPLABX",
-                 r"C:\Program Files (x86)\Microchip\MPLABX"):
-        found += glob.glob(os.path.join(root, "v*", "mplab_platform", "bin", "ipecmd.exe"))
-    return sorted(found)[-1] if found else None
+    roots = []
+    for var in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"):
+        p = os.environ.get(var)
+        if p:
+            roots.append(os.path.join(p, "Microchip"))
+    roots += [r"C:\Program Files\Microchip", r"C:\Program Files (x86)\Microchip"]
+    hits, seen = [], set()
+    for base in roots:
+        low = base.lower()
+        if low in seen or not os.path.isdir(base):
+            continue
+        seen.add(low)
+        hits += glob.glob(os.path.join(base, "**", "ipecmd.exe"), recursive=True)
+    return sorted(hits)[-1] if hits else None
 
 # ── Палитра и стиль ───────────────────────────────────────────────────────────
 APP_STYLE = """

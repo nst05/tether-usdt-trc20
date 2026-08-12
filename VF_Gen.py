@@ -2,6 +2,7 @@
 # VF Gen - odin fayl (self-contained). Sborka: pyinstaller --onefile --windowed VF_Gen.py
 import glob
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -915,17 +916,46 @@ VDD = "5.0"
 
 
 def find_ipecmd():
-    """Ищет ipecmd.exe от MPLAB IPE. Можно задать путь в env IPECMD."""
+    """Ищет ipecmd.exe от MPLAB IPE где угодно в папке Microchip.
+    Можно жёстко задать путь переменной окружения IPECMD или файлом
+    ipecmd_path.txt рядом с программой."""
+    # 1) явный путь: переменная окружения
     env = os.environ.get("IPECMD")
     if env and os.path.isfile(env):
         return env
+    # 2) явный путь: файл ipecmd_path.txt рядом с exe
+    try:
+        base = (os.path.dirname(os.path.abspath(sys.executable))
+                if getattr(sys, "frozen", False)
+                else os.path.dirname(os.path.abspath(__file__)))
+        txt = os.path.join(base, "ipecmd_path.txt")
+        if os.path.isfile(txt):
+            p = open(txt, encoding="utf-8").read().strip().strip('"')
+            if p and os.path.isfile(p):
+                return p
+    except Exception:
+        pass
+    # 3) в PATH
+    w = shutil.which("ipecmd") or shutil.which("ipecmd.exe")
+    if w:
+        return w
     if os.name != "nt":
         return None
-    found = []
-    for root in (r"C:\Program Files\Microchip\MPLABX",
-                 r"C:\Program Files (x86)\Microchip\MPLABX"):
-        found += glob.glob(os.path.join(root, "v*", "mplab_platform", "bin", "ipecmd.exe"))
-    return sorted(found)[-1] if found else None
+    # 4) рекурсивный поиск по всей папке Microchip (любая версия/путь)
+    roots = []
+    for var in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"):
+        p = os.environ.get(var)
+        if p:
+            roots.append(os.path.join(p, "Microchip"))
+    roots += [r"C:\Program Files\Microchip", r"C:\Program Files (x86)\Microchip"]
+    hits, seen = [], set()
+    for base in roots:
+        low = base.lower()
+        if low in seen or not os.path.isdir(base):
+            continue
+        seen.add(low)
+        hits += glob.glob(os.path.join(base, "**", "ipecmd.exe"), recursive=True)
+    return sorted(hits)[-1] if hits else None
 
 # ── Палитра и стиль ───────────────────────────────────────────────────────────
 APP_STYLE = """
