@@ -918,7 +918,7 @@ PIC_TOOL = "PPK3"            # PICkit 3 (для PK4 → PPK4, PK5 → PPK5)
 EEPROM_ONLY = True           # писать ТОЛЬКО EEPROM, не трогая прошивку (-ME)
 NO_ERASE = True              # -OH: не стирать чип (обязательно, иначе снесёт прошивку)
 POWER_FROM_TOOL = True       # -W: питание от PICkit (как в PICkit 3 Programmer)
-PRESERVE_PROGRAM = True      # -OP0-1FFF: явно сохранить программную память
+PRESERVE_PROGRAM = False     # -OP: диапазон зависит от чипа, для 16F1934 не нужен (-OH хватает)
 
 
 def build_flash_args(ipecmd, hex_path):

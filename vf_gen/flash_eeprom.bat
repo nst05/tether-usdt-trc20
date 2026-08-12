@@ -6,7 +6,6 @@ REM ============================================================
 REM  PIC16F1934 - write EEPROM ONLY, keep firmware, power from PICkit 3
 REM   -ME       program EEPROM only
 REM   -OH       do NOT erase all before programming (default erases!)
-REM   -OP0-1FFF preserve program memory
 REM   -W        power target from tool (like "VDD PICkit 3 On")
 REM   -OL       release from reset
 REM  Close the "PICkit 3 Programmer" app before running.
@@ -42,7 +41,7 @@ echo   File: %HEX%
 echo ============================================================
 echo.
 
-"%IPECMD%" -P%DEVICE% -T%TOOL% -F"%HEX%" -ME -OH -OP0-1FFF -W -OL
+"%IPECMD%" -P%DEVICE% -T%TOOL% -F"%HEX%" -ME -OH -W -OL
 set "RC=%errorlevel%"
 
 echo.
