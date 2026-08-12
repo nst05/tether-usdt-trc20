@@ -605,7 +605,7 @@ class MainWindow(QtWidgets.QWidget):
 
         opts = QtWidgets.QHBoxLayout()
         self.chk_frac = QtWidgets.QCheckBox("Дробный блок (точное попадание)")
-        self.chk_frac.setChecked(True)
+        self.chk_frac.setChecked(False)
         self.chk_frac.setToolTip(
             "Записывает второй блок 0x1E200 с шагом 0.03 — позволяет попасть\n"
             "в любое число. Без него показание всегда кратно 0.85.")
@@ -821,8 +821,7 @@ class MainWindow(QtWidgets.QWidget):
                 "окружения IPECMD.")
             return
 
-        cands = core.solve(target, use_frac=self.chk_frac.isChecked(),
-                           b3_max=b3_max, max_results=3)
+        cands = core.solve(target, use_frac=False, b3_max=b3_max, max_results=3)  # EEPROM 256 б: без дробного блока
         if not cands:
             QtWidgets.QMessageBox.warning(self, "Не найдено", "Не удалось подобрать вариант.")
             return

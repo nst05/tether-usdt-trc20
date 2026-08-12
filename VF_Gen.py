@@ -1488,11 +1488,12 @@ class MainWindow(QtWidgets.QWidget):
         ic.addLayout(row)
 
         opts = QtWidgets.QHBoxLayout()
-        self.chk_frac = QtWidgets.QCheckBox("Дробный блок (точное попадание)")
-        self.chk_frac.setChecked(True)
+        self.chk_frac = QtWidgets.QCheckBox("Дробный блок (не для PIC16F1934)")
+        self.chk_frac.setChecked(False)
         self.chk_frac.setToolTip(
-            "Записывает второй блок 0x1E200 с шагом 0.03 — позволяет попасть\n"
-            "в любое число. Без него показание всегда кратно 0.85.")
+            "Второй блок 0x1E200 с шагом 0.03. В PIC16F1934 EEPROM только\n"
+            "256 байт (0x1E000..0x1E1FF), этот блок в чип НЕ помещается — при\n"
+            "записи в прибор он не используется. Влияет только на «Сохранить .hex».")
         self.chk_full = QtWidgets.QCheckBox("Полный диапазон (b3 до 0xFF)")
         self.chk_full.setChecked(True)
         self.chk_full.setToolTip(
@@ -1706,8 +1707,10 @@ class MainWindow(QtWidgets.QWidget):
                 "рядом с программой, либо задайте переменную окружения IPECMD.")
             return
 
-        cands = solve(target, use_frac=self.chk_frac.isChecked(),
-                           b3_max=b3_max, max_results=3)
+        # ВАЖНО: в PIC16F1934 EEPROM всего 256 байт (0x1E000..0x1E1FF).
+        # Дробный блок 0x1E200 в этот чип НЕ помещается — при записи в прибор
+        # его не используем (пишем только базовый блок, как рабочие оригиналы).
+        cands = solve(target, use_frac=False, b3_max=b3_max, max_results=3)
         if not cands:
             QtWidgets.QMessageBox.warning(self, "Не найдено", "Не удалось подобрать вариант.")
             return
@@ -1729,8 +1732,25 @@ class MainWindow(QtWidgets.QWidget):
             QtWidgets.QMessageBox.critical(self, "Запись", "Не удалось сохранить .hex:\n%s" % exc)
             return
 
+        # Команда прошивки: используется и внутри (FlashWorker), и сохраняется
+        # рядом как flash_last.bat — можно запустить вручную в консоли.
+        flash_cmd = list(ipecmd) + ["-T" + PIC_TOOL, "-P" + PIC_DEVICE,
+                                    "-F" + path, "-ME" if EEPROM_ONLY else "-M"]
+        if POWER_FROM_TOOL:
+            flash_cmd.append("-A" + VDD)
+        flash_cmd.append("-OL")
+        try:
+            def _q(a):
+                return '"%s"' % a if (" " in a) else a
+            bat = "@echo off\r\n" + " ".join(_q(a) for a in flash_cmd) + "\r\npause\r\n"
+            with open(os.path.join(out_dir, "flash_last.bat"), "w",
+                      encoding="utf-8", newline="") as fh:
+                fh.write(bat)
+        except OSError:
+            pass
+
         self._flash_value = cand.value
-        self.log.append("Подобрано %s (%s) → прошиваю EEPROM в PIC%s…"
+        self.log.append("Подобрано %s (%s, базовый блок) → прошиваю EEPROM в PIC%s…"
                         % (format_value(cand.value),
                            "точно" if cand.exact else "±%.2f" % cand.error, PIC_DEVICE))
         self.auto_btn.setEnabled(False)
