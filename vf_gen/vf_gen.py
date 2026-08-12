@@ -41,42 +41,74 @@ POWER_FROM_TOOL = False      # питать чип от PICkit? обычно н�
 VDD = "5.0"
 
 
-def find_ipecmd():
-    """Ищет ipecmd.exe от MPLAB IPE где угодно в папке Microchip.
-    Можно жёстко задать путь env IPECMD или файлом ipecmd_path.txt рядом."""
-    env = os.environ.get("IPECMD")
-    if env and os.path.isfile(env):
-        return env
-    try:
-        base = (os.path.dirname(os.path.abspath(sys.executable))
-                if getattr(sys, "frozen", False)
-                else os.path.dirname(os.path.abspath(__file__)))
-        txt = os.path.join(base, "ipecmd_path.txt")
-        if os.path.isfile(txt):
-            p = open(txt, encoding="utf-8").read().strip().strip('"')
-            if p and os.path.isfile(p):
-                return p
-    except Exception:
-        pass
-    w = shutil.which("ipecmd") or shutil.which("ipecmd.exe")
-    if w:
-        return w
-    if os.name != "nt":
-        return None
-    roots = []
+def _microchip_glob(name):
+    roots, hits, seen = [], [], set()
     for var in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"):
         p = os.environ.get(var)
         if p:
             roots.append(os.path.join(p, "Microchip"))
     roots += [r"C:\Program Files\Microchip", r"C:\Program Files (x86)\Microchip"]
-    hits, seen = [], set()
     for base in roots:
         low = base.lower()
         if low in seen or not os.path.isdir(base):
             continue
         seen.add(low)
-        hits += glob.glob(os.path.join(base, "**", "ipecmd.exe"), recursive=True)
-    return sorted(hits)[-1] if hits else None
+        hits += glob.glob(os.path.join(base, "**", name), recursive=True)
+    return sorted(hits)
+
+
+def _find_java(near=None):
+    hits = _microchip_glob("java.exe")
+    if near:
+        low = os.path.normcase(near)
+        same = [h for h in hits if os.path.normcase(h).startswith(low[:3])]
+        hits = same or hits
+    if hits:
+        return hits[-1]
+    return shutil.which("java") or shutil.which("java.exe")
+
+
+def _cmd_for(path):
+    if path.lower().endswith(".jar"):
+        java = _find_java(os.path.dirname(path))
+        return [java, "-jar", path] if java else None
+    return [path]
+
+
+def find_ipecmd():
+    """Список-префикс для запуска ipecmd (или None). .exe напрямую, .jar
+    через встроенную java. Путь можно задать env IPECMD/ipecmd_path.txt."""
+    explicit = os.environ.get("IPECMD")
+    if not (explicit and os.path.isfile(explicit)):
+        try:
+            base = (os.path.dirname(os.path.abspath(sys.executable))
+                    if getattr(sys, "frozen", False)
+                    else os.path.dirname(os.path.abspath(__file__)))
+            txt = os.path.join(base, "ipecmd_path.txt")
+            if os.path.isfile(txt):
+                p = open(txt, encoding="utf-8").read().strip().strip('"')
+                if p and os.path.isfile(p):
+                    explicit = p
+        except Exception:
+            pass
+    if explicit and os.path.isfile(explicit):
+        cmd = _cmd_for(explicit)
+        if cmd:
+            return cmd
+    w = shutil.which("ipecmd") or shutil.which("ipecmd.exe")
+    if w:
+        return [w]
+    if os.name != "nt":
+        return None
+    exes = _microchip_glob("ipecmd.exe")
+    if exes:
+        return [exes[-1]]
+    jars = _microchip_glob("ipecmd.jar")
+    if jars:
+        cmd = _cmd_for(jars[-1])
+        if cmd:
+            return cmd
+    return None
 
 # ── Палитра и стиль ───────────────────────────────────────────────────────────
 APP_STYLE = """
@@ -296,11 +328,11 @@ class FlashWorker(QtCore.QThread):
 
     def __init__(self, ipecmd, hex_path):
         super().__init__()
-        self.ipecmd = ipecmd
+        self.ipecmd = ipecmd if isinstance(ipecmd, (list, tuple)) else [ipecmd]
         self.hex_path = hex_path
 
     def run(self):
-        args = [self.ipecmd, "-T" + PIC_TOOL, "-P" + PIC_DEVICE,
+        args = list(self.ipecmd) + ["-T" + PIC_TOOL, "-P" + PIC_DEVICE,
                 "-F" + self.hex_path, "-ME" if EEPROM_ONLY else "-M"]
         if POWER_FROM_TOOL:
             args.append("-A" + VDD)
