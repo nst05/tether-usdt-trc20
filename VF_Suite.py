@@ -333,6 +333,35 @@ class Counters:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ВКЛ 0: MT WRITER (запись счётчиков 24C16 через CH341)
+# ══════════════════════════════════════════════════════════════════════════════
+
+try:
+    from i2cpy import I2C
+except ImportError:
+    I2C = None
+
+EEPROM_SIZE = 2048
+VALUE_OFFSET = 0x0040
+VALUE_SIZE = 4
+SCALE = 100
+BASE_I2C_ADDRESS = 0x50
+
+
+def encode_value(value: float) -> bytes:
+    raw = int(round(value * SCALE))
+    if not 0 <= raw <= 0xFFFFFFFF:
+        raise ValueError("Значение слишком большое.")
+    return raw.to_bytes(4, "little", signed=False)
+
+
+def decode_value(data: bytes) -> float:
+    if len(data) != 4:
+        raise ValueError("Неверная длина данных.")
+    return int.from_bytes(data, "little", signed=False) / SCALE
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ВКЛ 1: VF_GEN (частотный генератор)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -498,6 +527,251 @@ class FlashWorker(QtCore.QThread):
         except Exception as exc:
             self.line.emit(f"✗ Ошибка: {exc}")
             self.done.emit(1)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ВКЛ 1.5: MT WRITER TAB GUI
+# ══════════════════════════════════════════════════════════════════════════════
+
+import gc
+import random
+import time
+import threading
+
+
+class MTWriterTab(QtWidgets.QWidget):
+    def __init__(self, name, counters):
+        super().__init__()
+        self.name = name
+        self.counters = counters
+        self.i2c = None
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(14)
+
+        head = QtWidgets.QHBoxLayout()
+        tbox = QtWidgets.QVBoxLayout()
+        tbox.setSpacing(4)
+        title = QtWidgets.QLabel("ЗАПИСЬ ЗНАЧЕНИЯ — " + self.name)
+        font = title.font()
+        font.setPointSize(16)
+        font.setBold(True)
+        title.setFont(font)
+        tbox.addWidget(title)
+        hint = QtWidgets.QLabel("Введите целую часть. Дробная часть 01–99 добавляется автоматически.")
+        hint.setStyleSheet("color:#aab3c5;font-size:12px;")
+        hint.setWordWrap(True)
+        tbox.addWidget(hint)
+        head.addLayout(tbox, 1)
+
+        card = QtWidgets.QFrame()
+        card.setStyleSheet("background:#18202c;border:2px solid #3d4a60;border-radius:14px;padding:8px;")
+        card.setMinimumWidth(190)
+        cc = QtWidgets.QVBoxLayout(card)
+        cc.setContentsMargins(16, 8, 16, 8)
+        cc.setSpacing(0)
+        cap = QtWidgets.QLabel("ПРОШИВОК ВСЕГО")
+        cap.setStyleSheet("font-size:12px;font-weight:800;color:#8d96a8;text-align:center;")
+        self.counter_lbl = QtWidgets.QLabel(str(self.counters.get(self.name)))
+        self.counter_lbl.setStyleSheet("font-size:34px;font-weight:900;color:#7ff0ac;text-align:center;")
+        cc.addWidget(cap)
+        cc.addWidget(self.counter_lbl)
+        head.addWidget(card)
+        layout.addLayout(head)
+
+        self.value_input = QtWidgets.QLineEdit()
+        self.value_input.setPlaceholderText("Например: 3456")
+        self.value_input.setAlignment(QtCore.Qt.AlignCenter)
+        self.value_input.setMinimumHeight(64)
+        validator = QtGui.QDoubleValidator(0.0, 42949672.95, 2, self)
+        self.value_input.setValidator(validator)
+        self.value_input.returnPressed.connect(self.write_and_verify)
+        layout.addWidget(self.value_input)
+
+        self.write_button = QtWidgets.QPushButton("ЗАПИСАТЬ И ПРОВЕРИТЬ")
+        self.write_button.setMinimumHeight(66)
+        self.write_button.clicked.connect(self.write_and_verify)
+        layout.addWidget(self.write_button)
+
+        self.progress = QtWidgets.QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        layout.addWidget(self.progress)
+
+        self.status = QtWidgets.QLabel("Готово к работе")
+        self.status.setWordWrap(True)
+        self.status.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(self.status)
+
+        self.value_input.setFocus()
+        self.set_status("Готово к работе")
+
+    def set_status(self, text, ok=None):
+        self.status.setText(text)
+        if ok is True:
+            css = "background:#153c28;border:2px solid #2fc46f;color:#7ff0ac;"
+        elif ok is False:
+            css = "background:#471d25;border:2px solid #ff5a6f;color:#ff9cab;"
+        else:
+            css = "background:#18202c;border:2px solid #3d4a60;color:#d9dfeb;"
+        self.status.setStyleSheet("QLabel{%s border-radius:14px;padding:16px;font-size:18px;font-weight:800;}" % css)
+        QtWidgets.QApplication.processEvents()
+
+    def open_programmer(self):
+        if I2C is None:
+            raise RuntimeError("Не установлена библиотека i2cpy.")
+        self.close_programmer()
+        self.i2c = I2C(driver="ch341")
+
+    def close_programmer(self):
+        obj = self.i2c
+        self.i2c = None
+        if obj is not None:
+            for method_name in ("close", "deinit", "disconnect"):
+                method = getattr(obj, method_name, None)
+                if callable(method):
+                    try:
+                        method()
+                    except Exception:
+                        pass
+                    break
+        del obj
+        gc.collect()
+        time.sleep(0.08)
+
+    @staticmethod
+    def split_address(address):
+        if not 0 <= address < EEPROM_SIZE:
+            raise ValueError("Адрес выходит за пределы 24C16.")
+        block = (address >> 8) & 0x07
+        device_address = BASE_I2C_ADDRESS | block
+        memory_address = address & 0xFF
+        return device_address, memory_address
+
+    def read_bytes(self, address, length):
+        if self.i2c is None:
+            raise RuntimeError("Программатор не инициализирован.")
+        result = bytearray()
+        current = address
+        remaining = length
+        while remaining > 0:
+            dev_addr, mem_addr = self.split_address(current)
+            chunk_len = min(remaining, 0x100 - mem_addr)
+            chunk = self.i2c.readfrom_mem(dev_addr, mem_addr, chunk_len, addrsize=8)
+            result.extend(bytes(chunk))
+            current += chunk_len
+            remaining -= chunk_len
+        return bytes(result)
+
+    def write_bytes(self, address, payload):
+        if self.i2c is None:
+            raise RuntimeError("Программатор не инициализирован.")
+        dev_addr, mem_addr = self.split_address(address)
+        self.i2c.writeto_mem(dev_addr, mem_addr, bytes(payload), addrsize=8)
+
+    def parse_value(self):
+        text = self.value_input.text().strip().replace(",", ".")
+        if not text:
+            raise ValueError("Введите целую часть.")
+        base_value = float(text)
+        if base_value < 0:
+            raise ValueError("Значение не может быть отрицательным.")
+        integer_part = int(base_value)
+        fraction = random.randint(1, 99)
+        value = integer_part + fraction / 100.0
+        encode_value(value)
+        return value
+
+    def write_and_verify(self):
+        self.write_button.setEnabled(False)
+        self.progress.setValue(5)
+        self.set_status("Запись...")
+
+        try:
+            value = self.parse_value()
+            expected = encode_value(value)
+
+            self.progress.setValue(20)
+            self.open_programmer()
+
+            before = self.read_bytes(VALUE_OFFSET, VALUE_SIZE)
+
+            self.progress.setValue(45)
+            self.write_bytes(VALUE_OFFSET, expected)
+
+            self.close_programmer()
+
+            self.progress.setValue(65)
+            time.sleep(0.15)
+
+            self.progress.setValue(80)
+            self.open_programmer()
+
+            actual = None
+            for _ in range(10):
+                try:
+                    actual = self.read_bytes(VALUE_OFFSET, VALUE_SIZE)
+                    if actual == expected:
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.05)
+
+            if actual != expected:
+                raise RuntimeError("Проверка записи не пройдена.")
+
+            verified = decode_value(actual)
+            self.progress.setValue(100)
+            self.value_input.clear()
+            self.value_input.setFocus()
+
+            total = self.counters.inc(self.name)
+            self.counter_lbl.setText(str(total))
+
+            self.set_status("✓ Успех: записано %.2f  ·  прошивка № %d" % (verified, total), True)
+
+        except Exception as exc:
+            self.progress.setValue(0)
+            self.set_status("✗ Ошибка: %s" % exc, False)
+
+        finally:
+            self.close_programmer()
+            self.write_button.setEnabled(True)
+
+    def closeEvent(self, event):
+        self.close_programmer()
+        event.accept()
+
+
+class MTCounters:
+    def __init__(self, names):
+        self.names = names
+        self.data = {n: 0 for n in names}
+        try:
+            path = os.path.join(app_data_dir(), 'mt_counters.json')
+            with open(path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+            for n in names:
+                self.data[n] = int(saved.get(n, 0))
+        except Exception:
+            pass
+
+    def get(self, name):
+        return self.data.get(name, 0)
+
+    def inc(self, name):
+        self.data[name] = self.get(name) + 1
+        try:
+            path = os.path.join(app_data_dir(), 'mt_counters.json')
+            os.makedirs(app_data_dir(), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(self.data, fh)
+        except Exception:
+            pass
+        return self.data[name]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1135,8 +1409,8 @@ class JournalTab(QtWidgets.QWidget):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, license_status):
         super().__init__()
-        self.setWindowTitle("VF Suite — генератор частоты и синтетических журналов")
-        self.setMinimumSize(900, 700)
+        self.setWindowTitle("VF Suite — MT Writer + VF Gen + Синтетический журнал")
+        self.setMinimumSize(1000, 750)
 
         central = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(central)
@@ -1152,8 +1426,13 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(license_label)
 
         tabs = QtWidgets.QTabWidget()
-        tabs.addTab(VFGenTab(license_status), "Генератор частоты")
+
+        mt_counters = MTCounters(["200_MT", "310_MT"])
+        tabs.addTab(MTWriterTab("200_MT", mt_counters), "200_MT (CH341)")
+        tabs.addTab(MTWriterTab("310_MT", mt_counters), "310_MT (CH341)")
+        tabs.addTab(VFGenTab(license_status), "Генератор частоты (PIC)")
         tabs.addTab(JournalTab(), "Синтетический журнал")
+
         layout.addWidget(tabs)
 
         self.setCentralWidget(central)
