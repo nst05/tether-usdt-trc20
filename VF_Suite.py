@@ -1051,13 +1051,14 @@ QTabBar::tab:selected {
 # ══════════════════════════════════════════════════════════════════════════════
 
 class VFGenTab(QtWidgets.QWidget):
-    def __init__(self, status, vf_counters=None):
+    def __init__(self, status, vf_counters=None, journal_tab=None):
         super().__init__()
         self.status = status
         self.counters = vf_counters or Counters('counters.json')
         self.worker = None
         self.flash_worker = None
         self._flash_value = None
+        self.journal_tab = journal_tab
         self.init_ui()
         self._refresh_counter()
 
@@ -1098,6 +1099,17 @@ class VFGenTab(QtWidgets.QWidget):
         counter_layout.addWidget(self.counter_label)
         root.addWidget(counter_group)
 
+        sync_group = QtWidgets.QGroupBox("Синхронизация с журналом")
+        sync_layout = QtWidgets.QHBoxLayout(sync_group)
+        self.journal_value_label = QtWidgets.QLabel("Журнал: —")
+        self.journal_value_label.setMinimumWidth(200)
+        sync_layout.addWidget(self.journal_value_label)
+        self.load_from_journal_btn = QtWidgets.QPushButton("Загрузить из журнала")
+        self.load_from_journal_btn.clicked.connect(self.load_value_from_journal)
+        sync_layout.addWidget(self.load_from_journal_btn)
+        sync_layout.addStretch()
+        root.addWidget(sync_group)
+
         self.log = QtWidgets.QTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(300)
@@ -1109,6 +1121,22 @@ class VFGenTab(QtWidgets.QWidget):
             self.counter_label.setText(f"Всего прошивок: {count}")
         else:
             self.counter_label.setText(f"Всего прошивок: {count} (последняя: {format_value(value)})")
+
+    def update_journal_label(self):
+        if self.journal_tab and hasattr(self.journal_tab, 'daily') and self.journal_tab.daily:
+            value = self.journal_tab.daily[-1].value
+            self.journal_value_label.setText(f"Журнал: {format_value(value)}")
+        else:
+            self.journal_value_label.setText("Журнал: —")
+
+    def load_value_from_journal(self):
+        if self.journal_tab and hasattr(self.journal_tab, 'daily') and self.journal_tab.daily:
+            value = self.journal_tab.daily[-1].value
+            freq_khz = value / 1000.0
+            self.inp.setText(str(freq_khz))
+            self.log.setText(f"✓ Загружено значение из журнала: {format_value(value)}")
+        else:
+            self.log.setText("✗ В журнале нет данных")
 
     def on_solve(self):
         try:
@@ -1169,6 +1197,9 @@ class VFGenTab(QtWidgets.QWidget):
             total = self.counters.increment(COUNTER_NAME, getattr(self, "_flash_value", 0))
             self._refresh_counter()
             self.log.append(f"✓ EEPROM записан (№ {total}). Основная прошивка не тронута.")
+            if self.journal_tab:
+                self.journal_tab.update_vf_label()
+                self.update_journal_label()
             self.inp.selectAll()
             self.inp.setFocus()
         else:
@@ -1180,7 +1211,7 @@ class VFGenTab(QtWidgets.QWidget):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class JournalTab(QtWidgets.QWidget):
-    def __init__(self, mt_counters, vf_counters=None):
+    def __init__(self, mt_counters, vf_counters=None, vf_tab=None):
         super().__init__()
         self.path = None
         self.data = None
@@ -1189,6 +1220,7 @@ class JournalTab(QtWidgets.QWidget):
         self.i2c = None
         self.mt_counters = mt_counters
         self.vf_counters = vf_counters or Counters('counters.json')
+        self.vf_tab = vf_tab
         self.init_ui()
 
     def open_programmer(self):
@@ -1243,6 +1275,20 @@ class JournalTab(QtWidgets.QWidget):
         dev_addr, mem_addr = self.split_address(address)
         self.i2c.writeto_mem(dev_addr, mem_addr, bytes(payload), addrsize=8)
 
+    def update_vf_label(self):
+        if self.vf_tab and hasattr(self.vf_tab, '_flash_value') and self.vf_tab._flash_value:
+            value = self.vf_tab._flash_value
+            self.vf_value_label.setText(f"Генератор: {format_value(value)}")
+        else:
+            self.vf_value_label.setText("Генератор: —")
+
+    def load_value_from_vf(self):
+        if self.vf_tab and hasattr(self.vf_tab, '_flash_value') and self.vf_tab._flash_value:
+            self.final_value.setValue(self.vf_tab._flash_value)
+            self.set_status(f"✓ Загружено значение из генератора: {format_value(self.vf_tab._flash_value)}", True)
+        else:
+            self.set_status("✗ В генераторе нет сохранённого значения", False)
+
     def read_from_device(self):
         """Читает весь дамп (32KB) из 24AA256 EEPROM."""
         status = check_license()
@@ -1272,6 +1318,7 @@ class JournalTab(QtWidgets.QWidget):
                 self.average.setValue(average)
             self.generate_btn.setEnabled(True)
             self.write_btn.setEnabled(True)
+            self.update_vf_label()
             self.set_status(
                 f"✓ Прочитано: {len(self.daily)} суточных записей, "
                 f"{len(self.monthly)} месячных.\n"
@@ -1347,6 +1394,17 @@ class JournalTab(QtWidgets.QWidget):
 
         root.addWidget(params)
 
+        sync_group = QtWidgets.QGroupBox("Синхронизация с генератором частоты")
+        sync_layout = QtWidgets.QHBoxLayout(sync_group)
+        self.vf_value_label = QtWidgets.QLabel("Генератор: —")
+        self.vf_value_label.setMinimumWidth(200)
+        sync_layout.addWidget(self.vf_value_label)
+        self.load_from_vf_btn = QtWidgets.QPushButton("Загрузить из генератора")
+        self.load_from_vf_btn.clicked.connect(self.load_value_from_vf)
+        sync_layout.addWidget(self.load_from_vf_btn)
+        sync_layout.addStretch()
+        root.addWidget(sync_group)
+
         btn_row = QtWidgets.QHBoxLayout()
         self.generate_btn = QtWidgets.QPushButton("СФОРМИРОВАТЬ СИНТЕТИЧЕСКИЕ ДАННЫЕ")
         self.generate_btn.setEnabled(False)
@@ -1419,14 +1477,19 @@ class JournalTab(QtWidgets.QWidget):
 
             self.close_programmer()
 
-            # Синхронизируем счётчик с генератором частоты (VF_Gen)
+            # Синхронизируем значение и счётчик с генератором частоты (VF_Gen)
             self.progress.setValue(95)
-            if self.vf_counters and self.daily:
+            if self.daily:
                 last_value = self.daily[-1].value
-                self.vf_counters.increment(COUNTER_NAME, last_value)
+                if self.vf_tab:
+                    self.vf_tab._flash_value = last_value
+                    self.vf_tab._refresh_counter()
+                if self.vf_counters:
+                    self.vf_counters.increment(COUNTER_NAME, last_value)
+                self.update_vf_label()
 
             self.progress.setValue(100)
-            self.set_status("✓ Данные записаны в прибор! Счётчик VF_Gen обновлён.", True)
+            self.set_status("✓ Данные записаны в прибор! Генератор частоты синхронизирован.", True)
 
         except Exception as exc:
             self.progress.setValue(0)
@@ -1577,9 +1640,10 @@ class MainWindow(QtWidgets.QMainWindow):
         tabs.addTab(MTWriterTab("310_MT", mt_counters), "310_MT (CH341)")
 
         vf_tab = VFGenTab(license_status, vf_counters)
-        tabs.addTab(vf_tab, "Генератор частоты (PIC)")
+        journal_tab = JournalTab(mt_counters, vf_counters, vf_tab)
+        vf_tab.journal_tab = journal_tab
 
-        journal_tab = JournalTab(mt_counters, vf_counters)
+        tabs.addTab(vf_tab, "Генератор частоты (PIC)")
         tabs.addTab(journal_tab, "Синтетический журнал (24AA256)")
 
         layout.addWidget(tabs)
