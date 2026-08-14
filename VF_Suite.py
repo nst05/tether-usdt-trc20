@@ -343,7 +343,7 @@ try:
 except ImportError:
     I2C = None
 
-EEPROM_SIZE = 2048
+EEPROM_SIZE = 32768  # 24AA256 - 32 KB (не 24C16 2KB)
 VALUE_OFFSET = 0x0040
 VALUE_SIZE = 4
 SCALE = 100
@@ -641,10 +641,9 @@ class MTWriterTab(QtWidgets.QWidget):
     @staticmethod
     def split_address(address):
         if not 0 <= address < EEPROM_SIZE:
-            raise ValueError("Адрес выходит за пределы 24C16.")
-        block = (address >> 8) & 0x07
-        device_address = BASE_I2C_ADDRESS | block
-        memory_address = address & 0xFF
+            raise ValueError(f"Адрес 0x{address:04X} выходит за пределы 24AA256 (макс 0x{EEPROM_SIZE-1:04X}).")
+        device_address = BASE_I2C_ADDRESS
+        memory_address = address
         return device_address, memory_address
 
     def read_bytes(self, address, length):
@@ -655,8 +654,8 @@ class MTWriterTab(QtWidgets.QWidget):
         remaining = length
         while remaining > 0:
             dev_addr, mem_addr = self.split_address(current)
-            chunk_len = min(remaining, 0x100 - mem_addr)
-            chunk = self.i2c.readfrom_mem(dev_addr, mem_addr, chunk_len, addrsize=8)
+            chunk_len = min(remaining, 256)
+            chunk = self.i2c.readfrom_mem(dev_addr, mem_addr, chunk_len, addrsize=16)
             result.extend(bytes(chunk))
             current += chunk_len
             remaining -= chunk_len
@@ -666,7 +665,7 @@ class MTWriterTab(QtWidgets.QWidget):
         if self.i2c is None:
             raise RuntimeError("Программатор не инициализирован.")
         dev_addr, mem_addr = self.split_address(address)
-        self.i2c.writeto_mem(dev_addr, mem_addr, bytes(payload), addrsize=8)
+        self.i2c.writeto_mem(dev_addr, mem_addr, bytes(payload), addrsize=16)
 
     def parse_value(self):
         text = self.value_input.text().strip().replace(",", ".")
@@ -1181,13 +1180,14 @@ class VFGenTab(QtWidgets.QWidget):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class JournalTab(QtWidgets.QWidget):
-    def __init__(self):
+    def __init__(self, mt_counters):
         super().__init__()
         self.path = None
         self.data = None
         self.daily = []
         self.monthly = []
         self.i2c = None
+        self.mt_counters = mt_counters
         self.init_ui()
 
     def open_programmer(self):
@@ -1243,7 +1243,12 @@ class JournalTab(QtWidgets.QWidget):
         self.i2c.writeto_mem(dev_addr, mem_addr, bytes(payload), addrsize=8)
 
     def read_from_device(self):
-        """Читает весь дамп (32KB) из 24C16 EEPROM."""
+        """Читает весь дамп (32KB) из 24AA256 EEPROM."""
+        status = check_license()
+        if not status["valid"]:
+            self.set_status(f"✗ Лицензия не активна: {status.get('reason', 'неизвестно')}", False)
+            return
+
         self.status_label.setText("Чтение из устройства...")
         self.progress.setValue(10)
         try:
@@ -1381,7 +1386,12 @@ class JournalTab(QtWidgets.QWidget):
             )
 
     def write_to_device(self):
-        """Записывает сгенерированные данные обратно в 24C16."""
+        """Записывает сгенерированные данные обратно в 24AA256."""
+        status = check_license()
+        if not status["valid"]:
+            self.set_status(f"✗ Лицензия не активна: {status.get('reason', 'неизвестно')}", False)
+            return
+
         if self.data is None:
             self.set_status("✗ Сначала прочитай журнал из прибора", False)
             return
@@ -1408,8 +1418,14 @@ class JournalTab(QtWidgets.QWidget):
 
             self.close_programmer()
 
+            # Синхронизируем счётчики обоих табов (200_MT и 310_MT)
+            self.progress.setValue(95)
+            if self.mt_counters and self.daily:
+                self.mt_counters.inc("200_MT")
+                self.mt_counters.inc("310_MT")
+
             self.progress.setValue(100)
-            self.set_status("✓ Данные записаны в прибор успешно!", True)
+            self.set_status("✓ Данные записаны в прибор! Счётчики синхронизированы.", True)
 
         except Exception as exc:
             self.progress.setValue(0)
@@ -1557,7 +1573,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tabs.addTab(MTWriterTab("200_MT", mt_counters), "200_MT (CH341)")
         tabs.addTab(MTWriterTab("310_MT", mt_counters), "310_MT (CH341)")
         tabs.addTab(VFGenTab(license_status), "Генератор частоты (PIC)")
-        tabs.addTab(JournalTab(), "Синтетический журнал")
+        tabs.addTab(JournalTab(mt_counters), "Синтетический журнал (24AA256)")
 
         layout.addWidget(tabs)
 
