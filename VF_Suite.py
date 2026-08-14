@@ -1187,14 +1187,102 @@ class JournalTab(QtWidgets.QWidget):
         self.data = None
         self.daily = []
         self.monthly = []
+        self.i2c = None
         self.init_ui()
+
+    def open_programmer(self):
+        if I2C is None:
+            raise RuntimeError("Не установлена библиотека i2cpy.")
+        self.close_programmer()
+        self.i2c = I2C(driver="ch341")
+
+    def close_programmer(self):
+        obj = self.i2c
+        self.i2c = None
+        if obj is not None:
+            for method_name in ("close", "deinit", "disconnect"):
+                method = getattr(obj, method_name, None)
+                if callable(method):
+                    try:
+                        method()
+                    except Exception:
+                        pass
+                    break
+        del obj
+        gc.collect()
+        time.sleep(0.08)
+
+    @staticmethod
+    def split_address(address):
+        if not 0 <= address < EEPROM_SIZE:
+            raise ValueError("Адрес выходит за пределы 24C16.")
+        block = (address >> 8) & 0x07
+        device_address = BASE_I2C_ADDRESS | block
+        memory_address = address & 0xFF
+        return device_address, memory_address
+
+    def read_from_eeprom(self, address, length):
+        if self.i2c is None:
+            raise RuntimeError("Программатор не инициализирован.")
+        result = bytearray()
+        current = address
+        remaining = length
+        while remaining > 0:
+            dev_addr, mem_addr = self.split_address(current)
+            chunk_len = min(remaining, 0x100 - mem_addr)
+            chunk = self.i2c.readfrom_mem(dev_addr, mem_addr, chunk_len, addrsize=8)
+            result.extend(bytes(chunk))
+            current += chunk_len
+            remaining -= chunk_len
+        return bytes(result)
+
+    def write_to_eeprom(self, address, payload):
+        if self.i2c is None:
+            raise RuntimeError("Программатор не инициализирован.")
+        dev_addr, mem_addr = self.split_address(address)
+        self.i2c.writeto_mem(dev_addr, mem_addr, bytes(payload), addrsize=8)
+
+    def read_from_device(self):
+        """Читает весь дамп (32KB) из 24C16 EEPROM."""
+        self.status_label.setText("Чтение из устройства...")
+        self.progress.setValue(10)
+        try:
+            self.open_programmer()
+            data = self.read_from_eeprom(0x0000, 0x8000)  # 32 KB
+            self.close_programmer()
+            self.data = data
+            self.daily = parse_daily(data)
+            self.monthly = parse_monthly(data)
+            if len(self.daily) < 2:
+                raise ValueError("Журнал не распознан в устройстве.")
+            self.final_value.setValue(self.daily[-1].value)
+            diffs = [
+                self.daily[i + 1].value - self.daily[i].value
+                for i in range(len(self.daily) - 1)
+                if self.daily[i + 1].value >= self.daily[i].value
+            ]
+            average = sum(diffs) / len(diffs) if diffs else 0.0
+            if average > 0:
+                self.average.setValue(average)
+            self.generate_btn.setEnabled(True)
+            self.write_btn.setEnabled(True)
+            self.set_status(
+                f"✓ Прочитано: {len(self.daily)} суточных записей, "
+                f"{len(self.monthly)} месячных.\n"
+                f"Период: {self.daily[0].dt:%d.%m.%Y} — {self.daily[-1].dt:%d.%m.%Y}",
+                True,
+            )
+        except Exception as exc:
+            self.set_status(f"✗ Ошибка чтения: {exc}", False)
+        finally:
+            self.close_programmer()
 
     def init_ui(self):
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
 
-        title = QtWidgets.QLabel("ГЕНЕРАТОР СИНТЕТИЧЕСКОГО ЖУРНАЛА")
+        title = QtWidgets.QLabel("СИНТЕТИЧЕСКИЙ ЖУРНАЛ (CH341)")
         font = title.font()
         font.setPointSize(17)
         font.setBold(True)
@@ -1203,23 +1291,21 @@ class JournalTab(QtWidgets.QWidget):
         root.addWidget(title)
 
         warning = QtWidgets.QLabel(
-            "Работает только с копией BIN и сохраняет отдельный файл __SYNTHETIC. "
-            "Прямая запись в устройство отсутствует."
+            "Читает журнал из 24C16 EEPROM (CH341), генерирует синтетические данные, "
+            "пишет обратно в устройство."
         )
         warning.setWordWrap(True)
         warning.setAlignment(QtCore.Qt.AlignCenter)
         warning.setStyleSheet("color:#ffcf70;")
         root.addWidget(warning)
 
-        file_box = QtWidgets.QGroupBox("Исходный дамп")
-        file_layout = QtWidgets.QHBoxLayout(file_box)
-        self.open_btn = QtWidgets.QPushButton("Открыть BIN")
-        self.open_btn.clicked.connect(self.open_file)
-        self.path_edit = QtWidgets.QLineEdit()
-        self.path_edit.setReadOnly(True)
-        file_layout.addWidget(self.open_btn)
-        file_layout.addWidget(self.path_edit, 1)
-        root.addWidget(file_box)
+        # Кнопка чтения
+        read_box = QtWidgets.QGroupBox("Устройство (24C16)")
+        read_layout = QtWidgets.QHBoxLayout(read_box)
+        self.read_btn = QtWidgets.QPushButton("Прочитать журнал из прибора")
+        self.read_btn.clicked.connect(lambda: threading.Thread(target=self.read_from_device, daemon=True).start())
+        read_layout.addWidget(self.read_btn)
+        root.addWidget(read_box)
 
         params = QtWidgets.QGroupBox("Параметры синтетической хронологии")
         form = QtWidgets.QGridLayout(params)
@@ -1255,38 +1341,82 @@ class JournalTab(QtWidgets.QWidget):
 
         root.addWidget(params)
 
-        self.generate_btn = QtWidgets.QPushButton("СФОРМИРОВАТЬ СИНТЕТИЧЕСКУЮ КОПИЮ")
+        btn_row = QtWidgets.QHBoxLayout()
+        self.generate_btn = QtWidgets.QPushButton("СФОРМИРОВАТЬ СИНТЕТИЧЕСКИЕ ДАННЫЕ")
         self.generate_btn.setEnabled(False)
         self.generate_btn.clicked.connect(self.generate)
-        root.addWidget(self.generate_btn)
+        self.write_btn = QtWidgets.QPushButton("ЗАПИСАТЬ В ПРИБОР")
+        self.write_btn.setEnabled(False)
+        self.write_btn.clicked.connect(self.write_to_device)
+        btn_row.addWidget(self.generate_btn)
+        btn_row.addWidget(self.write_btn)
+        root.addLayout(btn_row)
 
         self.progress = QtWidgets.QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
         root.addWidget(self.progress)
 
-        self.status = QtWidgets.QLabel("Откройте 32-КБ BIN-дамп.")
-        self.status.setObjectName("Status")
-        self.status.setWordWrap(True)
-        root.addWidget(self.status)
+        self.status_label = QtWidgets.QLabel("Нажми 'Прочитать журнал из прибора'")
+        self.status_label.setObjectName("Status")
+        self.status_label.setWordWrap(True)
+        root.addWidget(self.status_label)
 
     def set_status(self, text, ok=None):
-        self.status.setText(text)
+        self.status_label.setText(text)
         if ok is True:
-            self.status.setStyleSheet(
+            self.status_label.setStyleSheet(
                 "background:#153c28;border:2px solid #2fc46f;"
                 "border-radius:10px;padding:12px;color:#91f4b8;"
             )
         elif ok is False:
-            self.status.setStyleSheet(
+            self.status_label.setStyleSheet(
                 "background:#471d25;border:2px solid #ff5a6f;"
                 "border-radius:10px;padding:12px;color:#ffabb8;"
             )
         else:
-            self.status.setStyleSheet(
+            self.status_label.setStyleSheet(
                 "background:#18202c;border:1px solid #3d4a60;"
                 "border-radius:10px;padding:12px;"
             )
+
+    def write_to_device(self):
+        """Записывает сгенерированные данные обратно в 24C16."""
+        if self.data is None:
+            self.set_status("✗ Сначала прочитай журнал из прибора", False)
+            return
+
+        self.write_btn.setEnabled(False)
+        self.progress.setValue(5)
+        self.set_status("Запись в устройство...")
+
+        try:
+            output = bytearray(self.data)
+            self.progress.setValue(30)
+
+            for index, record in enumerate(self.daily):
+                write_u24_le(output, record.offset + DAILY_VALUE_OFF, int(record.value * VALUE_SCALE))
+                self.progress.setValue(30 + int((index / len(self.daily)) * 50))
+
+            self.progress.setValue(85)
+            self.open_programmer()
+
+            for offset in range(0, len(output), 256):
+                chunk = output[offset:offset + 256]
+                self.write_to_eeprom(offset, chunk)
+                time.sleep(0.05)
+
+            self.close_programmer()
+
+            self.progress.setValue(100)
+            self.set_status("✓ Данные записаны в прибор успешно!", True)
+
+        except Exception as exc:
+            self.progress.setValue(0)
+            self.set_status(f"✗ Ошибка записи: {exc}", False)
+        finally:
+            self.close_programmer()
+            self.write_btn.setEnabled(True)
 
     def open_file(self):
         selected, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -1438,21 +1568,39 @@ class ActivationDialog(QtWidgets.QDialog):
     def __init__(self, license_status):
         super().__init__()
         self.setWindowTitle("Активация")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(500)
+        self.machine_code = license_status['machine_code']
         layout = QtWidgets.QVBoxLayout(self)
 
-        layout.addWidget(QtWidgets.QLabel(
-            f"Требуется активация.\n\nКод компьютера:\n{license_status['machine_code']}"
-        ))
+        # Код компьютера
+        code_label = QtWidgets.QLabel("КОД ЭТОГО КОМПЬЮТЕРА:")
+        code_label.setStyleSheet("font-weight:bold;")
+        layout.addWidget(code_label)
+
+        code_layout = QtWidgets.QHBoxLayout()
+        self.code_input = QtWidgets.QLineEdit(self.machine_code)
+        self.code_input.setReadOnly(True)
+        code_layout.addWidget(self.code_input)
+        copy_btn = QtWidgets.QPushButton("Копировать")
+        copy_btn.setMaximumWidth(120)
+        copy_btn.clicked.connect(self.copy_code)
+        code_layout.addWidget(copy_btn)
+        layout.addLayout(code_layout)
+
+        # Ключ активации
+        key_label = QtWidgets.QLabel("\nКЛЮЧ АКТИВАЦИИ:")
+        key_label.setStyleSheet("font-weight:bold;")
+        layout.addWidget(key_label)
 
         key_layout = QtWidgets.QHBoxLayout()
-        key_layout.addWidget(QtWidgets.QLabel("Ключ:"))
         self.key_input = QtWidgets.QLineEdit()
+        self.key_input.setPlaceholderText("Вставь ключ от keygen_vf.py")
         key_layout.addWidget(self.key_input)
         layout.addLayout(key_layout)
 
+        # Кнопки
         btn_layout = QtWidgets.QHBoxLayout()
-        ok_btn = QtWidgets.QPushButton("OK")
+        ok_btn = QtWidgets.QPushButton("Активировать")
         cancel_btn = QtWidgets.QPushButton("Отмена")
         ok_btn.clicked.connect(self.accept)
         cancel_btn.clicked.connect(self.reject)
@@ -1460,7 +1608,9 @@ class ActivationDialog(QtWidgets.QDialog):
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
 
-        self.setLayout(layout)
+    def copy_code(self):
+        QtWidgets.QApplication.clipboard().setText(self.machine_code)
+        QtWidgets.QMessageBox.information(self, "✓", "Код скопирован в буфер обмена!")
 
     def exec_(self):
         if super().exec_() == QtWidgets.QDialog.Accepted:
