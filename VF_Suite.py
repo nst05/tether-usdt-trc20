@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-VF Suite — объединённая программа с двумя табами:
-  1. Генератор частоты (VF Gen) — для PIC16F1934 через PICkit 3
-  2. Синтетический журнал — генератор данных счётчика из BIN-дампов
+VF Suite — объединённая программа с тремя вкладками:
+  1. 200_MT — запись счётчика через CH341
+  2. 310_MT — запись счётчика через CH341
+  3. Синтетический журнал — чтение, пересчёт и запись журнала
+     прямо в память 24AA256 через CH341
 
-Сборка: pyinstaller --onefile VF_Suite.py
+Сборка: pyinstaller --onefile --hidden-import=i2cpy VF_Suite.py
 """
 import base64
 import binascii
 import csv
 import gc
-import glob
 import hashlib
 import hmac
 import json
@@ -18,18 +19,16 @@ import math
 import os
 import platform
 import random
-import shutil
 import struct
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -38,7 +37,7 @@ if getattr(sys, "frozen", False):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ЛИЦЕНЗИРОВАНИЕ (общее для обоих табов)
+# ЛИЦЕНЗИРОВАНИЕ (общее для всех вкладок)
 # ══════════════════════════════════════════════════════════════════════════════
 
 DEFAULT_SECRET = 'vf-gen-license-secret-change-me-2024'
@@ -281,59 +280,6 @@ def app_data_dir():
     return _cached_dir
 
 
-def data_path(filename):
-    return os.path.join(app_data_dir(), filename)
-
-
-def read_json(filename, default=None):
-    try:
-        with open(data_path(filename), 'r', encoding='utf-8') as fh:
-            data = json.load(fh)
-        if isinstance(data, dict):
-            return data
-    except Exception:
-        pass
-    return default
-
-
-def write_json(filename, data):
-    path = data_path(filename)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + '.tmp'
-    try:
-        with open(tmp, 'w', encoding='utf-8') as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.remove(tmp)
-        except Exception:
-            pass
-        raise
-
-
-class Counters:
-    def __init__(self, filename='counters.json'):
-        self.filename = filename
-        self.data = read_json(filename, {})
-
-    def get(self, name, default=0):
-        return self.data.get(name, default)
-
-    def increment(self, name, value=None):
-        if value is not None:
-            self.data[name] = (self.data.get(name, 0) + 1, value)
-        else:
-            count, _ = self.data.get(name, (0, None))
-            self.data[name] = (count + 1, None)
-        write_json(self.filename, self.data)
-        count, _ = self.data.get(name, (0, None))
-        return count
-
-    def get_count_and_value(self, name):
-        return self.data.get(name, (0, None))
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # ВКЛ 0: MT WRITER (запись счётчиков 24C16 через CH341)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -363,174 +309,6 @@ def decode_value(data: bytes) -> float:
     if len(data) != 4:
         raise ValueError("Неверная длина данных.")
     return int.from_bytes(data, "little", signed=False) / SCALE
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ВКЛ 1: VF_GEN (частотный генератор)
-# ══════════════════════════════════════════════════════════════════════════════
-
-PIC_DEVICE = "16F1934"
-PIC_TOOL = "PPK3"
-EEPROM_ONLY = True
-NO_ERASE = True
-POWER_FROM_TOOL = True
-PRESERVE_PROGRAM = False
-
-BASE_ADDR = 0x1E000
-FRAC_ADDR = 0x1E200
-FRAC_LEN = 256
-
-COUNTER_NAME = "vf_gen_writes"
-
-
-@dataclass
-class Candidate:
-    b1: int
-    b2: int
-    b3: int
-    n_frac: int
-    value: float
-    exact: bool
-    error: float
-
-
-def solve(target_freq):
-    best = None
-    best_error = float('inf')
-
-    for b1 in range(256):
-        for b2 in range(256):
-            for b3 in range(256):
-                mid = (1 + b2 / 256) * (b1 + 38) if b1 else 37
-                freq = 37000000 / (4 * mid * (b3 + 1) * 64)
-                error = abs(freq - target_freq)
-
-                if error < best_error:
-                    best_error = error
-                    best = Candidate(b1, b2, b3, 0, freq, error < 0.01, error)
-
-    return best
-
-
-def make_base_block(b1, b2, b3):
-    data = bytearray(512)
-    data[0] = b1
-    data[1] = b2
-    data[2] = b3
-    return bytes(data)
-
-
-def make_frac_block(n_frac):
-    return bytes(bytearray(256))
-
-
-def build_ihex(blocks):
-    lines = []
-    current_ela = None
-
-    for addr_base, data in blocks:
-        ela = (addr_base >> 16) & 0xFFFF
-        if ela != current_ela:
-            lines.append(':02000004%04X%02X' % (ela, (256 - (ela + ela >> 8)) & 0xFF))
-            current_ela = ela
-        base16 = addr_base & 0xFFFF
-        for off in range(0, len(data), 16):
-            chunk = data[off:off + 16]
-            checksum = (256 - (len(chunk) + (base16 + off >> 8) + (base16 + off & 0xFF) + sum(chunk))) & 0xFF
-            line = ':%02X%04X00%s%02X' % (len(chunk), base16 + off, chunk.hex().upper(), checksum)
-            lines.append(line)
-
-    lines.append(':00000001FF')
-    return '\n'.join(lines) + '\n'
-
-
-def build_hex_for(candidate):
-    blocks = [(BASE_ADDR, make_base_block(candidate.b1, candidate.b2, candidate.b3))]
-    if candidate.n_frac > 0:
-        blocks.append((FRAC_ADDR, make_frac_block(candidate.n_frac)))
-    return build_ihex(blocks)
-
-
-def format_value(value):
-    return '%.2f кГц' % (value / 1000)
-
-
-def _microchip_glob(name):
-    pf = os.environ.get('ProgramFiles', 'C:\\Program Files')
-    pf86 = os.environ.get('ProgramFiles(x86)', 'C:\\Program Files (x86)')
-    paths = [
-        os.path.join(pf, 'Microchip', '**', name),
-        os.path.join(pf86, 'Microchip', '**', name),
-        os.path.join(pf, 'MPLABX', '**', name),
-        os.path.join(pf86, 'MPLABX', '**', name),
-    ]
-    for pattern in paths:
-        matches = glob.glob(pattern, recursive=True)
-        if matches:
-            return sorted(matches, key=lambda x: -os.path.getmtime(x))[0]
-    return None
-
-
-def find_ipecmd():
-    if os.path.exists('ipecmd_path.txt'):
-        try:
-            return open('ipecmd_path.txt').read().strip()
-        except Exception:
-            pass
-
-    override = os.environ.get('IPECMD')
-    if override and os.path.exists(override):
-        return override
-
-    if shutil.which('ipecmd.exe'):
-        return 'ipecmd.exe'
-    if shutil.which('ipecmd'):
-        return 'ipecmd'
-
-    found = _microchip_glob('ipecmd.exe')
-    if found:
-        return found
-
-    return None
-
-
-def build_flash_args(ipecmd, hex_path):
-    args = list(ipecmd if isinstance(ipecmd, (list, tuple)) else [ipecmd])
-    args += ["-P" + PIC_DEVICE, "-T" + PIC_TOOL, "-F" + hex_path]
-    args.append("-ME" if EEPROM_ONLY else "-M")
-    if NO_ERASE:
-        args.append("-OH")
-    if PRESERVE_PROGRAM:
-        args.append("-OP0-1FFF")
-    if POWER_FROM_TOOL:
-        args.append("-W")
-    args.append("-OL")
-    return args
-
-
-class FlashWorker(QtCore.QThread):
-    line = QtCore.pyqtSignal(str)
-    done = QtCore.pyqtSignal(int)
-
-    def __init__(self, ipecmd, hex_path):
-        super().__init__()
-        self.ipecmd = ipecmd
-        self.hex_path = hex_path
-
-    def run(self):
-        try:
-            cmd = build_flash_args(self.ipecmd, self.hex_path)
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.stdout:
-                for line in result.stdout.splitlines():
-                    self.line.emit(line)
-            if result.stderr:
-                for line in result.stderr.splitlines():
-                    self.line.emit("[stderr] " + line)
-            self.done.emit(result.returncode)
-        except Exception as exc:
-            self.line.emit(f"✗ Ошибка: {exc}")
-            self.done.emit(1)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1087,189 +865,6 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 """
 
 
-class SyncState:
-    """Общее хранилище состояния для обоих tab'ов (VF_Gen и Journal)."""
-    def __init__(self):
-        self.vf_value = None
-        self.journal_value = None
-        self.lock = threading.Lock()
-
-    def set_vf_value(self, value):
-        with self.lock:
-            self.vf_value = value
-
-    def set_journal_value(self, value):
-        with self.lock:
-            self.journal_value = value
-
-    def get_vf_value(self):
-        with self.lock:
-            return self.vf_value
-
-    def get_journal_value(self):
-        with self.lock:
-            return self.journal_value
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ВКЛ 1: VF_GEN GUI
-# ══════════════════════════════════════════════════════════════════════════════
-
-class VFGenTab(QtWidgets.QWidget):
-    def __init__(self, status, vf_counters=None, sync_state=None):
-        super().__init__()
-        self.status = status
-        self.counters = vf_counters or Counters('counters.json')
-        self.sync_state = sync_state or SyncState()
-        self.worker = None
-        self.flash_worker = None
-        self._flash_value = None
-        self.init_ui()
-        self._refresh_counter()
-
-    def init_ui(self):
-        root = QtWidgets.QVBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 20)
-        root.setSpacing(12)
-
-        title = QtWidgets.QLabel("ГЕНЕРАТОР ЧАСТОТЫ PIC16F1934")
-        font = title.font()
-        font.setPointSize(16)
-        font.setBold(True)
-        title.setFont(font)
-        title.setAlignment(QtCore.Qt.AlignCenter)
-        root.addWidget(title)
-
-        inp_group = QtWidgets.QGroupBox("Целевая частота")
-        inp_layout = QtWidgets.QHBoxLayout(inp_group)
-        self.inp = QtWidgets.QLineEdit()
-        self.inp.setPlaceholderText("Введите частоту в кГц (например: 3332.85)")
-        self.inp.returnPressed.connect(self.on_solve)
-        inp_layout.addWidget(self.inp)
-        root.addWidget(inp_group)
-
-        btn_layout = QtWidgets.QHBoxLayout()
-        self.solve_btn = QtWidgets.QPushButton("ПОДОБРАТЬ ПАРАМЕТРЫ")
-        self.solve_btn.clicked.connect(self.on_solve)
-        self.auto_btn = QtWidgets.QPushButton("ЗАПИСАТЬ В ПРИБОР")
-        self.auto_btn.clicked.connect(self.on_write_auto)
-        self.auto_btn.setEnabled(False)
-        btn_layout.addWidget(self.solve_btn)
-        btn_layout.addWidget(self.auto_btn)
-        root.addLayout(btn_layout)
-
-        counter_group = QtWidgets.QGroupBox("Счётчик прошивок")
-        counter_layout = QtWidgets.QHBoxLayout(counter_group)
-        self.counter_label = QtWidgets.QLabel()
-        counter_layout.addWidget(self.counter_label)
-        root.addWidget(counter_group)
-
-        sync_group = QtWidgets.QGroupBox("Синхронизация с журналом")
-        sync_layout = QtWidgets.QHBoxLayout(sync_group)
-        self.journal_value_label = QtWidgets.QLabel("Журнал: —")
-        self.journal_value_label.setMinimumWidth(200)
-        sync_layout.addWidget(self.journal_value_label)
-        self.load_from_journal_btn = QtWidgets.QPushButton("Загрузить из журнала")
-        self.load_from_journal_btn.clicked.connect(self.load_value_from_journal)
-        sync_layout.addWidget(self.load_from_journal_btn)
-        sync_layout.addStretch()
-        root.addWidget(sync_group)
-
-        self.log = QtWidgets.QTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setMaximumHeight(300)
-        root.addWidget(self.log)
-
-    def _refresh_counter(self):
-        count, value = self.counters.get_count_and_value(COUNTER_NAME)
-        if value is None:
-            self.counter_label.setText(f"Всего прошивок: {count}")
-        else:
-            self.counter_label.setText(f"Всего прошивок: {count} (последняя: {format_value(value)})")
-
-    def update_journal_label(self):
-        value = self.sync_state.get_journal_value()
-        if value is not None:
-            self.journal_value_label.setText(f"Журнал: {format_value(value)}")
-        else:
-            self.journal_value_label.setText("Журнал: —")
-
-    def load_value_from_journal(self):
-        value = self.sync_state.get_journal_value()
-        if value is not None:
-            freq_khz = value / 1000.0
-            self.inp.setText(str(freq_khz))
-            self.log.setText(f"✓ Загружено значение из журнала: {format_value(value)}")
-        else:
-            self.log.setText("✗ В журнале нет данных")
-
-    def on_solve(self):
-        try:
-            freq_str = self.inp.text().strip()
-            if not freq_str:
-                self.log.setText("Введите частоту")
-                return
-            freq = float(freq_str.replace(',', '.')) * 1000
-
-            self.log.append("Подбираю параметры...")
-
-            def solve_async():
-                cand = solve(freq)
-                self.log.append(f"Подобрано: {format_value(cand.value)} "
-                              f"({('точно' if cand.exact else f'±{cand.error:.2f} кГц')}) "
-                              f"B1={cand.b1} B2={cand.b2} B3={cand.b3}")
-                self.auto_btn.setEnabled(True)
-
-            self.worker = threading.Thread(target=solve_async, daemon=True)
-            self.worker.start()
-        except ValueError:
-            self.log.setText("Ошибка: введите корректную частоту")
-
-    def on_write_auto(self):
-        try:
-            freq_str = self.inp.text().strip()
-            freq = float(freq_str.replace(',', '.')) * 1000
-            cand = solve(freq)
-
-            ipecmd = find_ipecmd()
-            if not ipecmd:
-                self.log.setText("Ошибка: ipecmd.exe не найден. Установите MPLAB X.")
-                return
-
-            hex_text = build_hex_for(cand)
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.hex', delete=False) as tmp:
-                tmp.write(hex_text)
-                hex_path = tmp.name
-
-            self._flash_value = cand.value
-            self.log.append(f"Подобрано {format_value(cand.value)} ({('точно' if cand.exact else f'±{cand.error:.2f} кГц')}, базовый блок) → прошиваю EEPROM в PIC{PIC_DEVICE}…")
-            self.auto_btn.setEnabled(False)
-            self.auto_btn.setText("ПРОШИВКА…")
-            self.solve_btn.setEnabled(False)
-
-            self.flash_worker = FlashWorker(ipecmd, hex_path)
-            self.flash_worker.line.connect(self.log.append)
-            self.flash_worker.done.connect(self.on_flash_done)
-            self.flash_worker.start()
-        except Exception as exc:
-            self.log.setText(f"Ошибка: {exc}")
-
-    def on_flash_done(self, rc):
-        self.auto_btn.setEnabled(True)
-        self.auto_btn.setText("ЗАПИСАТЬ В ПРИБОР")
-        self.solve_btn.setEnabled(True)
-        if rc == 0:
-            total = self.counters.increment(COUNTER_NAME, getattr(self, "_flash_value", 0))
-            self._refresh_counter()
-            self.log.append(f"✓ EEPROM записан (№ {total}). Основная прошивка не тронута.")
-            self.sync_state.set_vf_value(self._flash_value)
-            self.update_journal_label()
-            self.inp.selectAll()
-            self.inp.setFocus()
-        else:
-            self.log.append(f"✗ Ошибка прошивки (код {rc}). См. сообщения выше.")
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # ВКЛ 2: СИНТЕТИЧЕСКИЙ ЖУРНАЛ GUI
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1292,7 +887,7 @@ class JournalTab(QtWidgets.QWidget):
     sig_loaded = QtCore.pyqtSignal()
     sig_busy = QtCore.pyqtSignal(bool)
 
-    def __init__(self, mt_counters, vf_counters=None, sync_state=None):
+    def __init__(self, mt_counters):
         super().__init__()
         self.path = None
         self.data = None
@@ -1300,8 +895,6 @@ class JournalTab(QtWidgets.QWidget):
         self.monthly = []
         self.i2c = None
         self.mt_counters = mt_counters
-        self.vf_counters = vf_counters or Counters('counters.json')
-        self.sync_state = sync_state or SyncState()
         self.init_ui()
 
         self.sig_status.connect(self.set_status)
@@ -1515,21 +1108,6 @@ class JournalTab(QtWidgets.QWidget):
 
         generator_layout.addWidget(params)
 
-        sync_group = QtWidgets.QGroupBox("Синхронизация с генератором частоты")
-        sync_layout = QtWidgets.QHBoxLayout(sync_group)
-        sync_layout.setContentsMargins(16, 10, 16, 10)
-        self.vf_value_label = QtWidgets.QLabel("Генератор: —")
-        self.vf_value_label.setMinimumWidth(220)
-        self.vf_value_label.setStyleSheet("font-size:13px;font-weight:700;")
-        sync_layout.addWidget(self.vf_value_label)
-        self.load_from_vf_btn = QtWidgets.QPushButton("Загрузить из генератора")
-        self.load_from_vf_btn.setFixedHeight(32)
-        self.load_from_vf_btn.setStyleSheet("padding:4px 14px;font-size:13px;")
-        self.load_from_vf_btn.clicked.connect(self.load_value_from_vf)
-        sync_layout.addWidget(self.load_from_vf_btn)
-        sync_layout.addStretch()
-        generator_layout.addWidget(sync_group)
-
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.setSpacing(10)
         self.generate_btn = QtWidgets.QPushButton("ПЕРЕСЧИТАТЬ ЖУРНАЛ")
@@ -1579,6 +1157,14 @@ class JournalTab(QtWidgets.QWidget):
                 "border-radius:10px;padding:12px;"
             )
 
+    def set_summary(self, text):
+        """Сводка над таблицей. Таблица растянута и иначе съедает у метки
+        последние строки, поэтому высоту закрепляем по самому тексту."""
+        self.summary_label.setText(text)
+        lines = text.count("\n") + 1
+        spacing = self.summary_label.fontMetrics().lineSpacing()
+        self.summary_label.setMinimumHeight(lines * spacing + 26)
+
     def set_busy(self, busy):
         self.read_btn.setEnabled(not busy)
         self.open_btn.setEnabled(not busy)
@@ -1586,25 +1172,6 @@ class JournalTab(QtWidgets.QWidget):
         self.generate_btn.setEnabled(not busy and has_data)
         self.write_btn.setEnabled(not busy and has_data)
         self.export_btn.setEnabled(not busy and has_data)
-
-    # ── синхронизация с генератором частоты ───────────────────────────────
-
-    def update_vf_label(self):
-        value = self.sync_state.get_vf_value()
-        if value is not None:
-            self.vf_value_label.setText(f"Генератор: {format_value(value)}")
-        else:
-            self.vf_value_label.setText("Генератор: —")
-
-    def load_value_from_vf(self):
-        value = self.sync_state.get_vf_value()
-        if value is not None:
-            self.final_value.setValue(value)
-            self.set_status(
-                f"✓ Загружено значение из генератора: {format_value(value)}", True
-            )
-        else:
-            self.set_status("✗ В генераторе нет сохранённого значения", False)
 
     # ── разбор и отображение ──────────────────────────────────────────────
 
@@ -1638,8 +1205,6 @@ class JournalTab(QtWidgets.QWidget):
         if average > 0:
             self.average.setValue(average)
 
-        self.sync_state.set_journal_value(self.daily[-1].value)
-        self.update_vf_label()
         self.set_busy(False)
 
     def populate_journal_table(self):
@@ -1671,7 +1236,7 @@ class JournalTab(QtWidgets.QWidget):
             ]
             positive = [d for d in diffs if d >= 0]
             average = sum(positive) / len(positive) if positive else 0.0
-            self.summary_label.setText(
+            self.set_summary(
                 f"Источник: {getattr(self, 'source_name', '—')}\n"
                 f"Суточных записей: {len(self.daily)} | "
                 f"Месячных записей: {len(self.monthly)}\n"
@@ -1763,8 +1328,6 @@ class JournalTab(QtWidgets.QWidget):
             # что реально уйдёт в прибор.
             self.load_image(bytes(output), "пересчитанный журнал")
             self.populate_journal_table()
-            self.sync_state.set_journal_value(self.daily[-1].value)
-            self.update_vf_label()
 
             self.progress.setValue(100)
             self.set_status(
@@ -1830,16 +1393,10 @@ class JournalTab(QtWidgets.QWidget):
                 raise RuntimeError("После записи журнал не распознаётся прибором.")
             actual_final = max(check_daily, key=lambda item: item.dt).value
 
-            last_value = self.daily[-1].value
-            self.sync_state.set_journal_value(last_value)
-            if self.vf_counters:
-                self.vf_counters.increment(COUNTER_NAME, last_value)
-
             self.sig_progress.emit(100)
             self.sig_status.emit(
                 f"✓ Журнал записан в прибор и проверен.\n"
-                f"Конечное показание в приборе: {actual_final:.2f}. "
-                f"Значение передано генератору частоты.",
+                f"Конечное показание в приборе: {actual_final:.2f}.",
                 True,
             )
             self.sig_busy.emit(False)
@@ -1874,7 +1431,7 @@ class JournalTab(QtWidgets.QWidget):
             self.daily = []
             self.monthly = []
             self.journal_table.setRowCount(0)
-            self.summary_label.setText("Журнал не загружен.")
+            self.set_summary("Журнал не загружен.")
             self.set_busy(False)
             self.set_status(f"✗ Ошибка: {exc}", False)
 
@@ -1907,7 +1464,7 @@ class JournalTab(QtWidgets.QWidget):
                         increment,
                         f"{sum(record.profile) / VALUE_SCALE:.2f}",
                     ])
-            self.summary_label.setText(
+            self.set_summary(
                 self.summary_label.text() + f"\nЭкспортировано: {selected}"
             )
         except Exception as exc:
@@ -1923,8 +1480,8 @@ class JournalTab(QtWidgets.QWidget):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, license_status):
         super().__init__()
-        self.setWindowTitle("VF Suite — MT Writer + VF Gen + Синтетический журнал")
-        self.setMinimumSize(1000, 750)
+        self.setWindowTitle("VF Suite — MT Writer + Синтетический журнал")
+        self.setMinimumSize(1000, 700)
 
         central = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(central)
@@ -1942,17 +1499,10 @@ class MainWindow(QtWidgets.QMainWindow):
         tabs = QtWidgets.QTabWidget()
 
         mt_counters = MTCounters(["200_MT", "310_MT"])
-        vf_counters = Counters('vf_counters.json')
-        sync_state = SyncState()
 
         tabs.addTab(MTWriterTab("200_MT", mt_counters), "200_MT (CH341)")
         tabs.addTab(MTWriterTab("310_MT", mt_counters), "310_MT (CH341)")
-
-        vf_tab = VFGenTab(license_status, vf_counters, sync_state)
-        journal_tab = JournalTab(mt_counters, vf_counters, sync_state)
-
-        tabs.addTab(vf_tab, "Генератор частоты (PIC)")
-        tabs.addTab(journal_tab, "Синтетический журнал (24AA256)")
+        tabs.addTab(JournalTab(mt_counters), "Синтетический журнал (24AA256)")
 
         layout.addWidget(tabs)
 
