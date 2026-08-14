@@ -1045,6 +1045,45 @@ QTabBar::tab:selected {
     background: #3f6df6;
     color: white;
 }
+QTableWidget {
+    background: #121722;
+    alternate-background-color: #171d29;
+    gridline-color: #2d3748;
+    border: 1px solid #354157;
+    border-radius: 8px;
+    color: #eef2f8;
+}
+QTableWidget::item {
+    padding: 4px;
+    color: #eef2f8;
+}
+QTableWidget::item:selected {
+    background: #26344d;
+    color: white;
+}
+QHeaderView::section {
+    background: #26344d;
+    color: white;
+    padding: 6px;
+    border: 1px solid #354157;
+    font-weight: 700;
+}
+QScrollBar:vertical {
+    background: #18202c;
+    width: 12px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #3d4a60;
+    border-radius: 6px;
+    min-height: 24px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #4d5d78;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
 """
 
 
@@ -1338,33 +1377,27 @@ class JournalTab(QtWidgets.QWidget):
 
     def init_ui(self):
         root = QtWidgets.QVBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 20)
-        root.setSpacing(12)
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(8)
 
         title = QtWidgets.QLabel("СИНТЕТИЧЕСКИЙ ЖУРНАЛ (24AA256 / CH341)")
         font = title.font()
-        font.setPointSize(17)
+        font.setPointSize(13)
         font.setBold(True)
         title.setFont(font)
         title.setAlignment(QtCore.Qt.AlignCenter)
         root.addWidget(title)
 
-        warning = QtWidgets.QLabel(
-            "Читает журнал прямо из памяти прибора, пересчитывает хронологию "
-            "под заданное показание и пишет обратно. Дамп на диск не нужен."
-        )
-        warning.setWordWrap(True)
-        warning.setAlignment(QtCore.Qt.AlignCenter)
-        warning.setStyleSheet("color:#ffcf70;")
-        root.addWidget(warning)
-
         device_box = QtWidgets.QGroupBox("Прибор")
         device_layout = QtWidgets.QHBoxLayout(device_box)
+        device_layout.setContentsMargins(14, 12, 14, 12)
         self.read_btn = QtWidgets.QPushButton("ПРОЧИТАТЬ ЖУРНАЛ ИЗ ПРИБОРА")
+        self.read_btn.setFixedHeight(40)
         self.read_btn.clicked.connect(self.start_read)
         device_layout.addWidget(self.read_btn)
         self.open_btn = QtWidgets.QPushButton("Открыть BIN")
-        self.open_btn.setMaximumWidth(160)
+        self.open_btn.setMaximumWidth(150)
+        self.open_btn.setFixedHeight(40)
         self.open_btn.clicked.connect(self.open_file)
         device_layout.addWidget(self.open_btn)
         root.addWidget(device_box)
@@ -1392,11 +1425,14 @@ class JournalTab(QtWidgets.QWidget):
         self.journal_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.journal_table.setAlternatingRowColors(True)
         self.journal_table.verticalHeader().setVisible(False)
-        self.journal_table.horizontalHeader().setStretchLastSection(True)
+        header = self.journal_table.horizontalHeader()
+        header.setStretchLastSection(False)
         for column in range(5):
-            self.journal_table.horizontalHeader().setSectionResizeMode(
-                column, QtWidgets.QHeaderView.ResizeToContents
-            )
+            header.setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeToContents)
+        # Последняя колонка забирает остаток ширины, но не растягивается
+        # на пол-экрана: заголовок остаётся рядом с данными.
+        header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)
+        header.setDefaultAlignment(QtCore.Qt.AlignCenter)
         viewer_layout.addWidget(self.journal_table, 1)
 
         export_row = QtWidgets.QHBoxLayout()
@@ -1410,18 +1446,28 @@ class JournalTab(QtWidgets.QWidget):
         self.tabs.addTab(viewer_tab, "Просмотр журнала")
 
         # ── генератор ──
-        generator_tab = QtWidgets.QWidget()
-        generator_layout = QtWidgets.QVBoxLayout(generator_tab)
-        generator_layout.setContentsMargins(12, 12, 12, 12)
-        generator_layout.setSpacing(12)
+        # Содержимое лежит в области прокрутки: на низких экранах вкладка
+        # иначе сжимает группы и обрезает поля.
+        generator_tab = QtWidgets.QScrollArea()
+        generator_tab.setWidgetResizable(True)
+        generator_tab.setFrameShape(QtWidgets.QFrame.NoFrame)
+        generator_tab.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        generator_body = QtWidgets.QWidget()
+        generator_tab.setWidget(generator_body)
+
+        generator_layout = QtWidgets.QVBoxLayout(generator_body)
+        generator_layout.setContentsMargins(12, 8, 12, 8)
+        generator_layout.setSpacing(8)
 
         params = QtWidgets.QGroupBox("Параметры синтетической хронологии")
         form = QtWidgets.QGridLayout(params)
-        form.setContentsMargins(22, 24, 22, 22)
-        form.setHorizontalSpacing(24)
-        form.setVerticalSpacing(16)
-        form.setColumnStretch(0, 1)
+        form.setContentsMargins(16, 10, 16, 10)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(6)
+        # Подпись и поле идут парой слева, свободное место уходит вправо.
+        form.setColumnStretch(0, 0)
         form.setColumnStretch(1, 0)
+        form.setColumnStretch(2, 1)
 
         self.final_value = QtWidgets.QDoubleSpinBox()
         self.final_value.setDecimals(2)
@@ -1444,10 +1490,11 @@ class JournalTab(QtWidgets.QWidget):
         self.seed.setValue(2026)
 
         for widget in (self.final_value, self.average, self.variation, self.seed):
-            widget.setMinimumWidth(300)
-            widget.setMinimumHeight(46)
+            widget.setMinimumWidth(220)
+            widget.setFixedHeight(32)
             widget.setAlignment(QtCore.Qt.AlignCenter)
             widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+            widget.setStyleSheet("font-size:14px;min-height:0px;padding:2px 8px;")
 
         labels = [
             QtWidgets.QLabel("Конечное показание:"),
@@ -1456,9 +1503,9 @@ class JournalTab(QtWidgets.QWidget):
             QtWidgets.QLabel("Seed генератора:"),
         ]
         for label in labels:
-            label.setMinimumHeight(46)
+            label.setFixedHeight(32)
             label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            label.setStyleSheet("font-size:15px;font-weight:700;color:#dce4f2;")
+            label.setStyleSheet("font-size:13px;font-weight:700;color:#dce4f2;")
 
         for row, (label, widget) in enumerate(
             zip(labels, (self.final_value, self.average, self.variation, self.seed))
@@ -1470,21 +1517,28 @@ class JournalTab(QtWidgets.QWidget):
 
         sync_group = QtWidgets.QGroupBox("Синхронизация с генератором частоты")
         sync_layout = QtWidgets.QHBoxLayout(sync_group)
+        sync_layout.setContentsMargins(16, 10, 16, 10)
         self.vf_value_label = QtWidgets.QLabel("Генератор: —")
-        self.vf_value_label.setMinimumWidth(200)
+        self.vf_value_label.setMinimumWidth(220)
+        self.vf_value_label.setStyleSheet("font-size:13px;font-weight:700;")
         sync_layout.addWidget(self.vf_value_label)
         self.load_from_vf_btn = QtWidgets.QPushButton("Загрузить из генератора")
+        self.load_from_vf_btn.setFixedHeight(32)
+        self.load_from_vf_btn.setStyleSheet("padding:4px 14px;font-size:13px;")
         self.load_from_vf_btn.clicked.connect(self.load_value_from_vf)
         sync_layout.addWidget(self.load_from_vf_btn)
         sync_layout.addStretch()
         generator_layout.addWidget(sync_group)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(10)
         self.generate_btn = QtWidgets.QPushButton("ПЕРЕСЧИТАТЬ ЖУРНАЛ")
         self.generate_btn.setEnabled(False)
+        self.generate_btn.setFixedHeight(38)
         self.generate_btn.clicked.connect(self.generate)
         self.write_btn = QtWidgets.QPushButton("ЗАПИСАТЬ В ПРИБОР")
         self.write_btn.setEnabled(False)
+        self.write_btn.setFixedHeight(38)
         self.write_btn.clicked.connect(self.start_write)
         btn_row.addWidget(self.generate_btn)
         btn_row.addWidget(self.write_btn)
@@ -1493,6 +1547,7 @@ class JournalTab(QtWidgets.QWidget):
         self.progress = QtWidgets.QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
+        self.progress.setFixedHeight(18)
         generator_layout.addWidget(self.progress)
 
         self.status_label = QtWidgets.QLabel(
