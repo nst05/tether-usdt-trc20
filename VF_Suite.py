@@ -344,6 +344,8 @@ except ImportError:
     I2C = None
 
 EEPROM_SIZE = 32768  # 24AA256 - 32 KB (не 24C16 2KB)
+EEPROM_PAGE_SIZE = 64  # 24AA256: запись за границу страницы заворачивается
+EEPROM_READ_CHUNK = 256
 VALUE_OFFSET = 0x0040
 VALUE_SIZE = 4
 SCALE = 100
@@ -1234,6 +1236,23 @@ class VFGenTab(QtWidgets.QWidget):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class JournalTab(QtWidgets.QWidget):
+    """
+    Синтетический журнал прямо в приборе (24AA256 через CH341).
+
+    Порядок работы:
+      1. «Прочитать журнал из прибора» — читает 32 КБ из EEPROM и разбирает
+         месячные записи, суточные страницы и 48-интервальные профили;
+      2. вводится конечное показание — пересчитывается вся хронология
+         (суточные значения, профили нагрузки, месячные записи);
+      3. «Записать в прибор» — изменённый образ пишется обратно в EEPROM
+         постранично и проверяется обратным чтением.
+    """
+
+    sig_status = QtCore.pyqtSignal(str, object)
+    sig_progress = QtCore.pyqtSignal(int)
+    sig_loaded = QtCore.pyqtSignal()
+    sig_busy = QtCore.pyqtSignal(bool)
+
     def __init__(self, mt_counters, vf_counters=None, sync_state=None):
         super().__init__()
         self.path = None
@@ -1245,6 +1264,13 @@ class JournalTab(QtWidgets.QWidget):
         self.vf_counters = vf_counters or Counters('counters.json')
         self.sync_state = sync_state or SyncState()
         self.init_ui()
+
+        self.sig_status.connect(self.set_status)
+        self.sig_progress.connect(self.progress.setValue)
+        self.sig_loaded.connect(self.on_journal_loaded)
+        self.sig_busy.connect(self.set_busy)
+
+    # ── работа с программатором ───────────────────────────────────────────
 
     def open_programmer(self):
         if I2C is None:
@@ -1269,13 +1295,14 @@ class JournalTab(QtWidgets.QWidget):
         time.sleep(0.08)
 
     @staticmethod
-    def split_address(address):
+    def check_address(address):
+        """24AA256: один адрес на шине, 16-битный адрес внутри памяти."""
         if not 0 <= address < EEPROM_SIZE:
-            raise ValueError("Адрес выходит за пределы 24C16.")
-        block = (address >> 8) & 0x07
-        device_address = BASE_I2C_ADDRESS | block
-        memory_address = address & 0xFF
-        return device_address, memory_address
+            raise ValueError(
+                f"Адрес 0x{address:04X} выходит за пределы 24AA256 "
+                f"(макс 0x{EEPROM_SIZE - 1:04X})."
+            )
+        return BASE_I2C_ADDRESS, address
 
     def read_from_eeprom(self, address, length):
         if self.i2c is None:
@@ -1284,83 +1311,37 @@ class JournalTab(QtWidgets.QWidget):
         current = address
         remaining = length
         while remaining > 0:
-            dev_addr, mem_addr = self.split_address(current)
-            chunk_len = min(remaining, 0x100 - mem_addr)
-            chunk = self.i2c.readfrom_mem(dev_addr, mem_addr, chunk_len, addrsize=8)
+            dev_addr, mem_addr = self.check_address(current)
+            chunk_len = min(remaining, EEPROM_READ_CHUNK)
+            chunk = self.i2c.readfrom_mem(dev_addr, mem_addr, chunk_len, addrsize=16)
             result.extend(bytes(chunk))
             current += chunk_len
             remaining -= chunk_len
         return bytes(result)
 
     def write_to_eeprom(self, address, payload):
+        """Пишет постранично: у 24AA256 страница 64 байта, за её границу
+        запись заворачивается в начало той же страницы."""
         if self.i2c is None:
             raise RuntimeError("Программатор не инициализирован.")
-        dev_addr, mem_addr = self.split_address(address)
-        self.i2c.writeto_mem(dev_addr, mem_addr, bytes(payload), addrsize=8)
+        offset = 0
+        while offset < len(payload):
+            current = address + offset
+            dev_addr, mem_addr = self.check_address(current)
+            space = EEPROM_PAGE_SIZE - (current % EEPROM_PAGE_SIZE)
+            chunk = payload[offset:offset + space]
+            self.i2c.writeto_mem(dev_addr, mem_addr, bytes(chunk), addrsize=16)
+            time.sleep(0.006)  # tWC 24AA256 — 5 мс на страницу
+            offset += len(chunk)
 
-    def update_vf_label(self):
-        value = self.sync_state.get_vf_value()
-        if value is not None:
-            self.vf_value_label.setText(f"Генератор: {format_value(value)}")
-        else:
-            self.vf_value_label.setText("Генератор: —")
-
-    def load_value_from_vf(self):
-        value = self.sync_state.get_vf_value()
-        if value is not None:
-            self.final_value.setValue(value)
-            self.set_status(f"✓ Загружено значение из генератора: {format_value(value)}", True)
-        else:
-            self.set_status("✗ В генераторе нет сохранённого значения", False)
-
-    def read_from_device(self):
-        """Читает весь дамп (32KB) из 24AA256 EEPROM."""
-        status = check_license()
-        if not status["valid"]:
-            self.set_status(f"✗ Лицензия не активна: {status.get('reason', 'неизвестно')}", False)
-            return
-
-        self.status_label.setText("Чтение из устройства...")
-        self.progress.setValue(10)
-        try:
-            self.open_programmer()
-            data = self.read_from_eeprom(0x0000, 0x8000)  # 32 KB
-            self.close_programmer()
-            self.data = data
-            self.daily = parse_daily(data)
-            self.monthly = parse_monthly(data)
-            if len(self.daily) < 2:
-                raise ValueError("Журнал не распознан в устройстве.")
-            self.final_value.setValue(self.daily[-1].value)
-            diffs = [
-                self.daily[i + 1].value - self.daily[i].value
-                for i in range(len(self.daily) - 1)
-                if self.daily[i + 1].value >= self.daily[i].value
-            ]
-            average = sum(diffs) / len(diffs) if diffs else 0.0
-            if average > 0:
-                self.average.setValue(average)
-            self.generate_btn.setEnabled(True)
-            self.write_btn.setEnabled(True)
-            self.sync_state.set_journal_value(self.daily[-1].value)
-            self.update_vf_label()
-            self.set_status(
-                f"✓ Прочитано: {len(self.daily)} суточных записей, "
-                f"{len(self.monthly)} месячных.\n"
-                f"Период: {self.daily[0].dt:%d.%m.%Y} — {self.daily[-1].dt:%d.%m.%Y}",
-                True,
-            )
-        except Exception as exc:
-            self.set_status(f"✗ Ошибка чтения: {exc}", False)
-        finally:
-            self.close_programmer()
+    # ── интерфейс ─────────────────────────────────────────────────────────
 
     def init_ui(self):
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
 
-        title = QtWidgets.QLabel("СИНТЕТИЧЕСКИЙ ЖУРНАЛ (CH341)")
+        title = QtWidgets.QLabel("СИНТЕТИЧЕСКИЙ ЖУРНАЛ (24AA256 / CH341)")
         font = title.font()
         font.setPointSize(17)
         font.setBold(True)
@@ -1369,24 +1350,78 @@ class JournalTab(QtWidgets.QWidget):
         root.addWidget(title)
 
         warning = QtWidgets.QLabel(
-            "Читает журнал из 24C16 EEPROM (CH341), генерирует синтетические данные, "
-            "пишет обратно в устройство."
+            "Читает журнал прямо из памяти прибора, пересчитывает хронологию "
+            "под заданное показание и пишет обратно. Дамп на диск не нужен."
         )
         warning.setWordWrap(True)
         warning.setAlignment(QtCore.Qt.AlignCenter)
         warning.setStyleSheet("color:#ffcf70;")
         root.addWidget(warning)
 
-        # Кнопка чтения
-        read_box = QtWidgets.QGroupBox("Устройство (24C16)")
-        read_layout = QtWidgets.QHBoxLayout(read_box)
-        self.read_btn = QtWidgets.QPushButton("Прочитать журнал из прибора")
-        self.read_btn.clicked.connect(lambda: threading.Thread(target=self.read_from_device, daemon=True).start())
-        read_layout.addWidget(self.read_btn)
-        root.addWidget(read_box)
+        device_box = QtWidgets.QGroupBox("Прибор")
+        device_layout = QtWidgets.QHBoxLayout(device_box)
+        self.read_btn = QtWidgets.QPushButton("ПРОЧИТАТЬ ЖУРНАЛ ИЗ ПРИБОРА")
+        self.read_btn.clicked.connect(self.start_read)
+        device_layout.addWidget(self.read_btn)
+        self.open_btn = QtWidgets.QPushButton("Открыть BIN")
+        self.open_btn.setMaximumWidth(160)
+        self.open_btn.clicked.connect(self.open_file)
+        device_layout.addWidget(self.open_btn)
+        root.addWidget(device_box)
+
+        self.tabs = QtWidgets.QTabWidget()
+        root.addWidget(self.tabs, 1)
+
+        # ── просмотр журнала ──
+        viewer_tab = QtWidgets.QWidget()
+        viewer_layout = QtWidgets.QVBoxLayout(viewer_tab)
+        viewer_layout.setContentsMargins(12, 12, 12, 12)
+        viewer_layout.setSpacing(10)
+
+        self.summary_label = QtWidgets.QLabel("Журнал не загружен.")
+        self.summary_label.setWordWrap(True)
+        self.summary_label.setObjectName("Status")
+        viewer_layout.addWidget(self.summary_label)
+
+        self.journal_table = QtWidgets.QTableWidget()
+        self.journal_table.setColumnCount(6)
+        self.journal_table.setHorizontalHeaderLabels(
+            ["№", "Дата", "Адрес", "Показание", "Прирост", "Сумма профиля"]
+        )
+        self.journal_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.journal_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.journal_table.setAlternatingRowColors(True)
+        self.journal_table.verticalHeader().setVisible(False)
+        self.journal_table.horizontalHeader().setStretchLastSection(True)
+        for column in range(5):
+            self.journal_table.horizontalHeader().setSectionResizeMode(
+                column, QtWidgets.QHeaderView.ResizeToContents
+            )
+        viewer_layout.addWidget(self.journal_table, 1)
+
+        export_row = QtWidgets.QHBoxLayout()
+        self.export_btn = QtWidgets.QPushButton("Экспорт просмотра в CSV")
+        self.export_btn.setEnabled(False)
+        self.export_btn.clicked.connect(self.export_current_view)
+        export_row.addStretch(1)
+        export_row.addWidget(self.export_btn)
+        viewer_layout.addLayout(export_row)
+
+        self.tabs.addTab(viewer_tab, "Просмотр журнала")
+
+        # ── генератор ──
+        generator_tab = QtWidgets.QWidget()
+        generator_layout = QtWidgets.QVBoxLayout(generator_tab)
+        generator_layout.setContentsMargins(12, 12, 12, 12)
+        generator_layout.setSpacing(12)
 
         params = QtWidgets.QGroupBox("Параметры синтетической хронологии")
         form = QtWidgets.QGridLayout(params)
+        form.setContentsMargins(22, 24, 22, 22)
+        form.setHorizontalSpacing(24)
+        form.setVerticalSpacing(16)
+        form.setColumnStretch(0, 1)
+        form.setColumnStretch(1, 0)
 
         self.final_value = QtWidgets.QDoubleSpinBox()
         self.final_value.setDecimals(2)
@@ -1408,16 +1443,30 @@ class JournalTab(QtWidgets.QWidget):
         self.seed.setRange(0, 2_147_483_647)
         self.seed.setValue(2026)
 
-        form.addWidget(QtWidgets.QLabel("Конечное показание:"), 0, 0)
-        form.addWidget(self.final_value, 0, 1)
-        form.addWidget(QtWidgets.QLabel("Желаемый средний расход в сутки:"), 1, 0)
-        form.addWidget(self.average, 1, 1)
-        form.addWidget(QtWidgets.QLabel("Разброс расхода:"), 2, 0)
-        form.addWidget(self.variation, 2, 1)
-        form.addWidget(QtWidgets.QLabel("Seed генератора:"), 3, 0)
-        form.addWidget(self.seed, 3, 1)
+        for widget in (self.final_value, self.average, self.variation, self.seed):
+            widget.setMinimumWidth(300)
+            widget.setMinimumHeight(46)
+            widget.setAlignment(QtCore.Qt.AlignCenter)
+            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
 
-        root.addWidget(params)
+        labels = [
+            QtWidgets.QLabel("Конечное показание:"),
+            QtWidgets.QLabel("Желаемый средний расход в сутки:"),
+            QtWidgets.QLabel("Разброс расхода:"),
+            QtWidgets.QLabel("Seed генератора:"),
+        ]
+        for label in labels:
+            label.setMinimumHeight(46)
+            label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            label.setStyleSheet("font-size:15px;font-weight:700;color:#dce4f2;")
+
+        for row, (label, widget) in enumerate(
+            zip(labels, (self.final_value, self.average, self.variation, self.seed))
+        ):
+            form.addWidget(label, row, 0)
+            form.addWidget(widget, row, 1)
+
+        generator_layout.addWidget(params)
 
         sync_group = QtWidgets.QGroupBox("Синхронизация с генератором частоты")
         sync_layout = QtWidgets.QHBoxLayout(sync_group)
@@ -1428,28 +1477,34 @@ class JournalTab(QtWidgets.QWidget):
         self.load_from_vf_btn.clicked.connect(self.load_value_from_vf)
         sync_layout.addWidget(self.load_from_vf_btn)
         sync_layout.addStretch()
-        root.addWidget(sync_group)
+        generator_layout.addWidget(sync_group)
 
         btn_row = QtWidgets.QHBoxLayout()
-        self.generate_btn = QtWidgets.QPushButton("СФОРМИРОВАТЬ СИНТЕТИЧЕСКИЕ ДАННЫЕ")
+        self.generate_btn = QtWidgets.QPushButton("ПЕРЕСЧИТАТЬ ЖУРНАЛ")
         self.generate_btn.setEnabled(False)
         self.generate_btn.clicked.connect(self.generate)
         self.write_btn = QtWidgets.QPushButton("ЗАПИСАТЬ В ПРИБОР")
         self.write_btn.setEnabled(False)
-        self.write_btn.clicked.connect(self.write_to_device)
+        self.write_btn.clicked.connect(self.start_write)
         btn_row.addWidget(self.generate_btn)
         btn_row.addWidget(self.write_btn)
-        root.addLayout(btn_row)
+        generator_layout.addLayout(btn_row)
 
         self.progress = QtWidgets.QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        root.addWidget(self.progress)
+        generator_layout.addWidget(self.progress)
 
-        self.status_label = QtWidgets.QLabel("Нажми 'Прочитать журнал из прибора'")
+        self.status_label = QtWidgets.QLabel(
+            "Нажми «Прочитать журнал из прибора»."
+        )
         self.status_label.setObjectName("Status")
         self.status_label.setWordWrap(True)
-        root.addWidget(self.status_label)
+        generator_layout.addWidget(self.status_label)
+
+        generator_layout.addStretch(1)
+
+        self.tabs.addTab(generator_tab, "Генератор")
 
     def set_status(self, text, ok=None):
         self.status_label.setText(text)
@@ -1469,106 +1524,156 @@ class JournalTab(QtWidgets.QWidget):
                 "border-radius:10px;padding:12px;"
             )
 
-    def write_to_device(self):
-        """Записывает сгенерированные данные обратно в 24AA256."""
+    def set_busy(self, busy):
+        self.read_btn.setEnabled(not busy)
+        self.open_btn.setEnabled(not busy)
+        has_data = self.data is not None and len(self.daily) >= 2
+        self.generate_btn.setEnabled(not busy and has_data)
+        self.write_btn.setEnabled(not busy and has_data)
+        self.export_btn.setEnabled(not busy and has_data)
+
+    # ── синхронизация с генератором частоты ───────────────────────────────
+
+    def update_vf_label(self):
+        value = self.sync_state.get_vf_value()
+        if value is not None:
+            self.vf_value_label.setText(f"Генератор: {format_value(value)}")
+        else:
+            self.vf_value_label.setText("Генератор: —")
+
+    def load_value_from_vf(self):
+        value = self.sync_state.get_vf_value()
+        if value is not None:
+            self.final_value.setValue(value)
+            self.set_status(
+                f"✓ Загружено значение из генератора: {format_value(value)}", True
+            )
+        else:
+            self.set_status("✗ В генераторе нет сохранённого значения", False)
+
+    # ── разбор и отображение ──────────────────────────────────────────────
+
+    def load_image(self, data, source):
+        """Разбирает 32-КБ образ и запоминает его как текущий журнал."""
+        if len(data) < MIN_DUMP_SIZE:
+            raise ValueError(
+                f"Образ имеет размер {len(data)} байт; ожидается 32-КБ журнал."
+            )
+        daily = parse_daily(data)
+        monthly = parse_monthly(data)
+        if len(daily) < 2:
+            raise ValueError("Суточный журнал не распознан.")
+
+        self.data = bytes(data)
+        self.daily = daily
+        self.monthly = monthly
+        self.source_name = source
+
+    def on_journal_loaded(self):
+        """Вызывается в GUI-потоке после успешного разбора образа."""
+        self.populate_journal_table()
+        self.final_value.setValue(self.daily[-1].value)
+
+        diffs = [
+            self.daily[i + 1].value - self.daily[i].value
+            for i in range(len(self.daily) - 1)
+            if self.daily[i + 1].value >= self.daily[i].value
+        ]
+        average = sum(diffs) / len(diffs) if diffs else 0.0
+        if average > 0:
+            self.average.setValue(average)
+
+        self.sync_state.set_journal_value(self.daily[-1].value)
+        self.update_vf_label()
+        self.set_busy(False)
+
+    def populate_journal_table(self):
+        self.journal_table.setRowCount(len(self.daily))
+
+        for row, record in enumerate(self.daily):
+            increment = ""
+            if row + 1 < len(self.daily):
+                increment = f"{self.daily[row + 1].value - record.value:.2f}"
+
+            values = [
+                str(row + 1),
+                record.dt.strftime("%d.%m.%Y"),
+                f"0x{record.offset:04X}",
+                f"{record.value:.2f}",
+                increment,
+                f"{sum(record.profile) / VALUE_SCALE:.2f}",
+            ]
+
+            for column, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(value)
+                item.setTextAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
+                self.journal_table.setItem(row, column, item)
+
+        if self.daily:
+            diffs = [
+                self.daily[i + 1].value - self.daily[i].value
+                for i in range(len(self.daily) - 1)
+            ]
+            positive = [d for d in diffs if d >= 0]
+            average = sum(positive) / len(positive) if positive else 0.0
+            self.summary_label.setText(
+                f"Источник: {getattr(self, 'source_name', '—')}\n"
+                f"Суточных записей: {len(self.daily)} | "
+                f"Месячных записей: {len(self.monthly)}\n"
+                f"Период: {self.daily[0].dt:%d.%m.%Y} — {self.daily[-1].dt:%d.%m.%Y}\n"
+                f"Первое значение: {self.daily[0].value:.2f} | "
+                f"Последнее значение: {self.daily[-1].value:.2f} | "
+                f"Средний прирост: {average:.2f}"
+            )
+
+    # ── чтение из прибора ─────────────────────────────────────────────────
+
+    def start_read(self):
         status = check_license()
         if not status["valid"]:
-            self.set_status(f"✗ Лицензия не активна: {status.get('reason', 'неизвестно')}", False)
-            return
-
-        if self.data is None:
-            self.set_status("✗ Сначала прочитай журнал из прибора", False)
-            return
-
-        self.write_btn.setEnabled(False)
-        self.progress.setValue(5)
-        self.set_status("Запись в устройство...")
-
-        try:
-            output = bytearray(self.data)
-            self.progress.setValue(30)
-
-            for index, record in enumerate(self.daily):
-                write_u24_le(output, record.offset + DAILY_VALUE_OFF, int(record.value * VALUE_SCALE))
-                self.progress.setValue(30 + int((index / len(self.daily)) * 50))
-
-            self.progress.setValue(85)
-            self.open_programmer()
-
-            for offset in range(0, len(output), 256):
-                chunk = output[offset:offset + 256]
-                self.write_to_eeprom(offset, chunk)
-                time.sleep(0.05)
-
-            self.close_programmer()
-
-            # Синхронизируем значение и счётчик с генератором частоты (VF_Gen)
-            self.progress.setValue(95)
-            if self.daily:
-                last_value = self.daily[-1].value
-                self.sync_state.set_journal_value(last_value)
-                if self.vf_counters:
-                    self.vf_counters.increment(COUNTER_NAME, last_value)
-
-            self.progress.setValue(100)
-            self.set_status("✓ Данные записаны в прибор! Значение синхронизировано с генератором.", True)
-
-        except Exception as exc:
-            self.progress.setValue(0)
-            self.set_status(f"✗ Ошибка записи: {exc}", False)
-        finally:
-            self.close_programmer()
-            self.write_btn.setEnabled(True)
-
-    def open_file(self):
-        selected, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Открыть дамп журнала", "", "BIN (*.bin *.BIN);;Все файлы (*.*)",
-        )
-        if not selected:
-            return
-        path = Path(selected)
-        try:
-            data = path.read_bytes()
-            if len(data) < MIN_DUMP_SIZE:
-                raise ValueError(f"Файл имеет размер {len(data)} байт; ожидается 32-КБ дамп.")
-            daily = parse_daily(data)
-            monthly = parse_monthly(data)
-            if len(daily) < 2:
-                raise ValueError("Суточный журнал не распознан.")
-            self.path = path
-            self.data = data
-            self.daily = daily
-            self.monthly = monthly
-            self.path_edit.setText(str(path))
-            self.final_value.setValue(daily[-1].value)
-            self.generate_btn.setEnabled(True)
-            diffs = [
-                daily[i + 1].value - daily[i].value
-                for i in range(len(daily) - 1)
-                if daily[i + 1].value >= daily[i].value
-            ]
-            average = sum(diffs) / len(diffs) if diffs else 0.0
-            if average > 0:
-                self.average.setValue(average)
             self.set_status(
-                f"✓ Распознано: {len(daily)} суточных страниц и {len(monthly)} месячных записей.\n"
-                f"Период: {daily[0].dt:%d.%m.%Y} — {daily[-1].dt:%d.%m.%Y}. "
-                f"Последнее архивное значение: {daily[-1].value:.2f}.",
+                f"✗ Лицензия не активна: {status.get('reason', 'неизвестно')}", False
+            )
+            return
+        self.set_busy(True)
+        threading.Thread(target=self.read_from_device, daemon=True).start()
+
+    def read_from_device(self):
+        """Читает весь журнал (32 КБ) из 24AA256."""
+        self.sig_status.emit("Чтение из прибора…", None)
+        self.sig_progress.emit(10)
+        try:
+            self.open_programmer()
+            data = self.read_from_eeprom(0x0000, EEPROM_SIZE)
+            self.close_programmer()
+            self.sig_progress.emit(70)
+
+            self.load_image(data, "прибор (24AA256)")
+
+            self.sig_progress.emit(100)
+            self.sig_loaded.emit()
+            self.sig_status.emit(
+                f"✓ Прочитано из прибора: {len(self.daily)} суточных записей, "
+                f"{len(self.monthly)} месячных.\n"
+                f"Период: {self.daily[0].dt:%d.%m.%Y} — {self.daily[-1].dt:%d.%m.%Y}. "
+                f"Последнее показание: {self.daily[-1].value:.2f}.",
                 True,
             )
         except Exception as exc:
-            self.path = None
-            self.data = None
-            self.daily = []
-            self.monthly = []
-            self.generate_btn.setEnabled(False)
-            self.set_status(f"✗ Ошибка: {exc}", False)
+            self.sig_progress.emit(0)
+            self.sig_status.emit(f"✗ Ошибка чтения: {exc}", False)
+            self.sig_busy.emit(False)
+        finally:
+            self.close_programmer()
+
+    # ── пересчёт хронологии ───────────────────────────────────────────────
 
     def generate(self):
-        if self.path is None or self.data is None:
-            self.set_status("Сначала откройте дамп.", False)
+        if self.data is None:
+            self.set_status("Сначала прочитай журнал из прибора.", False)
             return
-        self.generate_btn.setEnabled(False)
+
+        self.set_busy(True)
         self.progress.setValue(5)
         try:
             values_raw, profiles = synthetic_values(
@@ -1578,56 +1683,182 @@ class JournalTab(QtWidgets.QWidget):
                 float(self.variation.value()),
                 int(self.seed.value()),
             )
+
             output = bytearray(self.data)
-            self.progress.setValue(30)
-            rows = []
-            for index, (record, raw, profile) in enumerate(zip(self.daily, values_raw, profiles)):
+            self.progress.setValue(35)
+
+            for record, raw, profile in zip(self.daily, values_raw, profiles):
                 write_u24_le(output, record.offset + DAILY_VALUE_OFF, raw)
                 for i, interval_raw in enumerate(profile):
                     if not 0 <= interval_raw <= 0xFFFF:
-                        raise ValueError("Интервальное значение не помещается в UInt16. Уменьшите средний суточный расход.")
+                        raise ValueError(
+                            "Интервальное значение не помещается в UInt16. "
+                            "Уменьшите средний суточный расход."
+                        )
                     pos = record.offset + PROFILE_OFF + i * 2
                     output[pos:pos + 2] = interval_raw.to_bytes(2, "little", signed=False)
-                next_increment = values_raw[index + 1] - raw if index + 1 < len(values_raw) else None
-                rows.append([
-                    f"0x{record.offset:04X}",
-                    record.dt.isoformat(),
-                    f"{raw / VALUE_SCALE:.2f}",
-                    "" if next_increment is None else f"{next_increment / 100:.2f}",
-                    sum(profile),
-                ])
-            self.progress.setValue(65)
+
+            self.progress.setValue(70)
+
             for monthly in self.monthly:
                 raw = value_for_month(monthly.year, monthly.month, self.daily, values_raw)
                 write_u24_le(output, monthly.offset + MONTHLY_VALUE_OFF, raw)
-            out_path = self.path.with_name(
-                f"{self.path.stem}__SYNTHETIC_final_{self.final_value.value():.2f}{self.path.suffix or '.bin'}"
-            )
-            csv_path = out_path.with_suffix(".csv")
-            out_path.write_bytes(output)
-            with csv_path.open("w", newline="", encoding="utf-8-sig") as file:
-                writer = csv.writer(file, delimiter=";")
-                writer.writerow(["offset", "date", "cumulative_value", "increment_to_next", "profile_sum_raw"])
-                writer.writerows(rows)
-            verify = out_path.read_bytes()
-            if verify != bytes(output):
-                raise RuntimeError("Проверка сохранённого файла не пройдена.")
-            check_daily = parse_daily(verify)
-            if not check_daily:
-                raise RuntimeError("После сохранения журнал не распознаётся.")
-            actual_final = max(check_daily, key=lambda item: item.dt).value
-            if abs(actual_final - self.final_value.value()) > 0.011:
-                raise RuntimeError("Конечное значение после проверки не совпало.")
+
+            # Перечитываем собственный результат — таблица показывает то,
+            # что реально уйдёт в прибор.
+            self.load_image(bytes(output), "пересчитанный журнал")
+            self.populate_journal_table()
+            self.sync_state.set_journal_value(self.daily[-1].value)
+            self.update_vf_label()
+
             self.progress.setValue(100)
             self.set_status(
-                f"✓ Готово: создана синтетическая копия.\n{out_path}\nТаблица хронологии: {csv_path}",
+                f"✓ Журнал пересчитан: конечное показание "
+                f"{self.daily[-1].value:.2f}, записей {len(self.daily)}.\n"
+                f"Проверь таблицу на вкладке «Просмотр журнала», "
+                f"затем нажми «ЗАПИСАТЬ В ПРИБОР».",
                 True,
             )
         except Exception as exc:
             self.progress.setValue(0)
-            self.set_status(f"✗ Ошибка: {exc}", False)
+            self.set_status(f"✗ Ошибка пересчёта: {exc}", False)
         finally:
-            self.generate_btn.setEnabled(True)
+            self.set_busy(False)
+
+    # ── запись в прибор ───────────────────────────────────────────────────
+
+    def start_write(self):
+        status = check_license()
+        if not status["valid"]:
+            self.set_status(
+                f"✗ Лицензия не активна: {status.get('reason', 'неизвестно')}", False
+            )
+            return
+        if self.data is None:
+            self.set_status("✗ Сначала прочитай журнал из прибора", False)
+            return
+        self.set_busy(True)
+        threading.Thread(target=self.write_to_device, daemon=True).start()
+
+    def write_to_device(self):
+        """Пишет текущий образ журнала обратно в 24AA256 и проверяет запись."""
+        self.sig_status.emit("Запись в прибор…", None)
+        self.sig_progress.emit(5)
+        try:
+            payload = bytes(self.data)
+            self.open_programmer()
+
+            total = len(payload)
+            written = 0
+            while written < total:
+                chunk = payload[written:written + EEPROM_PAGE_SIZE]
+                self.write_to_eeprom(written, chunk)
+                written += len(chunk)
+                self.sig_progress.emit(5 + int(written / total * 75))
+
+            self.sig_progress.emit(82)
+            verify = self.read_from_eeprom(0x0000, total)
+            self.close_programmer()
+
+            if verify != payload:
+                mismatch = next(
+                    (i for i in range(total) if verify[i] != payload[i]), -1
+                )
+                raise RuntimeError(
+                    f"Проверка записи не пройдена: расхождение по адресу 0x{mismatch:04X}."
+                )
+
+            self.sig_progress.emit(92)
+
+            check_daily = parse_daily(verify)
+            if not check_daily:
+                raise RuntimeError("После записи журнал не распознаётся прибором.")
+            actual_final = max(check_daily, key=lambda item: item.dt).value
+
+            last_value = self.daily[-1].value
+            self.sync_state.set_journal_value(last_value)
+            if self.vf_counters:
+                self.vf_counters.increment(COUNTER_NAME, last_value)
+
+            self.sig_progress.emit(100)
+            self.sig_status.emit(
+                f"✓ Журнал записан в прибор и проверен.\n"
+                f"Конечное показание в приборе: {actual_final:.2f}. "
+                f"Значение передано генератору частоты.",
+                True,
+            )
+            self.sig_busy.emit(False)
+        except Exception as exc:
+            self.sig_progress.emit(0)
+            self.sig_status.emit(f"✗ Ошибка записи: {exc}", False)
+            self.sig_busy.emit(False)
+        finally:
+            self.close_programmer()
+
+    # ── офлайн-режим и экспорт ────────────────────────────────────────────
+
+    def open_file(self):
+        selected, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Открыть дамп журнала", "", "BIN (*.bin *.BIN);;Все файлы (*.*)",
+        )
+        if not selected:
+            return
+        path = Path(selected)
+        try:
+            self.load_image(path.read_bytes(), path.name)
+            self.path = path
+            self.on_journal_loaded()
+            self.set_status(
+                f"✓ Загружен файл: {len(self.daily)} суточных записей, "
+                f"{len(self.monthly)} месячных.\n"
+                f"Период: {self.daily[0].dt:%d.%m.%Y} — {self.daily[-1].dt:%d.%m.%Y}.",
+                True,
+            )
+        except Exception as exc:
+            self.data = None
+            self.daily = []
+            self.monthly = []
+            self.journal_table.setRowCount(0)
+            self.summary_label.setText("Журнал не загружен.")
+            self.set_busy(False)
+            self.set_status(f"✗ Ошибка: {exc}", False)
+
+    def export_current_view(self):
+        if not self.daily:
+            return
+        default_name = "journal_view.csv"
+        if self.path is not None:
+            default_name = str(self.path.with_name(f"{self.path.stem}__journal_view.csv"))
+        selected, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Экспорт журнала", default_name, "CSV (*.csv);;Все файлы (*.*)",
+        )
+        if not selected:
+            return
+        try:
+            with Path(selected).open("w", newline="", encoding="utf-8-sig") as file:
+                writer = csv.writer(file, delimiter=";")
+                writer.writerow(
+                    ["number", "date", "offset", "value", "increment", "profile_sum"]
+                )
+                for index, record in enumerate(self.daily):
+                    increment = ""
+                    if index + 1 < len(self.daily):
+                        increment = f"{self.daily[index + 1].value - record.value:.2f}"
+                    writer.writerow([
+                        index + 1,
+                        record.dt.isoformat(),
+                        f"0x{record.offset:04X}",
+                        f"{record.value:.2f}",
+                        increment,
+                        f"{sum(record.profile) / VALUE_SCALE:.2f}",
+                    ])
+            self.summary_label.setText(
+                self.summary_label.text() + f"\nЭкспортировано: {selected}"
+            )
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(
+                self, "Ошибка", f"Не удалось экспортировать CSV:\n{exc}"
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
