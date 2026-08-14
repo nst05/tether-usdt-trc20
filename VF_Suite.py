@@ -1051,10 +1051,10 @@ QTabBar::tab:selected {
 # ══════════════════════════════════════════════════════════════════════════════
 
 class VFGenTab(QtWidgets.QWidget):
-    def __init__(self, status):
+    def __init__(self, status, vf_counters=None):
         super().__init__()
         self.status = status
-        self.counters = Counters('counters.json')
+        self.counters = vf_counters or Counters('counters.json')
         self.worker = None
         self.flash_worker = None
         self._flash_value = None
@@ -1180,7 +1180,7 @@ class VFGenTab(QtWidgets.QWidget):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class JournalTab(QtWidgets.QWidget):
-    def __init__(self, mt_counters):
+    def __init__(self, mt_counters, vf_counters=None):
         super().__init__()
         self.path = None
         self.data = None
@@ -1188,6 +1188,7 @@ class JournalTab(QtWidgets.QWidget):
         self.monthly = []
         self.i2c = None
         self.mt_counters = mt_counters
+        self.vf_counters = vf_counters or Counters('counters.json')
         self.init_ui()
 
     def open_programmer(self):
@@ -1418,14 +1419,14 @@ class JournalTab(QtWidgets.QWidget):
 
             self.close_programmer()
 
-            # Синхронизируем счётчики обоих табов (200_MT и 310_MT)
+            # Синхронизируем счётчик с генератором частоты (VF_Gen)
             self.progress.setValue(95)
-            if self.mt_counters and self.daily:
-                self.mt_counters.inc("200_MT")
-                self.mt_counters.inc("310_MT")
+            if self.vf_counters and self.daily:
+                last_value = self.daily[-1].value
+                self.vf_counters.increment(COUNTER_NAME, last_value)
 
             self.progress.setValue(100)
-            self.set_status("✓ Данные записаны в прибор! Счётчики синхронизированы.", True)
+            self.set_status("✓ Данные записаны в прибор! Счётчик VF_Gen обновлён.", True)
 
         except Exception as exc:
             self.progress.setValue(0)
@@ -1570,10 +1571,16 @@ class MainWindow(QtWidgets.QMainWindow):
         tabs = QtWidgets.QTabWidget()
 
         mt_counters = MTCounters(["200_MT", "310_MT"])
+        vf_counters = Counters('vf_counters.json')
+
         tabs.addTab(MTWriterTab("200_MT", mt_counters), "200_MT (CH341)")
         tabs.addTab(MTWriterTab("310_MT", mt_counters), "310_MT (CH341)")
-        tabs.addTab(VFGenTab(license_status), "Генератор частоты (PIC)")
-        tabs.addTab(JournalTab(mt_counters), "Синтетический журнал (24AA256)")
+
+        vf_tab = VFGenTab(license_status, vf_counters)
+        tabs.addTab(vf_tab, "Генератор частоты (PIC)")
+
+        journal_tab = JournalTab(mt_counters, vf_counters)
+        tabs.addTab(journal_tab, "Синтетический журнал (24AA256)")
 
         layout.addWidget(tabs)
 
