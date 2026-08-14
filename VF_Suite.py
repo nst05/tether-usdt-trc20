@@ -9,6 +9,7 @@ VF Suite — объединённая программа с двумя таба�
 import base64
 import binascii
 import csv
+import gc
 import glob
 import hashlib
 import hmac
@@ -23,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -532,12 +534,6 @@ class FlashWorker(QtCore.QThread):
 # ══════════════════════════════════════════════════════════════════════════════
 # ВКЛ 1.5: MT WRITER TAB GUI
 # ══════════════════════════════════════════════════════════════════════════════
-
-import gc
-import random
-import time
-import threading
-
 
 class MTWriterTab(QtWidgets.QWidget):
     def __init__(self, name, counters):
