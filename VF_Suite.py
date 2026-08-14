@@ -1473,11 +1473,6 @@ class ActivationDialog(QtWidgets.QDialog):
         return QtWidgets.QDialog.Rejected
 
 
-class SplashScreen(QtCore.QThread):
-    finished = QtCore.pyqtSignal()
-
-    def run(self):
-        QtCore.QTimer.singleShot(500, self.finished.emit)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1504,25 +1499,17 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setStyleSheet(APP_STYLE)
 
-    holder = {}
-
-    def after_splash():
+    status = check_license()
+    if not status["valid"]:
+        dlg = ActivationDialog(status)
+        if dlg.exec_() != QtWidgets.QDialog.Accepted:
+            return 0
         status = check_license()
         if not status["valid"]:
-            dlg = ActivationDialog(status)
-            if dlg.exec_() != QtWidgets.QDialog.Accepted:
-                app.quit()
-                return
-            status = check_license()
-            if not status["valid"]:
-                app.quit()
-                return
-        holder["win"] = MainWindow(status)
-        holder["win"].show()
+            return 0
 
-    splash = SplashScreen()
-    splash.finished.connect(after_splash)
-    splash.start()
+    win = MainWindow(status)
+    win.show()
 
     return app.exec_()
 
