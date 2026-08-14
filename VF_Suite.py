@@ -1046,19 +1046,43 @@ QTabBar::tab:selected {
 """
 
 
+class SyncState:
+    """Общее хранилище состояния для обоих tab'ов (VF_Gen и Journal)."""
+    def __init__(self):
+        self.vf_value = None
+        self.journal_value = None
+        self.lock = threading.Lock()
+
+    def set_vf_value(self, value):
+        with self.lock:
+            self.vf_value = value
+
+    def set_journal_value(self, value):
+        with self.lock:
+            self.journal_value = value
+
+    def get_vf_value(self):
+        with self.lock:
+            return self.vf_value
+
+    def get_journal_value(self):
+        with self.lock:
+            return self.journal_value
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ВКЛ 1: VF_GEN GUI
 # ══════════════════════════════════════════════════════════════════════════════
 
 class VFGenTab(QtWidgets.QWidget):
-    def __init__(self, status, vf_counters=None, journal_tab=None):
+    def __init__(self, status, vf_counters=None, sync_state=None):
         super().__init__()
         self.status = status
         self.counters = vf_counters or Counters('counters.json')
+        self.sync_state = sync_state or SyncState()
         self.worker = None
         self.flash_worker = None
         self._flash_value = None
-        self.journal_tab = journal_tab
         self.init_ui()
         self._refresh_counter()
 
@@ -1123,15 +1147,15 @@ class VFGenTab(QtWidgets.QWidget):
             self.counter_label.setText(f"Всего прошивок: {count} (последняя: {format_value(value)})")
 
     def update_journal_label(self):
-        if self.journal_tab and hasattr(self.journal_tab, 'daily') and self.journal_tab.daily:
-            value = self.journal_tab.daily[-1].value
+        value = self.sync_state.get_journal_value()
+        if value is not None:
             self.journal_value_label.setText(f"Журнал: {format_value(value)}")
         else:
             self.journal_value_label.setText("Журнал: —")
 
     def load_value_from_journal(self):
-        if self.journal_tab and hasattr(self.journal_tab, 'daily') and self.journal_tab.daily:
-            value = self.journal_tab.daily[-1].value
+        value = self.sync_state.get_journal_value()
+        if value is not None:
             freq_khz = value / 1000.0
             self.inp.setText(str(freq_khz))
             self.log.setText(f"✓ Загружено значение из журнала: {format_value(value)}")
@@ -1197,9 +1221,8 @@ class VFGenTab(QtWidgets.QWidget):
             total = self.counters.increment(COUNTER_NAME, getattr(self, "_flash_value", 0))
             self._refresh_counter()
             self.log.append(f"✓ EEPROM записан (№ {total}). Основная прошивка не тронута.")
-            if self.journal_tab:
-                self.journal_tab.update_vf_label()
-                self.update_journal_label()
+            self.sync_state.set_vf_value(self._flash_value)
+            self.update_journal_label()
             self.inp.selectAll()
             self.inp.setFocus()
         else:
@@ -1211,7 +1234,7 @@ class VFGenTab(QtWidgets.QWidget):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class JournalTab(QtWidgets.QWidget):
-    def __init__(self, mt_counters, vf_counters=None, vf_tab=None):
+    def __init__(self, mt_counters, vf_counters=None, sync_state=None):
         super().__init__()
         self.path = None
         self.data = None
@@ -1220,7 +1243,7 @@ class JournalTab(QtWidgets.QWidget):
         self.i2c = None
         self.mt_counters = mt_counters
         self.vf_counters = vf_counters or Counters('counters.json')
-        self.vf_tab = vf_tab
+        self.sync_state = sync_state or SyncState()
         self.init_ui()
 
     def open_programmer(self):
@@ -1276,16 +1299,17 @@ class JournalTab(QtWidgets.QWidget):
         self.i2c.writeto_mem(dev_addr, mem_addr, bytes(payload), addrsize=8)
 
     def update_vf_label(self):
-        if self.vf_tab and hasattr(self.vf_tab, '_flash_value') and self.vf_tab._flash_value:
-            value = self.vf_tab._flash_value
+        value = self.sync_state.get_vf_value()
+        if value is not None:
             self.vf_value_label.setText(f"Генератор: {format_value(value)}")
         else:
             self.vf_value_label.setText("Генератор: —")
 
     def load_value_from_vf(self):
-        if self.vf_tab and hasattr(self.vf_tab, '_flash_value') and self.vf_tab._flash_value:
-            self.final_value.setValue(self.vf_tab._flash_value)
-            self.set_status(f"✓ Загружено значение из генератора: {format_value(self.vf_tab._flash_value)}", True)
+        value = self.sync_state.get_vf_value()
+        if value is not None:
+            self.final_value.setValue(value)
+            self.set_status(f"✓ Загружено значение из генератора: {format_value(value)}", True)
         else:
             self.set_status("✗ В генераторе нет сохранённого значения", False)
 
@@ -1318,6 +1342,7 @@ class JournalTab(QtWidgets.QWidget):
                 self.average.setValue(average)
             self.generate_btn.setEnabled(True)
             self.write_btn.setEnabled(True)
+            self.sync_state.set_journal_value(self.daily[-1].value)
             self.update_vf_label()
             self.set_status(
                 f"✓ Прочитано: {len(self.daily)} суточных записей, "
@@ -1481,15 +1506,12 @@ class JournalTab(QtWidgets.QWidget):
             self.progress.setValue(95)
             if self.daily:
                 last_value = self.daily[-1].value
-                if self.vf_tab:
-                    self.vf_tab._flash_value = last_value
-                    self.vf_tab._refresh_counter()
+                self.sync_state.set_journal_value(last_value)
                 if self.vf_counters:
                     self.vf_counters.increment(COUNTER_NAME, last_value)
-                self.update_vf_label()
 
             self.progress.setValue(100)
-            self.set_status("✓ Данные записаны в прибор! Генератор частоты синхронизирован.", True)
+            self.set_status("✓ Данные записаны в прибор! Значение синхронизировано с генератором.", True)
 
         except Exception as exc:
             self.progress.setValue(0)
@@ -1635,13 +1657,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         mt_counters = MTCounters(["200_MT", "310_MT"])
         vf_counters = Counters('vf_counters.json')
+        sync_state = SyncState()
 
         tabs.addTab(MTWriterTab("200_MT", mt_counters), "200_MT (CH341)")
         tabs.addTab(MTWriterTab("310_MT", mt_counters), "310_MT (CH341)")
 
-        vf_tab = VFGenTab(license_status, vf_counters)
-        journal_tab = JournalTab(mt_counters, vf_counters, vf_tab)
-        vf_tab.journal_tab = journal_tab
+        vf_tab = VFGenTab(license_status, vf_counters, sync_state)
+        journal_tab = JournalTab(mt_counters, vf_counters, sync_state)
 
         tabs.addTab(vf_tab, "Генератор частоты (PIC)")
         tabs.addTab(journal_tab, "Синтетический журнал (24AA256)")
