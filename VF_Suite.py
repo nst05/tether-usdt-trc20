@@ -461,6 +461,13 @@ class MTWriterTab(QtWidgets.QWidget):
         return value
 
     def write_and_verify(self):
+        status = check_license()
+        if not status["valid"]:
+            self.set_status(
+                f"✗ Лицензия не активна: {status.get('reason', 'неизвестно')}", False
+            )
+            return
+
         self.write_button.setEnabled(False)
         self.progress.setValue(5)
         self.set_status("Запись...")
@@ -886,6 +893,8 @@ class JournalTab(QtWidgets.QWidget):
     sig_progress = QtCore.pyqtSignal(int)
     sig_loaded = QtCore.pyqtSignal()
     sig_busy = QtCore.pyqtSignal(bool)
+    sig_busy_text = QtCore.pyqtSignal(str)
+    sig_indeterminate = QtCore.pyqtSignal(bool)
 
     def __init__(self, mt_counters):
         super().__init__()
@@ -897,10 +906,20 @@ class JournalTab(QtWidgets.QWidget):
         self.mt_counters = mt_counters
         self.init_ui()
 
+        # Анимация ожидания: крутится в главном потоке, пока обмен
+        # с прибором идёт в фоновом.
+        self._busy_text = ""
+        self._busy_frame = 0
+        self.busy_timer = QtCore.QTimer(self)
+        self.busy_timer.setInterval(110)
+        self.busy_timer.timeout.connect(self._tick_busy)
+
         self.sig_status.connect(self.set_status)
         self.sig_progress.connect(self.progress.setValue)
         self.sig_loaded.connect(self.on_journal_loaded)
         self.sig_busy.connect(self.set_busy)
+        self.sig_busy_text.connect(self.set_busy_text)
+        self.sig_indeterminate.connect(self.set_indeterminate)
 
     # ── работа с программатором ───────────────────────────────────────────
 
@@ -936,7 +955,7 @@ class JournalTab(QtWidgets.QWidget):
             )
         return BASE_I2C_ADDRESS, address
 
-    def read_from_eeprom(self, address, length):
+    def read_from_eeprom(self, address, length, progress=None):
         if self.i2c is None:
             raise RuntimeError("Программатор не инициализирован.")
         result = bytearray()
@@ -949,6 +968,8 @@ class JournalTab(QtWidgets.QWidget):
             result.extend(bytes(chunk))
             current += chunk_len
             remaining -= chunk_len
+            if progress is not None:
+                progress(len(result), length)
         return bytes(result)
 
     def write_to_eeprom(self, address, payload):
@@ -1157,6 +1178,39 @@ class JournalTab(QtWidgets.QWidget):
                 "border-radius:10px;padding:12px;"
             )
 
+    # ── анимация ожидания ─────────────────────────────────────────────────
+
+    BUSY_FRAMES = "⣾⣽⣻⢿⡿⣟⣯⣷"
+
+    def start_busy(self, text):
+        self._busy_text = text
+        self._busy_frame = 0
+        self.status_label.setStyleSheet(
+            "background:#18202c;border:1px solid #3d4a60;"
+            "border-radius:10px;padding:12px;color:#cfe0ff;"
+        )
+        self._tick_busy()
+        if not self.busy_timer.isActive():
+            self.busy_timer.start()
+
+    def set_busy_text(self, text):
+        self._busy_text = text
+
+    def stop_busy(self):
+        self.busy_timer.stop()
+
+    def _tick_busy(self):
+        frame = self.BUSY_FRAMES[self._busy_frame % len(self.BUSY_FRAMES)]
+        self._busy_frame += 1
+        self.status_label.setText(f"{frame}   {self._busy_text}")
+
+    def set_indeterminate(self, on):
+        """Бегущая полоса, пока длительность шага неизвестна."""
+        if on:
+            self.progress.setRange(0, 0)
+        else:
+            self.progress.setRange(0, 100)
+
     def set_summary(self, text):
         """Сводка над таблицей. Таблица растянута и иначе съедает у метки
         последние строки, поэтому высоту закрепляем по самому тексту."""
@@ -1166,6 +1220,9 @@ class JournalTab(QtWidgets.QWidget):
         self.summary_label.setMinimumHeight(lines * spacing + 26)
 
     def set_busy(self, busy):
+        if not busy:
+            self.stop_busy()
+            self.set_indeterminate(False)
         self.read_btn.setEnabled(not busy)
         self.open_btn.setEnabled(not busy)
         has_data = self.data is not None and len(self.daily) >= 2
@@ -1256,18 +1313,26 @@ class JournalTab(QtWidgets.QWidget):
             )
             return
         self.set_busy(True)
+        self.start_busy("Подключение к программатору…")
+        self.set_indeterminate(True)
         threading.Thread(target=self.read_from_device, daemon=True).start()
 
     def read_from_device(self):
         """Читает весь журнал (32 КБ) из 24AA256."""
-        self.sig_status.emit("Чтение из прибора…", None)
-        self.sig_progress.emit(10)
         try:
             self.open_programmer()
-            data = self.read_from_eeprom(0x0000, EEPROM_SIZE)
-            self.close_programmer()
-            self.sig_progress.emit(70)
 
+            self.sig_indeterminate.emit(False)
+            self.sig_busy_text.emit("Чтение журнала из прибора…")
+            data = self.read_from_eeprom(
+                0x0000, EEPROM_SIZE,
+                progress=lambda done, total: self.sig_progress.emit(
+                    int(done / total * 85)
+                ),
+            )
+            self.close_programmer()
+
+            self.sig_busy_text.emit("Разбор журнала…")
             self.load_image(data, "прибор (24AA256)")
 
             self.sig_progress.emit(100)
@@ -1280,9 +1345,9 @@ class JournalTab(QtWidgets.QWidget):
                 True,
             )
         except Exception as exc:
+            self.sig_busy.emit(False)
             self.sig_progress.emit(0)
             self.sig_status.emit(f"✗ Ошибка чтения: {exc}", False)
-            self.sig_busy.emit(False)
         finally:
             self.close_programmer()
 
@@ -1356,26 +1421,33 @@ class JournalTab(QtWidgets.QWidget):
             self.set_status("✗ Сначала прочитай журнал из прибора", False)
             return
         self.set_busy(True)
+        self.start_busy("Подключение к программатору…")
+        self.set_indeterminate(True)
         threading.Thread(target=self.write_to_device, daemon=True).start()
 
     def write_to_device(self):
         """Пишет текущий образ журнала обратно в 24AA256 и проверяет запись."""
-        self.sig_status.emit("Запись в прибор…", None)
-        self.sig_progress.emit(5)
         try:
             payload = bytes(self.data)
             self.open_programmer()
 
+            self.sig_indeterminate.emit(False)
+            self.sig_busy_text.emit("Запись журнала в прибор…")
             total = len(payload)
             written = 0
             while written < total:
                 chunk = payload[written:written + EEPROM_PAGE_SIZE]
                 self.write_to_eeprom(written, chunk)
                 written += len(chunk)
-                self.sig_progress.emit(5 + int(written / total * 75))
+                self.sig_progress.emit(int(written / total * 75))
 
-            self.sig_progress.emit(82)
-            verify = self.read_from_eeprom(0x0000, total)
+            self.sig_busy_text.emit("Проверка записи…")
+            verify = self.read_from_eeprom(
+                0x0000, total,
+                progress=lambda done, tot: self.sig_progress.emit(
+                    75 + int(done / tot * 20)
+                ),
+            )
             self.close_programmer()
 
             if verify != payload:
@@ -1386,24 +1458,22 @@ class JournalTab(QtWidgets.QWidget):
                     f"Проверка записи не пройдена: расхождение по адресу 0x{mismatch:04X}."
                 )
 
-            self.sig_progress.emit(92)
-
             check_daily = parse_daily(verify)
             if not check_daily:
                 raise RuntimeError("После записи журнал не распознаётся прибором.")
             actual_final = max(check_daily, key=lambda item: item.dt).value
 
             self.sig_progress.emit(100)
+            self.sig_busy.emit(False)
             self.sig_status.emit(
                 f"✓ Журнал записан в прибор и проверен.\n"
                 f"Конечное показание в приборе: {actual_final:.2f}.",
                 True,
             )
-            self.sig_busy.emit(False)
         except Exception as exc:
+            self.sig_busy.emit(False)
             self.sig_progress.emit(0)
             self.sig_status.emit(f"✗ Ошибка записи: {exc}", False)
-            self.sig_busy.emit(False)
         finally:
             self.close_programmer()
 
@@ -1571,6 +1641,75 @@ class ActivationDialog(QtWidgets.QDialog):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ЗАСТАВКА
+# ══════════════════════════════════════════════════════════════════════════════
+
+class Splash(QtWidgets.QSplashScreen):
+    """Заставка на время запуска. Крутится обычным таймером в главном
+    потоке — никаких фоновых потоков, иначе окно остаётся чёрным."""
+
+    FRAMES = "⣾⣽⣻⢿⡿⣟⣯⣷"
+
+    def __init__(self):
+        pixmap = QtGui.QPixmap(460, 210)
+        pixmap.fill(QtGui.QColor("#10131a"))
+
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        painter.setPen(QtGui.QPen(QtGui.QColor("#3f6df6"), 2))
+        painter.drawRoundedRect(1, 1, 457, 207, 14, 14)
+
+        painter.setPen(QtGui.QColor("#eef2f8"))
+        font = painter.font()
+        font.setPointSize(20)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(
+            QtCore.QRect(0, 52, 460, 40), QtCore.Qt.AlignCenter, "VF SUITE"
+        )
+
+        painter.setPen(QtGui.QColor("#8ea3c8"))
+        font.setPointSize(10)
+        font.setBold(False)
+        painter.setFont(font)
+        painter.drawText(
+            QtCore.QRect(0, 94, 460, 24),
+            QtCore.Qt.AlignCenter,
+            "MT Writer  •  Синтетический журнал",
+        )
+        painter.end()
+
+        super().__init__(pixmap)
+        self.setWindowFlags(
+            QtCore.Qt.SplashScreen | QtCore.Qt.FramelessWindowHint
+        )
+        self._frame = 0
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(110)
+        self._timer.timeout.connect(self._tick)
+
+    def start(self):
+        self.show()
+        self._tick()
+        self._timer.start()
+
+    def _tick(self):
+        frame = self.FRAMES[self._frame % len(self.FRAMES)]
+        self._frame += 1
+        self.showMessage(
+            f"{frame}   Загрузка…",
+            QtCore.Qt.AlignHCenter | QtCore.Qt.AlignBottom,
+            QtGui.QColor("#cfe0ff"),
+        )
+        QtWidgets.QApplication.processEvents()
+
+    def finish(self, window):
+        self._timer.stop()
+        super().finish(window)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ТОЧКА ВХОДА
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1603,8 +1742,12 @@ def main():
         if not status["valid"]:
             return 0
 
+    splash = Splash()
+    splash.start()
+
     win = MainWindow(status)
     win.show()
+    splash.finish(win)
 
     return app.exec_()
 
