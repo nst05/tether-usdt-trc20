@@ -26,7 +26,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
@@ -44,8 +44,10 @@ DEFAULT_SECRET = 'vf-gen-license-secret-change-me-2024'
 SECRET = os.environ.get('VF_LICENSE_SECRET', DEFAULT_SECRET).encode('utf-8')
 
 KEY_VERSION = 1
+LICENSE_FILE = 'license.key'
 _EPOCH = date(2020, 1, 1)
 _SIG_LEN = 10
+_CLOCK_TOLERANCE_DAYS = 2
 
 
 def _win_machine_guid():
@@ -191,40 +193,141 @@ def generate_key(code, valid_days=0):
     return '-'.join(enc[i:i + 7] for i in range(0, len(enc), 7))
 
 
-def verify_key(key, code):
+def verify_key(key, code=None, today=None):
+    code = code or get_machine_code()
+    today = today or date.today()
     cleaned = _canonical(key)
+    result = {'valid': False, 'reason': None, 'expires': None, 'perpetual': False}
+
+    if not cleaned:
+        result['reason'] = 'Ключ не введён'
+        return result
     try:
         blob = base64.b32decode(cleaned + '=' * (-len(cleaned) % 8))
     except (binascii.Error, ValueError):
-        return False, 'Ключ введён с ошибкой'
+        result['reason'] = 'Ключ введён с ошибкой'
+        return result
     if len(blob) != 3 + _SIG_LEN:
-        return False, 'Неверная длина ключа'
+        result['reason'] = 'Неверная длина ключа'
+        return result
     version, expiry_days = struct.unpack('>BH', blob[:3])
     if version != KEY_VERSION:
-        return False, 'Другая версия ключа'
+        result['reason'] = 'Ключ версии %d не поддерживается этой программой' % version
+        return result
     if not hmac.compare_digest(_signature(code, version, expiry_days), blob[3:]):
-        return False, 'Ключ не подходит к этому компьютеру'
+        result['reason'] = 'Ключ не подходит к этому компьютеру'
+        return result
     if expiry_days == 0:
-        return True, 'действителен (бессрочно)'
+        result.update(valid=True, perpetual=True)
+        return result
+
     expires = _EPOCH + timedelta(days=expiry_days)
-    if date.today() > expires:
-        return False, 'срок истёк ' + expires.strftime('%d.%m.%Y')
-    return True, 'действителен до ' + expires.strftime('%d.%m.%Y')
+    result['expires'] = expires
+    if today > expires:
+        result['reason'] = 'Срок лицензии истёк %s' % expires.strftime('%d.%m.%Y')
+        return result
+    result['valid'] = True
+    return result
+
+
+def _guard(key, last_seen):
+    message = ('%s|%s' % (_canonical(key), last_seen)).encode('utf-8')
+    return hmac.new(SECRET, message, hashlib.sha256).hexdigest()[:32]
+
+
+def _license_path():
+    return os.path.join(app_data_dir(), LICENSE_FILE)
+
+
+def _read_license():
+    try:
+        with open(_license_path(), encoding='utf-8') as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return None
+
+
+def _write_license(data):
+    try:
+        with open(_license_path(), 'w', encoding='utf-8') as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 
 def check_license():
-    machine_code = get_machine_code()
-    license_file = os.path.expanduser("~/.vf_license")
+    code = get_machine_code()
+    status = {'valid': False,
+              'reason': 'Программа не активирована на этом компьютере',
+              'machine_code': code, 'expires': None,
+              'perpetual': False, 'days_left': None}
 
-    if not os.path.exists(license_file):
-        return {"valid": False, "machine_code": machine_code, "reason": "not_found"}
+    data = _read_license()
+    if not data or not data.get('key'):
+        return status
 
-    try:
-        key = open(license_file, 'r').read().strip()
-        ok, msg = verify_key(key, machine_code)
-        return {"valid": ok, "machine_code": machine_code, "message": msg, "reason": None if ok else "invalid"}
-    except Exception as exc:
-        return {"valid": False, "machine_code": machine_code, "reason": str(exc)}
+    key = data.get('key', '')
+    result = verify_key(key, code)
+    if not result['valid']:
+        status['reason'] = result['reason']
+        return status
+
+    # Защита от перевода системной даты назад.
+    last_seen = data.get('last_seen')
+    if last_seen and data.get('guard') == _guard(key, last_seen):
+        try:
+            seen = date.fromisoformat(last_seen)
+            if date.today() < seen - timedelta(days=_CLOCK_TOLERANCE_DAYS):
+                status['reason'] = ('Системная дата переведена назад. '
+                                    'Установите правильную дату и запустите снова.')
+                return status
+        except ValueError:
+            pass
+
+    status.update(valid=True, reason=None,
+                  expires=result['expires'], perpetual=result['perpetual'])
+    if result['expires']:
+        status['days_left'] = (result['expires'] - date.today()).days
+
+    today = date.today().isoformat()
+    if data.get('last_seen') != today:
+        data['last_seen'] = today
+        data['guard'] = _guard(key, today)
+        _write_license(data)
+    return status
+
+
+def activate(key):
+    """Ключ проверяется ДО сохранения — иначе активацией был бы любой текст."""
+    code = get_machine_code()
+    result = verify_key(key, code)
+    if not result['valid']:
+        return False, result['reason']
+
+    last_seen = date.today().isoformat()
+    _write_license({
+        'key': normalize(key),
+        'machine': code,
+        'activated_at': datetime.now().isoformat(timespec='seconds'),
+        'last_seen': last_seen,
+        'guard': _guard(key, last_seen),
+    })
+    if result['perpetual']:
+        return True, 'Программа активирована на этом компьютере (бессрочно).'
+    return True, ('Программа активирована на этом компьютере до %s.'
+                  % result['expires'].strftime('%d.%m.%Y'))
+
+
+def license_line(status):
+    if not status['valid']:
+        return 'Лицензия: не активирована'
+    if status['perpetual']:
+        return 'Лицензия: бессрочная'
+    return 'Лицензия: до %s (%d дн.)' % (
+        status['expires'].strftime('%d.%m.%Y'), status['days_left'])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -289,12 +392,21 @@ try:
 except ImportError:
     I2C = None
 
-EEPROM_SIZE = 32768  # 24AA256 - 32 KB (не 24C16 2KB)
-EEPROM_PAGE_SIZE = 64  # 24AA256: запись за границу страницы заворачивается
-EEPROM_READ_CHUNK = 256
+# В программе ДВЕ РАЗНЫЕ микросхемы, и путать их протоколы нельзя.
+#
+# Вкладки 200_MT / 310_MT — 24C16: 2 КБ, 8 блоков по 256 байт,
+# номер блока едет в адресе устройства, адрес внутри блока однобайтный.
+MT_EEPROM_SIZE = 2048
+MT_BASE_I2C_ADDRESS = 0x50
 VALUE_OFFSET = 0x0040
 VALUE_SIZE = 4
 SCALE = 100
+
+# Синтетический журнал — 24AA256: 32 КБ, один адрес на шине,
+# 16-битный адрес внутри памяти, страница записи 64 байта.
+EEPROM_SIZE = 32768
+EEPROM_PAGE_SIZE = 64
+EEPROM_READ_CHUNK = 256
 BASE_I2C_ADDRESS = 0x50
 
 
@@ -420,10 +532,13 @@ class MTWriterTab(QtWidgets.QWidget):
 
     @staticmethod
     def split_address(address):
-        if not 0 <= address < EEPROM_SIZE:
-            raise ValueError(f"Адрес 0x{address:04X} выходит за пределы 24AA256 (макс 0x{EEPROM_SIZE-1:04X}).")
-        device_address = BASE_I2C_ADDRESS
-        memory_address = address
+        """24C16: 2 КБ, 8 блоков по 256 байт. Номер блока едет в адресе
+        устройства, внутри блока адрес однобайтный."""
+        if not 0 <= address < MT_EEPROM_SIZE:
+            raise ValueError("Адрес выходит за пределы 24C16.")
+        block = (address >> 8) & 0x07
+        device_address = MT_BASE_I2C_ADDRESS | block
+        memory_address = address & 0xFF
         return device_address, memory_address
 
     def read_bytes(self, address, length):
@@ -434,8 +549,8 @@ class MTWriterTab(QtWidgets.QWidget):
         remaining = length
         while remaining > 0:
             dev_addr, mem_addr = self.split_address(current)
-            chunk_len = min(remaining, 256)
-            chunk = self.i2c.readfrom_mem(dev_addr, mem_addr, chunk_len, addrsize=16)
+            chunk_len = min(remaining, 0x100 - mem_addr)
+            chunk = self.i2c.readfrom_mem(dev_addr, mem_addr, chunk_len, addrsize=8)
             result.extend(bytes(chunk))
             current += chunk_len
             remaining -= chunk_len
@@ -445,7 +560,7 @@ class MTWriterTab(QtWidgets.QWidget):
         if self.i2c is None:
             raise RuntimeError("Программатор не инициализирован.")
         dev_addr, mem_addr = self.split_address(address)
-        self.i2c.writeto_mem(dev_addr, mem_addr, bytes(payload), addrsize=16)
+        self.i2c.writeto_mem(dev_addr, mem_addr, bytes(payload), addrsize=8)
 
     def parse_value(self):
         text = self.value_input.text().strip().replace(",", ".")
@@ -1557,87 +1672,125 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        license_label = QtWidgets.QLabel()
-        if license_status["valid"]:
-            license_label.setText(f"✓ Лицензия активна: {license_status.get('message', '')}")
-            license_label.setStyleSheet("background:#153c28;border:2px solid #2fc46f;border-radius:10px;padding:12px;color:#91f4b8;")
-        else:
-            license_label.setText(f"Код компьютера: {license_status['machine_code']}")
-            license_label.setStyleSheet("background:#2d3340;border:1px solid #5d6a80;border-radius:10px;padding:12px;color:#b0b8c8;")
-        layout.addWidget(license_label)
+        self.license_label = QtWidgets.QLabel()
+        self.license_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(self.license_label)
 
         tabs = QtWidgets.QTabWidget()
 
         mt_counters = MTCounters(["200_MT", "310_MT"])
 
-        tabs.addTab(MTWriterTab("200_MT", mt_counters), "200_MT (CH341)")
-        tabs.addTab(MTWriterTab("310_MT", mt_counters), "310_MT (CH341)")
+        tabs.addTab(MTWriterTab("200_MT", mt_counters), "200_MT (24C16)")
+        tabs.addTab(MTWriterTab("310_MT", mt_counters), "310_MT (24C16)")
         tabs.addTab(JournalTab(mt_counters), "Синтетический журнал (24AA256)")
 
         layout.addWidget(tabs)
 
         self.setCentralWidget(central)
+        self.show_license(license_status)
+
+    def show_license(self, status):
+        self.license_label.setText(
+            "%s   ·   ПК: %s" % (license_line(status), status["machine_code"])
+        )
+        if status["valid"]:
+            self.license_label.setStyleSheet(
+                "background:#153c28;border:2px solid #2fc46f;"
+                "border-radius:10px;padding:10px;color:#91f4b8;font-weight:700;"
+            )
+        else:
+            self.license_label.setStyleSheet(
+                "background:#471d25;border:2px solid #ff5a6f;"
+                "border-radius:10px;padding:10px;color:#ffabb8;font-weight:700;"
+            )
 
 
 class ActivationDialog(QtWidgets.QDialog):
-    def __init__(self, license_status):
+    """Активация. Ключ проверяется здесь же — некорректный не сохраняется."""
+
+    def __init__(self, status):
         super().__init__()
-        self.setWindowTitle("Активация")
-        self.setMinimumWidth(500)
-        self.machine_code = license_status['machine_code']
+        self.status = status
+        self.machine_code = status["machine_code"]
+        self.setWindowTitle("Активация VF Suite")
+        self.setFixedWidth(540)
+
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(12)
 
-        # Код компьютера
-        code_label = QtWidgets.QLabel("КОД ЭТОГО КОМПЬЮТЕРА:")
-        code_label.setStyleSheet("font-weight:bold;")
-        layout.addWidget(code_label)
+        title = QtWidgets.QLabel("АКТИВАЦИЯ ПРОГРАММЫ")
+        font = title.font()
+        font.setPointSize(15)
+        font.setBold(True)
+        title.setFont(font)
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(title)
 
-        code_layout = QtWidgets.QHBoxLayout()
+        hint = QtWidgets.QLabel(
+            "Программа работает только на одном компьютере.\n"
+            "Отправьте код поставщику и введите полученный ключ."
+        )
+        hint.setAlignment(QtCore.Qt.AlignCenter)
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#aab3c5;")
+        layout.addWidget(hint)
+
+        cap = QtWidgets.QLabel("КОД ЭТОГО КОМПЬЮТЕРА")
+        cap.setAlignment(QtCore.Qt.AlignCenter)
+        cap.setStyleSheet("font-size:12px;font-weight:800;color:#8d96a8;")
+        layout.addWidget(cap)
+
         self.code_input = QtWidgets.QLineEdit(self.machine_code)
         self.code_input.setReadOnly(True)
-        code_layout.addWidget(self.code_input)
-        copy_btn = QtWidgets.QPushButton("Копировать")
-        copy_btn.setMaximumWidth(120)
+        self.code_input.setAlignment(QtCore.Qt.AlignCenter)
+        self.code_input.setStyleSheet("color:#7ff0ac;font-size:18px;font-weight:700;")
+        layout.addWidget(self.code_input)
+
+        copy_btn = QtWidgets.QPushButton("Скопировать код")
         copy_btn.clicked.connect(self.copy_code)
-        code_layout.addWidget(copy_btn)
-        layout.addLayout(code_layout)
+        layout.addWidget(copy_btn)
 
-        # Ключ активации
-        key_label = QtWidgets.QLabel("\nКЛЮЧ АКТИВАЦИИ:")
-        key_label.setStyleSheet("font-weight:bold;")
-        layout.addWidget(key_label)
+        cap2 = QtWidgets.QLabel("КЛЮЧ АКТИВАЦИИ")
+        cap2.setAlignment(QtCore.Qt.AlignCenter)
+        cap2.setStyleSheet("font-size:12px;font-weight:800;color:#8d96a8;")
+        layout.addWidget(cap2)
 
-        key_layout = QtWidgets.QHBoxLayout()
         self.key_input = QtWidgets.QLineEdit()
         self.key_input.setPlaceholderText("Вставь ключ от keygen_vf.py")
-        key_layout.addWidget(self.key_input)
-        layout.addLayout(key_layout)
+        self.key_input.setAlignment(QtCore.Qt.AlignCenter)
+        self.key_input.returnPressed.connect(self.try_activate)
+        layout.addWidget(self.key_input)
 
-        # Кнопки
-        btn_layout = QtWidgets.QHBoxLayout()
+        self.message = QtWidgets.QLabel(status.get("reason") or "Введите ключ")
+        self.message.setWordWrap(True)
+        self.message.setAlignment(QtCore.Qt.AlignCenter)
+        self.message.setMinimumHeight(44)
+        self.message.setStyleSheet("color:#93a1b8;")
+        layout.addWidget(self.message)
+
+        row = QtWidgets.QHBoxLayout()
         ok_btn = QtWidgets.QPushButton("Активировать")
-        cancel_btn = QtWidgets.QPushButton("Отмена")
-        ok_btn.clicked.connect(self.accept)
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(ok_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
+        ok_btn.clicked.connect(self.try_activate)
+        row.addWidget(ok_btn, 2)
+        quit_btn = QtWidgets.QPushButton("Выход")
+        quit_btn.clicked.connect(self.reject)
+        row.addWidget(quit_btn, 1)
+        layout.addLayout(row)
+
+        self.key_input.setFocus()
 
     def copy_code(self):
         QtWidgets.QApplication.clipboard().setText(self.machine_code)
-        QtWidgets.QMessageBox.information(self, "✓", "Код скопирован в буфер обмена!")
+        self.message.setStyleSheet("color:#7ff0ac;")
+        self.message.setText("Код скопирован в буфер обмена.")
 
-    def exec_(self):
-        if super().exec_() == QtWidgets.QDialog.Accepted:
-            key = self.key_input.text().strip()
-            if key:
-                key_file = os.path.expanduser("~/.vf_license")
-                with open(key_file, 'w') as fh:
-                    fh.write(key)
-            return QtWidgets.QDialog.Accepted
-        return QtWidgets.QDialog.Rejected
-
-
+    def try_activate(self):
+        ok, message = activate(self.key_input.text())
+        self.message.setStyleSheet("color:#7ff0ac;" if ok else "color:#ff9cab;")
+        self.message.setText(message)
+        if ok:
+            QtCore.QTimer.singleShot(500, self.accept)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
