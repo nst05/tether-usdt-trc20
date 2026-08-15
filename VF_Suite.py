@@ -407,6 +407,8 @@ SCALE = 100
 EEPROM_SIZE = 32768
 EEPROM_PAGE_SIZE = 64
 EEPROM_READ_CHUNK = 256
+EEPROM_WRITE_SETTLE = 0.008  # tWC 24AA256 — 5 мс, берём с запасом
+EEPROM_WRITE_ATTEMPTS = 4
 BASE_I2C_ADDRESS = 0x50
 
 
@@ -1540,37 +1542,100 @@ class JournalTab(QtWidgets.QWidget):
         self.set_indeterminate(True)
         threading.Thread(target=self.write_to_device, daemon=True).start()
 
+    def write_page_verified(self, address, chunk):
+        """Пишет одну страницу и тут же её перечитывает. Страница, которая
+        не легла с первого раза, повторяется с увеличенной паузой."""
+        last = None
+        for attempt in range(1, EEPROM_WRITE_ATTEMPTS + 1):
+            try:
+                self.write_to_eeprom(address, chunk)
+                time.sleep(EEPROM_WRITE_SETTLE * attempt)
+                last = self.read_from_eeprom(address, len(chunk))
+                if last == chunk:
+                    return True
+            except Exception:
+                time.sleep(EEPROM_WRITE_SETTLE * attempt)
+        return False
+
     def write_to_device(self):
-        """Пишет текущий образ журнала обратно в 24AA256 и проверяет запись."""
+        """Пишет журнал в 24AA256.
+
+        Пишутся только те 64-байтные страницы, которые реально отличаются
+        от содержимого прибора: переписывать все 32 КБ незачем, это долго
+        и цепляет области, которые менять не требуется.
+        """
         try:
             payload = bytes(self.data)
+            total = len(payload)
             self.open_programmer()
 
             self.sig_indeterminate.emit(False)
-            self.sig_busy_text.emit("Запись журнала в прибор…")
-            total = len(payload)
-            written = 0
-            while written < total:
-                chunk = payload[written:written + EEPROM_PAGE_SIZE]
-                self.write_to_eeprom(written, chunk)
-                written += len(chunk)
-                self.sig_progress.emit(int(written / total * 75))
+            self.sig_busy_text.emit("Сверка с прибором…")
+            current = self.read_from_eeprom(
+                0x0000, total,
+                progress=lambda done, tot: self.sig_progress.emit(
+                    int(done / tot * 20)
+                ),
+            )
+
+            pages = [
+                offset for offset in range(0, total, EEPROM_PAGE_SIZE)
+                if payload[offset:offset + EEPROM_PAGE_SIZE]
+                != current[offset:offset + EEPROM_PAGE_SIZE]
+            ]
+            changed_bytes = sum(
+                1 for i in range(total) if payload[i] != current[i]
+            )
+
+            if not pages:
+                self.close_programmer()
+                self.sig_progress.emit(100)
+                self.sig_busy.emit(False)
+                self.sig_status.emit(
+                    "В приборе уже записаны эти данные — менять нечего.", True
+                )
+                return
+
+            self.sig_busy_text.emit(
+                f"Запись {len(pages)} страниц ({changed_bytes} байт)…"
+            )
+            failed = []
+            for index, offset in enumerate(pages):
+                chunk = payload[offset:offset + EEPROM_PAGE_SIZE]
+                if not self.write_page_verified(offset, chunk):
+                    failed.append(offset)
+                self.sig_progress.emit(20 + int((index + 1) / len(pages) * 65))
+
+            if failed:
+                if len(failed) == len(pages):
+                    raise RuntimeError(
+                        "Прибор не принял ни одной страницы. Похоже, память "
+                        "защищена от записи (вывод WP) или это не 24AA256."
+                    )
+                addresses = ", ".join(f"0x{a:04X}" for a in failed[:5])
+                more = "…" if len(failed) > 5 else ""
+                raise RuntimeError(
+                    f"Не удалось записать {len(failed)} стр. из {len(pages)} "
+                    f"после {EEPROM_WRITE_ATTEMPTS} попыток: {addresses}{more}"
+                )
 
             self.sig_busy_text.emit("Проверка записи…")
             verify = self.read_from_eeprom(
                 0x0000, total,
                 progress=lambda done, tot: self.sig_progress.emit(
-                    75 + int(done / tot * 20)
+                    85 + int(done / tot * 12)
                 ),
             )
             self.close_programmer()
 
             if verify != payload:
-                mismatch = next(
-                    (i for i in range(total) if verify[i] != payload[i]), -1
-                )
+                bad = [i for i in range(total) if verify[i] != payload[i]]
+                addresses = ", ".join(f"0x{a:04X}" for a in bad[:5])
+                more = "…" if len(bad) > 5 else ""
                 raise RuntimeError(
-                    f"Проверка записи не пройдена: расхождение по адресу 0x{mismatch:04X}."
+                    f"Проверка не пройдена: расходится {len(bad)} байт "
+                    f"({addresses}{more}). Прибор мог изменить журнал сам — "
+                    f"прочитайте его заново и повторите."
                 )
 
             check_daily = parse_daily(verify)
@@ -1582,6 +1647,7 @@ class JournalTab(QtWidgets.QWidget):
             self.sig_busy.emit(False)
             self.sig_status.emit(
                 f"✓ Журнал записан в прибор и проверен.\n"
+                f"Изменено {len(pages)} страниц ({changed_bytes} байт). "
                 f"Конечное показание в приборе: {actual_final:.2f}.",
                 True,
             )
