@@ -31,7 +31,18 @@ from tkinter import ttk, filedialog, messagebox
 
 from dumpfile import DumpFile
 
-__version__ = '1.1'
+__version__ = '1.2'
+
+# Цветовая палитра интерфейса.
+BG = '#eef1f5'          # фон окна
+CARD = '#ffffff'        # фон карточек-секций
+INK = '#1f2933'         # основной текст
+MUTED = '#5b6673'       # второстепенный текст
+ACCENT = '#0a58ca'      # акцент (синий)
+OK = '#198754'          # зелёный
+WARN = '#c07000'        # оранжевый
+DANGER = '#dc3545'      # красный
+HEADER = '#0d3b66'      # шапка
 
 
 # Редактируемые 16-битные коэффициенты.
@@ -106,8 +117,8 @@ class Row(object):
 
         # заметная строка: как меняется скорость учёта энергии
         self.effect = tk.StringVar()
-        self.effect_lbl = tk.Label(box, textvariable=self.effect,
-                                   font=('TkDefaultFont', 11, 'bold'))
+        self.effect_lbl = ttk.Label(box, textvariable=self.effect,
+                                    font=('TkDefaultFont', 11, 'bold'))
         self.effect_lbl.grid(row=4, column=0, columnspan=5, sticky='w',
                              pady=(4, 0))
 
@@ -161,13 +172,13 @@ class Row(object):
 
         if abs(pct) < 0.05:
             self.effect.set('%s: без изменений' % subj)
-            self.effect_lbl.configure(fg='#198754')
+            self.effect_lbl.configure(foreground='#198754')
         elif pct > 0:
             self.effect.set('%s %s на %.1f%%  (%s)' % (subj, up, pct, up_note))
-            self.effect_lbl.configure(fg='#dc3545')
+            self.effect_lbl.configure(foreground='#dc3545')
         else:
             self.effect.set('%s %s на %.1f%%  (%s)' % (subj, down, -pct, down_note))
-            self.effect_lbl.configure(fg='#0a58ca')
+            self.effect_lbl.configure(foreground='#0a58ca')
 
     def _on_scale(self, _v):
         if self._sync:
@@ -200,9 +211,12 @@ class Row(object):
 
 class App(ttk.Frame):
     def __init__(self, master):
-        super().__init__(master, padding=12)
+        self.master = master
+        self._setup_style()
+        super().__init__(master, padding=14, style='App.TFrame')
         self.grid(sticky='nsew')
         master.title('Редактор коэффициентов дампа MSP430FE427  v%s' % __version__)
+        master.configure(background=BG)
         master.columnconfigure(0, weight=1)
         master.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
@@ -211,48 +225,152 @@ class App(ttk.Frame):
         self.path = None
         self.rows = []
 
+        self._build_header()
         self._build_file()
         self._build_fields()
         self._build_footer()
 
+    def _setup_style(self):
+        style = ttk.Style()
+        try:
+            style.theme_use('clam')
+        except tk.TclError:
+            pass
+        style.configure('.', background=CARD, foreground=INK)
+        style.configure('App.TFrame', background=BG)
+        style.configure('TFrame', background=BG)
+        style.configure('Card.TFrame', background=CARD)
+        style.configure('TLabel', background=CARD, foreground=INK)
+        style.configure('Muted.TLabel', background=CARD, foreground=MUTED)
+        style.configure('Head.TLabel', background=HEADER, foreground='#ffffff')
+        style.configure('HeadSub.TLabel', background=HEADER, foreground='#bcd3ea')
+        style.configure('TLabelframe', background=CARD, borderwidth=1,
+                        relief='solid')
+        style.configure('TLabelframe.Label', background=CARD, foreground=ACCENT,
+                        font=('TkDefaultFont', 10, 'bold'))
+        style.configure('TButton', padding=6)
+        style.configure('Accent.TButton', foreground='#ffffff',
+                        background=ACCENT, padding=8,
+                        font=('TkDefaultFont', 10, 'bold'))
+        style.map('Accent.TButton',
+                  background=[('active', '#084298'), ('disabled', '#9db8e0')])
+        style.configure('Horizontal.TScale', background=CARD)
+
+    def _build_header(self):
+        head = tk.Frame(self, background=HEADER)
+        head.grid(row=0, column=0, sticky='ew', pady=(0, 12))
+        head.columnconfigure(0, weight=1)
+        tk.Label(head, text='Редактор коэффициентов дампа',
+                 bg=HEADER, fg='#ffffff',
+                 font=('TkDefaultFont', 15, 'bold')).grid(
+            row=0, column=0, sticky='w', padx=14, pady=(10, 0))
+        tk.Label(head, text='MSP430FE427 · калибровка и серийный номер '
+                            'в файле прошивки (.s19 / .hex)',
+                 bg=HEADER, fg='#bcd3ea',
+                 font=('TkDefaultFont', 9)).grid(
+            row=1, column=0, sticky='w', padx=14, pady=(0, 10))
+        tk.Label(head, text='v%s' % __version__, bg=HEADER, fg='#7ea8d6',
+                 font=('TkDefaultFont', 9)).grid(row=0, column=1, sticky='ne',
+                                                 padx=12, pady=8)
+
     def _build_file(self):
-        box = ttk.Frame(self)
-        box.grid(row=0, column=0, sticky='ew', pady=(0, 8))
+        box = ttk.Frame(self, style='App.TFrame')
+        box.grid(row=1, column=0, sticky='ew', pady=(0, 8))
         box.columnconfigure(1, weight=1)
         ttk.Button(box, text='Открыть дамп…',
                    command=self.open_file).grid(row=0, column=0)
         self.file_var = tk.StringVar(value='файл не выбран')
-        ttk.Label(box, textvariable=self.file_var, foreground='#555').grid(
+        tk.Label(box, textvariable=self.file_var, bg=BG, fg=MUTED).grid(
             row=0, column=1, sticky='w', padx=8)
 
     def _build_fields(self):
-        self.fields_box = ttk.Frame(self)
-        self.fields_box.grid(row=1, column=0, sticky='nsew')
-        self.rowconfigure(1, weight=1)
+        self.fields_box = ttk.Frame(self, style='App.TFrame')
+        self.fields_box.grid(row=2, column=0, sticky='nsew')
+        self.rowconfigure(2, weight=1)
         self.columnconfigure(0, weight=1)
         for i, (addr, name, help_text, interp, effect) in enumerate(FIELDS):
             self.rows.append(Row(self, self.fields_box, i, addr, name,
                                  help_text, interp, effect))
 
+        # --- редактируемый серийный номер (ID прибора, 0x1008, 4 байта) ---
+        sn = ttk.LabelFrame(self.fields_box,
+                            text='Серийный номер / ID прибора (0x1008)',
+                            padding=8)
+        sn.grid(row=len(FIELDS), column=0, sticky='ew', pady=5)
+        sn.columnconfigure(1, weight=1)
+        ttk.Label(sn, text='4 байта, HEX (например 04 A2 CB 71). '
+                          'Этим ID прибор отвечает на команду поиска 0x53.',
+                  foreground='#555', wraplength=560, justify='left').grid(
+            row=0, column=0, columnspan=3, sticky='w', pady=(0, 6))
+        ttk.Label(sn, text='ID:').grid(row=1, column=0, sticky='w')
+        self.sn_var = tk.StringVar()
+        self.sn_entry = ttk.Entry(sn, textvariable=self.sn_var,
+                                  font=('monospace', 11))
+        self.sn_entry.grid(row=1, column=1, sticky='ew', padx=4)
+        self.sn_entry.bind('<KeyRelease>', lambda _e: self._check_sn())
+        ttk.Button(sn, text='Сброс', width=8,
+                   command=self._reset_sn).grid(row=1, column=2, sticky='e')
+        self.sn_info = tk.StringVar()
+        self.sn_lbl = ttk.Label(sn, textvariable=self.sn_info,
+                                font=('TkDefaultFont', 10, 'bold'))
+        self.sn_lbl.grid(row=2, column=0, columnspan=3, sticky='w', pady=(6, 0))
+        self.sn_original = None
+
+        # --- справка (не меняется) ---
         info = ttk.LabelFrame(self.fields_box, text='Только для справки (не меняется)',
                               padding=8)
-        info.grid(row=len(FIELDS), column=0, sticky='ew', pady=5)
+        info.grid(row=len(FIELDS) + 1, column=0, sticky='ew', pady=5)
         self.ref_var = tk.StringVar(value='—')
         ttk.Label(info, textvariable=self.ref_var,
                   font=('monospace', 10)).grid(sticky='w')
 
+    # -------- серийный номер --------
+    def _parse_sn(self):
+        """Разбор поля ID → 4 байта. None, если формат неверный."""
+        t = self.sn_var.get().strip().replace(':', ' ').replace('-', ' ')
+        try:
+            if ' ' in t:
+                parts = [int(x, 16) for x in t.split()]
+            else:
+                t = t.replace('0x', '')
+                parts = [int(t[i:i + 2], 16) for i in range(0, len(t), 2)]
+        except ValueError:
+            return None
+        if len(parts) != 4 or any(b < 0 or b > 255 for b in parts):
+            return None
+        return bytes(parts)
+
+    def _check_sn(self):
+        b = self._parse_sn()
+        if b is None:
+            self.sn_info.set('Нужно ровно 4 байта HEX (00..FF).')
+            self.sn_lbl.configure(foreground='#dc3545')
+            return False
+        if self.sn_original is not None and b != self.sn_original:
+            self.sn_info.set('Будет изменён (было %s)' %
+                             ' '.join('%02X' % x for x in self.sn_original))
+            self.sn_lbl.configure(foreground='#c07000')
+        else:
+            self.sn_info.set('Без изменений')
+            self.sn_lbl.configure(foreground='#198754')
+        return True
+
+    def _reset_sn(self):
+        if self.sn_original is not None:
+            self.sn_var.set(' '.join('%02X' % x for x in self.sn_original))
+            self._check_sn()
+
     def _build_footer(self):
-        box = ttk.Frame(self)
-        box.grid(row=2, column=0, sticky='ew', pady=(8, 0))
+        box = ttk.Frame(self, style='App.TFrame')
+        box.grid(row=3, column=0, sticky='ew', pady=(10, 0))
         box.columnconfigure(0, weight=1)
         self.status = tk.StringVar(value='Откройте дамп прибора (.s19 или .hex).')
-        ttk.Label(box, textvariable=self.status, foreground='#c07000').grid(
+        tk.Label(box, textvariable=self.status, bg=BG, fg=WARN).grid(
             row=0, column=0, sticky='w')
         self.save_btn = ttk.Button(box, text='Сохранить как…',
-                                   command=self.save_file, state='disabled')
+                                   command=self.save_file, state='disabled',
+                                   style='Accent.TButton')
         self.save_btn.grid(row=0, column=1, sticky='e')
-        ttk.Label(box, text='v%s' % __version__, foreground='#999').grid(
-            row=0, column=2, sticky='e', padx=(8, 0))
 
     # --------------------------------------------------- действия
     def open_file(self, path=None):
@@ -280,11 +398,13 @@ class App(ttk.Frame):
                 w = 0
             row.load(w)
         idb = self.dump.get_bytes(0x1008, 4)
+        self.sn_original = bytes(idb)
+        self.sn_var.set(' '.join('%02X' % b for b in idb))
+        self._check_sn()
         flags = self.dump.get_word(0x1006)
-        self.ref_var.set('ID прибора (0x1008): %s      флаги (0x1006): 0x%04X' %
-                         (' '.join('%02X' % b for b in idb), flags or 0))
+        self.ref_var.set('флаги (0x1006): 0x%04X' % (flags or 0))
         self.save_btn.configure(state='normal')
-        self.status.set('Дамп загружен. Меняйте коэффициенты ползунками.')
+        self.status.set('Дамп загружен. Меняйте коэффициенты и серийный номер.')
 
     def mark_dirty(self):
         if self.path:
@@ -293,9 +413,19 @@ class App(ttk.Frame):
     def save_file(self):
         if not self.dump:
             return
-        # применяем значения ползунков в дамп
+        # серийный номер: проверить формат перед сохранением
+        sn = self._parse_sn()
+        if sn is None:
+            messagebox.showerror(
+                'Неверный серийный номер',
+                'Поле «Серийный номер / ID» должно содержать ровно 4 байта HEX '
+                '(например 04 A2 CB 71).')
+            return
+        # применяем значения ползунков и серийный номер в дамп
         for row in self.rows:
             self.dump.set_word(row.addr, row.value())
+        for i, b in enumerate(sn):
+            self.dump.set_byte(0x1008 + i, b)
 
         base, ext = os.path.splitext(self.path)
         default = base + '_edited' + ext
@@ -332,6 +462,10 @@ class App(ttk.Frame):
             if row.original != row.value():
                 changes.append('  0x%04X: 0x%04X → 0x%04X' %
                                (row.addr, row.original, row.value()))
+        if self.sn_original is not None and sn != self.sn_original:
+            changes.append('  0x1008 ID: %s → %s' % (
+                ' '.join('%02X' % b for b in self.sn_original),
+                ' '.join('%02X' % b for b in sn)))
         summary = '\n'.join(changes) if changes else '  (значения не изменены)'
         self.status.set('Сохранено: %s' % os.path.basename(out))
         messagebox.showinfo(
@@ -347,7 +481,13 @@ def main():
     except Exception:
         pass
     app = App(root)
-    root.minsize(660, 620)
+    root.minsize(700, 700)
+    # разместить окно по центру экрана
+    root.update_idletasks()
+    w, h = 720, 760
+    x = (root.winfo_screenwidth() - w) // 2
+    y = (root.winfo_screenheight() - h) // 2
+    root.geometry('%dx%d+%d+%d' % (w, h, max(x, 0), max(y, 0)))
     if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
         app.open_file(sys.argv[1])
     root.mainloop()
