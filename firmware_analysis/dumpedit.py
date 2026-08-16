@@ -31,7 +31,7 @@ from tkinter import ttk, filedialog, messagebox
 
 from dumpfile import DumpFile
 
-__version__ = '1.4'
+__version__ = '1.5'
 
 # Цветовая палитра интерфейса.
 BG = '#eef1f5'          # фон окна
@@ -327,11 +327,12 @@ class App(ttk.Frame):
                             padding=8)
         sn.grid(row=len(FIELDS), column=0, sticky='ew', pady=5)
         sn.columnconfigure(1, weight=1)
-        ttk.Label(sn, text='4 байта, HEX (например 04 A2 CB 71). '
-                          'Этим ID прибор отвечает на команду поиска 0x53.',
+        ttk.Label(sn, text='Вводится обычными цифрами (например 77644145). '
+                          'Этим номером прибор отвечает на команду поиска 0x53. '
+                          'Можно и в HEX через 0x.',
                   foreground='#555', wraplength=560, justify='left').grid(
             row=0, column=0, columnspan=3, sticky='w', pady=(0, 6))
-        ttk.Label(sn, text='ID:').grid(row=1, column=0, sticky='w')
+        ttk.Label(sn, text='Номер:').grid(row=1, column=0, sticky='w')
         self.sn_var = tk.StringVar()
         self.sn_entry = ttk.Entry(sn, textvariable=self.sn_var,
                                   font=('monospace', 11))
@@ -355,38 +356,49 @@ class App(ttk.Frame):
 
     # -------- серийный номер --------
     def _parse_sn(self):
-        """Разбор поля ID → 4 байта. None, если формат неверный."""
-        t = self.sn_var.get().strip().replace(':', ' ').replace('-', ' ')
+        """Разбор поля номера → 4 байта (big-endian). None, если неверно.
+
+        Приоритет — обычное десятичное число. Дополнительно принимаются
+        HEX через 0x и запись байтами через пробел (для совместимости)."""
+        t = self.sn_var.get().strip()
+        if not t:
+            return None
+        raw = t.replace(':', ' ').replace('-', ' ')
         try:
-            if ' ' in t:
-                parts = [int(x, 16) for x in t.split()]
-            else:
-                t = t.replace('0x', '')
-                parts = [int(t[i:i + 2], 16) for i in range(0, len(t), 2)]
+            if ' ' in raw:                          # байты в HEX: "04 A2 CB 71"
+                parts = [int(x, 16) for x in raw.split()]
+                if len(parts) != 4 or any(b < 0 or b > 255 for b in parts):
+                    return None
+                return bytes(parts)
+            if raw.lower().startswith('0x'):        # HEX-число
+                v = int(raw, 16)
+            else:                                   # обычное десятичное число
+                v = int(raw)
         except ValueError:
             return None
-        if len(parts) != 4 or any(b < 0 or b > 255 for b in parts):
+        if v < 0 or v > 0xFFFFFFFF:
             return None
-        return bytes(parts)
+        return v.to_bytes(4, 'big')
 
     def _check_sn(self):
         b = self._parse_sn()
         if b is None:
-            self.sn_info.set('Нужно ровно 4 байта HEX (00..FF).')
+            self.sn_info.set('Введите число от 0 до 4294967295.')
             self.sn_lbl.configure(foreground='#dc3545')
             return False
+        hexs = ' '.join('%02X' % x for x in b)
         if self.sn_original is not None and b != self.sn_original:
-            self.sn_info.set('Будет изменён (было %s)' %
-                             ' '.join('%02X' % x for x in self.sn_original))
+            self.sn_info.set('= HEX %s   Будет изменён (было %d)' %
+                             (hexs, int.from_bytes(self.sn_original, 'big')))
             self.sn_lbl.configure(foreground='#c07000')
         else:
-            self.sn_info.set('Без изменений')
+            self.sn_info.set('= HEX %s   Без изменений' % hexs)
             self.sn_lbl.configure(foreground='#198754')
         return True
 
     def _reset_sn(self):
         if self.sn_original is not None:
-            self.sn_var.set(' '.join('%02X' % x for x in self.sn_original))
+            self.sn_var.set(str(int.from_bytes(self.sn_original, 'big')))
             self._check_sn()
 
     def _build_footer(self):
@@ -428,7 +440,7 @@ class App(ttk.Frame):
             row.load(w)
         idb = self.dump.get_bytes(0x1008, 4)
         self.sn_original = bytes(idb)
-        self.sn_var.set(' '.join('%02X' % b for b in idb))
+        self.sn_var.set(str(int.from_bytes(idb, 'big')))   # обычное число
         self._check_sn()
         flags = self.dump.get_word(0x1006)
         self.ref_var.set('флаги (0x1006): 0x%04X' % (flags or 0))
@@ -459,8 +471,8 @@ class App(ttk.Frame):
             if abs(pct) >= 0.05:
                 eff = ('быстрее_%s%%' % self._fmt_pct(pct)) if pct > 0 else \
                       ('экономия_%s%%' % self._fmt_pct(-pct))
-        serial = ''.join('%02X' % b for b in sn)
-        return '%s_%s' % (eff, serial)
+        serial = int.from_bytes(sn, 'big')          # обычное число
+        return '%s_%d' % (eff, serial)
 
     def save_file(self):
         if not self.dump:
@@ -516,9 +528,9 @@ class App(ttk.Frame):
                 changes.append('  0x%04X: 0x%04X → 0x%04X' %
                                (row.addr, row.original, row.value()))
         if self.sn_original is not None and sn != self.sn_original:
-            changes.append('  0x1008 ID: %s → %s' % (
-                ' '.join('%02X' % b for b in self.sn_original),
-                ' '.join('%02X' % b for b in sn)))
+            changes.append('  Серийный номер: %d → %d' % (
+                int.from_bytes(self.sn_original, 'big'),
+                int.from_bytes(sn, 'big')))
         summary = '\n'.join(changes) if changes else '  (значения не изменены)'
         self.status.set('Сохранено: %s' % os.path.basename(out))
         messagebox.showinfo(
