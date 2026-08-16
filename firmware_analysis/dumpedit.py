@@ -91,6 +91,13 @@ class Row(object):
                   font=('TkDefaultFont', 10, 'bold')).grid(
             row=3, column=0, columnspan=5, sticky='w', pady=(6, 0))
 
+        # заметная строка: как меняется скорость учёта энергии
+        self.effect = tk.StringVar()
+        self.effect_lbl = tk.Label(box, textvariable=self.effect,
+                                   font=('TkDefaultFont', 11, 'bold'))
+        self.effect_lbl.grid(row=4, column=0, columnspan=5, sticky='w',
+                             pady=(4, 0))
+
     def load(self, value):
         self.original = value
         self._set(value, refresh_all=True)
@@ -110,13 +117,32 @@ class Row(object):
         parts = []
         if self.interp:
             parts.append(self.interp(value))
+        mult = value / self.original if self.original else 0
         if self.original:
-            mult = value / self.original if self.original else 0
             pct = (mult - 1) * 100
             parts.append('множитель к оригиналу ×%.3f (%+.1f%%)' % (mult, pct))
         if self.original is not None:
             parts.append('было %d (0x%04X)' % (self.original, self.original))
         self.info.set('   '.join(parts))
+        self._update_effect(mult)
+
+    def _update_effect(self, mult):
+        """Скорость учёта энергии линейно зависит от коэффициента."""
+        if not self.original:
+            self.effect.set('')
+            return
+        pct = (mult - 1) * 100
+        if abs(pct) < 0.05:
+            self.effect.set('Учёт энергии: без изменений')
+            self.effect_lbl.configure(fg='#198754')
+        elif pct > 0:
+            self.effect.set('Учёт энергии БЫСТРЕЕ на %.1f%%  '
+                            '(счётчик спешит, завышает)' % pct)
+            self.effect_lbl.configure(fg='#dc3545')
+        else:
+            self.effect.set('Учёт энергии МЕДЛЕННЕЕ на %.1f%%  '
+                            '(счётчик отстаёт, занижает)' % -pct)
+            self.effect_lbl.configure(fg='#0a58ca')
 
     def _on_scale(self, _v):
         if self._sync:
