@@ -31,31 +31,42 @@ from tkinter import ttk, filedialog, messagebox
 
 from dumpfile import DumpFile
 
-__version__ = '1.0'
+__version__ = '1.1'
 
 
-# Редактируемые 16-битные коэффициенты: (адрес, короткое имя, пояснение, интерпретация)
+# Редактируемые 16-битные коэффициенты.
+# (адрес, имя, пояснение, интерпретация, эффект)
+# эффект: 'energy' | 'voltage' | 'current' — что именно меняется (по разбору
+# алгоритма учёта: энергию считает ESP430, и на неё влияет только ADAPTI1;
+# 0x1002/0x1004 масштабируют лишь ОТОБРАЖАЕМЫЕ U и I).
 FIELDS = [
     (0x1000, 'ADAPTI1 (0x1000)',
-     'Аппаратный коэффициент усиления ESP430 (формат +1.14).',
-     lambda v: '= %.4f (v/16384)' % (v / 16384.0)),
+     'Коэффициент адаптации токового канала ВНУТРИ ESP430, до расчёта '
+     'активной энергии (формат +1.14). Влияет и на учёт энергии, и на '
+     'измеряемый ток.',
+     lambda v: '= %.4f (v/16384)' % (v / 16384.0),
+     'energy'),
     (0x1002, 'Масштаб напряжения (0x1002)',
-     'Множитель канала напряжения: показание U ≈ сырое × коэф.',
-     None),
+     'Множитель ОТОБРАЖАЕМОГО напряжения (применяется к V1RMS уже после '
+     'измерения). На учёт энергии НЕ влияет.',
+     None,
+     'voltage'),
     (0x1004, 'Масштаб тока (0x1004)',
-     'Множитель канала тока: показание I ≈ сырое × коэф. '
-     'Влияет и на энергию (U×I).',
-     None),
+     'Множитель ОТОБРАЖАЕМОГО тока (применяется к IRMS уже после измерения). '
+     'На учёт энергии НЕ влияет.',
+     None,
+     'current'),
 ]
 
 
 class Row(object):
     """Один редактируемый коэффициент: подпись, ползунок, поля, множитель."""
 
-    def __init__(self, app, parent, r, addr, name, help_text, interp):
+    def __init__(self, app, parent, r, addr, name, help_text, interp, effect):
         self.app = app
         self.addr = addr
         self.interp = interp
+        self.effect_kind = effect
         self.original = None
         self._sync = False       # защита от рекурсии slider<->entry
 
@@ -129,21 +140,33 @@ class Row(object):
         self._update_effect(mult)
 
     def _update_effect(self, mult):
-        """Скорость учёта энергии линейно зависит от коэффициента."""
+        """Показывает эффект изменения. Текст зависит от того, что именно
+        меняет коэффициент: учёт энергии (ADAPTI1) или только отображаемое
+        значение (масштабы U/I). Зависимость линейная."""
         if not self.original:
             self.effect.set('')
             return
         pct = (mult - 1) * 100
+
+        if self.effect_kind == 'energy':
+            subj, up, down = 'Учёт энергии', 'БЫСТРЕЕ', 'МЕДЛЕННЕЕ'
+            up_note, down_note = 'счётчик спешит, завышает', \
+                                 'счётчик отстаёт, занижает'
+        elif self.effect_kind == 'voltage':
+            subj, up, down = 'Отображаемое напряжение', 'БОЛЬШЕ', 'МЕНЬШЕ'
+            up_note = down_note = 'на учёт энергии НЕ влияет'
+        else:  # current
+            subj, up, down = 'Отображаемый ток', 'БОЛЬШЕ', 'МЕНЬШЕ'
+            up_note = down_note = 'на учёт энергии НЕ влияет'
+
         if abs(pct) < 0.05:
-            self.effect.set('Учёт энергии: без изменений')
+            self.effect.set('%s: без изменений' % subj)
             self.effect_lbl.configure(fg='#198754')
         elif pct > 0:
-            self.effect.set('Учёт энергии БЫСТРЕЕ на %.1f%%  '
-                            '(счётчик спешит, завышает)' % pct)
+            self.effect.set('%s %s на %.1f%%  (%s)' % (subj, up, pct, up_note))
             self.effect_lbl.configure(fg='#dc3545')
         else:
-            self.effect.set('Учёт энергии МЕДЛЕННЕЕ на %.1f%%  '
-                            '(счётчик отстаёт, занижает)' % -pct)
+            self.effect.set('%s %s на %.1f%%  (%s)' % (subj, down, -pct, down_note))
             self.effect_lbl.configure(fg='#0a58ca')
 
     def _on_scale(self, _v):
@@ -207,9 +230,9 @@ class App(ttk.Frame):
         self.fields_box.grid(row=1, column=0, sticky='nsew')
         self.rowconfigure(1, weight=1)
         self.columnconfigure(0, weight=1)
-        for i, (addr, name, help_text, interp) in enumerate(FIELDS):
+        for i, (addr, name, help_text, interp, effect) in enumerate(FIELDS):
             self.rows.append(Row(self, self.fields_box, i, addr, name,
-                                 help_text, interp))
+                                 help_text, interp, effect))
 
         info = ttk.LabelFrame(self.fields_box, text='Только для справки (не меняется)',
                               padding=8)
