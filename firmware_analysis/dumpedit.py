@@ -31,7 +31,7 @@ from tkinter import ttk, filedialog, messagebox
 
 from dumpfile import DumpFile
 
-__version__ = '1.3'
+__version__ = '1.4'
 
 # Цветовая палитра интерфейса.
 BG = '#eef1f5'          # фон окна
@@ -439,6 +439,29 @@ class App(ttk.Frame):
         if self.path:
             self.status.set('Есть несохранённые изменения.')
 
+    @staticmethod
+    def _fmt_pct(p):
+        """Процент в виде для имени файла: 50 или 12_5."""
+        if abs(p - round(p)) < 0.05:
+            return '%d' % round(p)
+        return ('%.1f' % p).replace('.', '_')
+
+    def _suggest_name(self, sn):
+        """Имя выходного файла: эффект учёта энергии + серийный номер.
+
+        Учёт энергии зависит от ADAPTI1 (0x1000): меньше → экономия,
+        больше → быстрее (счётчик спешит)."""
+        energy_row = next((r for r in self.rows if r.effect_kind == 'energy'),
+                          None)
+        eff = 'без_изменений'
+        if energy_row and energy_row.original:
+            pct = (energy_row.value() / energy_row.original - 1) * 100
+            if abs(pct) >= 0.05:
+                eff = ('быстрее_%s%%' % self._fmt_pct(pct)) if pct > 0 else \
+                      ('экономия_%s%%' % self._fmt_pct(-pct))
+        serial = ''.join('%02X' % b for b in sn)
+        return '%s_%s' % (eff, serial)
+
     def save_file(self):
         if not self.dump:
             return
@@ -457,10 +480,11 @@ class App(ttk.Frame):
             self.dump.set_byte(0x1008 + i, b)
 
         base, ext = os.path.splitext(self.path)
-        default = base + '_edited' + ext
+        default_name = self._suggest_name(sn) + ext
         out = filedialog.asksaveasfilename(
             title='Сохранить изменённый дамп',
-            initialfile=os.path.basename(default),
+            initialdir=os.path.dirname(self.path),
+            initialfile=default_name,
             defaultextension=ext,
             filetypes=[('Дамп прошивки', '*' + ext), ('Все файлы', '*.*')])
         if not out:
