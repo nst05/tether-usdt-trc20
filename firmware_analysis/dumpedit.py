@@ -31,7 +31,7 @@ from tkinter import ttk, filedialog, messagebox
 
 from dumpfile import DumpFile
 
-__version__ = '1.2'
+__version__ = '1.3'
 
 # Цветовая палитра интерфейса.
 BG = '#eef1f5'          # фон окна
@@ -284,10 +284,39 @@ class App(ttk.Frame):
             row=0, column=1, sticky='w', padx=8)
 
     def _build_fields(self):
-        self.fields_box = ttk.Frame(self, style='App.TFrame')
-        self.fields_box.grid(row=2, column=0, sticky='nsew')
+        # прокручиваемая область, чтобы все секции были доступны на любом экране
+        outer = ttk.Frame(self, style='App.TFrame')
+        outer.grid(row=2, column=0, sticky='nsew')
         self.rowconfigure(2, weight=1)
         self.columnconfigure(0, weight=1)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(0, weight=1)
+
+        canvas = tk.Canvas(outer, background=BG, highlightthickness=0,
+                           borderwidth=0)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        vsb = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
+        vsb.grid(row=0, column=1, sticky='ns')
+        canvas.configure(yscrollcommand=vsb.set)
+
+        self.fields_box = ttk.Frame(canvas, style='App.TFrame')
+        win = canvas.create_window((0, 0), window=self.fields_box, anchor='nw')
+        self.fields_box.columnconfigure(0, weight=1)
+        canvas.bind('<Configure>',
+                    lambda e: canvas.itemconfigure(win, width=e.width))
+        self.fields_box.bind(
+            '<Configure>',
+            lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+
+        def _wheel(e):
+            if e.num == 5 or e.delta < 0:
+                canvas.yview_scroll(1, 'units')
+            else:
+                canvas.yview_scroll(-1, 'units')
+        canvas.bind_all('<MouseWheel>', _wheel)     # Windows / macOS
+        canvas.bind_all('<Button-4>', _wheel)       # Linux вверх
+        canvas.bind_all('<Button-5>', _wheel)       # Linux вниз
+
         for i, (addr, name, help_text, interp, effect) in enumerate(FIELDS):
             self.rows.append(Row(self, self.fields_box, i, addr, name,
                                  help_text, interp, effect))
