@@ -31,6 +31,8 @@ from tkinter import ttk, filedialog, messagebox
 
 from dumpfile import DumpFile
 
+__version__ = '1.0'
+
 
 # Редактируемые 16-битные коэффициенты: (адрес, короткое имя, пояснение, интерпретация)
 FIELDS = [
@@ -177,7 +179,7 @@ class App(ttk.Frame):
     def __init__(self, master):
         super().__init__(master, padding=12)
         self.grid(sticky='nsew')
-        master.title('Редактор коэффициентов дампа MSP430FE427')
+        master.title('Редактор коэффициентов дампа MSP430FE427  v%s' % __version__)
         master.columnconfigure(0, weight=1)
         master.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
@@ -226,6 +228,8 @@ class App(ttk.Frame):
         self.save_btn = ttk.Button(box, text='Сохранить как…',
                                    command=self.save_file, state='disabled')
         self.save_btn.grid(row=0, column=1, sticky='e')
+        ttk.Label(box, text='v%s' % __version__, foreground='#999').grid(
+            row=0, column=2, sticky='e', padx=(8, 0))
 
     # --------------------------------------------------- действия
     def open_file(self, path=None):
