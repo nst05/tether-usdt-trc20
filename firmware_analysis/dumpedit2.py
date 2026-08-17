@@ -39,7 +39,7 @@ from tkinter import ttk, filedialog, messagebox
 
 from dumpfile import DumpFile
 
-__version__ = '2.2'
+__version__ = '2.3'
 
 # Палитра.
 BG = '#eef1f5'; CARD = '#ffffff'; INK = '#1f2933'; MUTED = '#5b6673'
@@ -47,6 +47,17 @@ ACCENT = '#0a58ca'; OK = '#198754'; WARN = '#c07000'; DANGER = '#dc3545'
 HEADER = '#0d3b66'
 
 CKSUM_INIT = 0xF0F0
+
+# Таблицы наборов калибровки в КОДЕ (только для справки, read-only).
+# Набор выбирается нибблом из записи 0x1090 (слово 1). Для набора idx (1..)
+# значение поля = слово по адресу (база + 2*(idx-1)). Базы восстановлены из
+# init-последовательности 0x1534; поля-усиления идут в аппаратный умножитель.
+GAIN_TABLE = [
+    ('Осн. коэф (->0x042C)', 0xFAFC),
+    ('Коэф (->0x0428)', 0xFAEC),
+    ('Коэф (->0x042A)', 0xFAF4),
+]
+PRESET_COUNT = 4
 
 # Калибровочные записи прошивки трёхканального (трёхфазного) измерителя.
 # (адрес, число слов данных, заголовок, {индекс слова: подпись})
@@ -300,6 +311,17 @@ class App(ttk.Frame):
             self.records.append(
                 RecordFrame(self, inner, i, base, n, title, names))
 
+        # справочная панель наборов калибровки (read-only, из таблиц в коде)
+        ref = ttk.LabelFrame(
+            inner, padding=8,
+            text='Наборы калибровки — справочно (таблицы в коде, не меняются)')
+        ref.grid(row=len(RECORDS), column=0, sticky='ew', pady=5)
+        self.ref_text = tk.Text(ref, height=len(GAIN_TABLE) + 3, wrap='none',
+                                font=('monospace', 10), relief='flat',
+                                background=CARD, borderwidth=0)
+        self.ref_text.grid(sticky='ew')
+        self.ref_text.configure(state='disabled')
+
     def _build_footer(self):
         box = ttk.Frame(self, style='App.TFrame')
         box.grid(row=3, column=0, sticky='ew', pady=(10, 0))
@@ -335,9 +357,35 @@ class App(ttk.Frame):
                                         self.dump.fmt.upper()))
         for rec in self.records:
             rec.load(self.dump)
+        self._fill_reference()
         self.save_btn.configure(state='normal')
         self.status.set('Дамп загружен. Меняйте значения — КС записей '
                         'пересчитываются при сохранении.')
+
+    def _fill_reference(self):
+        """Заполняет справочную таблицу наборов калибровки из дампа."""
+        active = None
+        w1 = self.dump.get_word(0x1092)
+        if w1 is not None:
+            active = w1 & 0x0F
+        lines = []
+        header = '%-22s' % 'поле \\ набор'
+        for s in range(1, PRESET_COUNT + 1):
+            header += '  набор %d%s' % (s, '*' if s == active else ' ')
+        lines.append(header)
+        for name, base in GAIN_TABLE:
+            row = '%-22s' % name
+            for s in range(1, PRESET_COUNT + 1):
+                v = self.dump.get_word(base + 2 * (s - 1))
+                row += '   0x%04X ' % (v if v is not None else 0)
+            lines.append(row)
+        lines.append('')
+        lines.append('* — активный набор (ниббл из 0x1092). Меняется полем '
+                     '«выбор набора калибровки» выше.')
+        self.ref_text.configure(state='normal')
+        self.ref_text.delete('1.0', 'end')
+        self.ref_text.insert('1.0', '\n'.join(lines))
+        self.ref_text.configure(state='disabled')
 
     def on_change(self):
         # обновлять статус КС «на лету» (без учёта записанного значения)
