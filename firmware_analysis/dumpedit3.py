@@ -26,30 +26,36 @@ from tkinter import ttk, filedialog, messagebox
 
 from dumpfile import DumpFile
 
-__version__ = '3.0'
+__version__ = '3.1'
 
 # Палитра (как в dumpedit.py).
 BG = '#eef1f5'; CARD = '#ffffff'; INK = '#1f2933'; MUTED = '#5b6673'
 ACCENT = '#0a58ca'; OK = '#198754'; WARN = '#c07000'; DANGER = '#dc3545'
 HEADER = '#0d3b66'
 
-# Коэффициенты усиления: (имя, база таблицы в коде, главный?).
-# Адрес для активного набора = база + 2*(набор-1). База восстановлена из
-# init-последовательности 0x1534 (см. ne2r_analysis.md).
+# Коэффициенты усиления: (имя, база таблицы в коде, тип эффекта).
+# Адрес для активного набора = база + 2*(набор-1). Базы и назначение
+# восстановлены по коду (см. ne2r_analysis.md):
+#   0x042C -> произведение U*I -> накопитель энергии 0x0390 (мощность/энергия);
+#   0x0428 -> выход 0x0708 (напряжение), постоянен по наборам;
+#   0x042A -> выход 0x0738 (ток), меняется с диапазоном (в наборе 3 x2).
+# Как и в FE427: скорость счёта задаёт только коэф мощности; U и I —
+# только отображаемые величины.
 COEFFS = [
-    ('Коэффициент (основной)', 0xFAFC, True),
-    ('Коэффициент 2', 0xFAEC, False),
-    ('Коэффициент 3', 0xFAF4, False),
+    ('Мощность / энергия (основной)', 0xFAFC, 'energy'),
+    ('Напряжение (U)', 0xFAEC, 'voltage'),
+    ('Ток (I)', 0xFAF4, 'current'),
 ]
 
 
 class Row(object):
     """Один коэффициент: ползунок + DEC + HEX + множитель/эффект."""
 
-    def __init__(self, app, parent, r, name, is_main):
+    def __init__(self, app, parent, r, name, effect_kind):
         self.app = app
         self.name = name
-        self.is_main = is_main
+        self.effect_kind = effect_kind
+        self.is_main = (effect_kind == 'energy')
         self.addr = None
         self.original = None
         self._sync = False
@@ -109,19 +115,25 @@ class Row(object):
         pct = (mult - 1) * 100
         self.info.set('множитель ×%.3f (%+.1f%%)   было %d (0x%04X)   адрес 0x%04X'
                       % (mult, pct, self.original, self.original, self.addr))
-        # эффект скорости — только у основного коэффициента
-        if self.is_main:
-            if abs(pct) < 0.05:
-                self.effect.set('Скорость счёта: без изменений')
-                self.effect_lbl.configure(foreground=OK)
-            elif pct > 0:
-                self.effect.set('Скорость счёта БЫСТРЕЕ на %.1f%%' % pct)
-                self.effect_lbl.configure(foreground=DANGER)
-            else:
-                self.effect.set('Скорость счёта МЕДЛЕННЕЕ на %.1f%%' % -pct)
-                self.effect_lbl.configure(foreground=ACCENT)
+        # текст эффекта зависит от того, что меняет коэффициент
+        if self.effect_kind == 'energy':
+            subj, up, down = 'Скорость счёта', 'БЫСТРЕЕ', 'МЕДЛЕННЕЕ'
+            note = ''
+        elif self.effect_kind == 'voltage':
+            subj, up, down = 'Отображаемое напряжение', 'БОЛЬШЕ', 'МЕНЬШЕ'
+            note = '  (на скорость счёта не влияет)'
         else:
-            self.effect.set('')
+            subj, up, down = 'Отображаемый ток', 'БОЛЬШЕ', 'МЕНЬШЕ'
+            note = '  (на скорость счёта не влияет)'
+        if abs(pct) < 0.05:
+            self.effect.set('%s: без изменений' % subj)
+            self.effect_lbl.configure(foreground=OK)
+        elif pct > 0:
+            self.effect.set('%s %s на %.1f%%%s' % (subj, up, pct, note))
+            self.effect_lbl.configure(foreground=DANGER)
+        else:
+            self.effect.set('%s %s на %.1f%%%s' % (subj, down, -pct, note))
+            self.effect_lbl.configure(foreground=ACCENT)
 
     def _on_scale(self, _v):
         if not self._sync:
@@ -228,8 +240,8 @@ class App(ttk.Frame):
         fields.grid(row=2, column=0, sticky='nsew')
         self.rowconfigure(2, weight=1)
         fields.columnconfigure(0, weight=1)
-        for i, (name, base, is_main) in enumerate(COEFFS):
-            self.rows.append(Row(self, fields, i, name, is_main))
+        for i, (name, base, effect) in enumerate(COEFFS):
+            self.rows.append(Row(self, fields, i, name, effect))
 
     def _build_footer(self):
         box = ttk.Frame(self, style='App.TFrame')
