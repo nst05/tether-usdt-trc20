@@ -19,8 +19,11 @@ dumpedit2.py — редактор калибровочных записей пр
     0x103C — 5 слов данных + КС(0x1046)
     0x104A — 5 слов данных + КС(0x1054)
     0x1058 — 6 слов данных + КС(0x1064)
-Физический смысл отдельных слов требует дальнейшего разбора; здесь они
-подписаны адресом. Правки применяются корректно (с пересчётом КС).
+Прибор — трёхканальный (трёхфазный) измеритель: три одинаковых канала с
+аппаратным умножителем. Записи сгруппированы как калибровка каналов 1-3
+(по 8 слов) и параметры каналов 1-3 (у последних слово 2 — нижний порог,
+слово 3 — верхний). Смысл части слов подписан, часть — по адресу; правки
+применяются корректно (с пересчётом КС).
 
 Запуск:
     python3 dumpedit2.py            (или  python dumpedit2.py  в Windows)
@@ -36,7 +39,7 @@ from tkinter import ttk, filedialog, messagebox
 
 from dumpfile import DumpFile
 
-__version__ = '2.0'
+__version__ = '2.1'
 
 # Палитра.
 BG = '#eef1f5'; CARD = '#ffffff'; INK = '#1f2933'; MUTED = '#5b6673'
@@ -45,14 +48,20 @@ HEADER = '#0d3b66'
 
 CKSUM_INIT = 0xF0F0
 
-# Калибровочные записи: (адрес, число слов данных). КС хранится после данных.
+# Калибровочные записи прошивки трёхканального (трёхфазного) измерителя.
+# (адрес, число слов данных, заголовок, {индекс слова: подпись})
+# КС хранится сразу после слов данных.
+# Смысл восстановлен по дизассемблированию: три параллельных канала с
+# аппаратным умножителем (0x0130/0x0136/0x0138 -> 0x013A:0x013C) и
+# накопителями 0x020E/0x021E/0x022E. У «малых» записей слово 2 — нижний
+# порог, слово 3 — верхний (сравнения CMP в обработчиках каналов).
 RECORDS = [
-    (0x1000, 8),
-    (0x1014, 8),
-    (0x1028, 8),
-    (0x103C, 5),
-    (0x104A, 5),
-    (0x1058, 6),
+    (0x1000, 8, 'Калибровка канала 1 (8 слов)', {}),
+    (0x1014, 8, 'Калибровка канала 2 (8 слов)', {}),
+    (0x1028, 8, 'Калибровка канала 3 (8 слов)', {}),
+    (0x103C, 5, 'Параметры канала 1', {2: 'нижний порог', 3: 'верхний порог'}),
+    (0x104A, 5, 'Параметры канала 2', {2: 'нижний порог', 3: 'верхний порог'}),
+    (0x1058, 6, 'Параметры канала 3', {2: 'нижний порог', 3: 'верхний порог'}),
 ]
 
 
@@ -67,14 +76,17 @@ def record_checksum(words):
 class WordRow(object):
     """Одно 16-битное слово записи: ползунок + DEC + HEX."""
 
-    def __init__(self, app, parent, r, addr, idx):
+    def __init__(self, app, parent, r, addr, idx, name=None):
         self.app = app
         self.addr = addr
         self.original = None
         self._sync = False
 
-        ttk.Label(parent, text='слово %d  (0x%04X):' % (idx, addr),
-                  width=18).grid(row=r, column=0, sticky='w', pady=2)
+        label = 'слово %d  (0x%04X):' % (idx, addr)
+        if name:
+            label = '%s  (0x%04X):' % (name, addr)
+        ttk.Label(parent, text=label, width=22).grid(
+            row=r, column=0, sticky='w', pady=2)
         self.scale = ttk.Scale(parent, from_=0, to=65535, orient='horizontal',
                                command=self._on_scale)
         self.scale.grid(row=r, column=1, sticky='ew', padx=6)
@@ -137,13 +149,14 @@ class WordRow(object):
 class RecordFrame(object):
     """Секция одной записи: слова + статус контрольной суммы."""
 
-    def __init__(self, app, parent, r, base, n):
+    def __init__(self, app, parent, r, base, n, title, names):
         self.base = base
         self.n = n
         self.cksum_addr = base + 2 * n
         box = ttk.LabelFrame(
             parent, padding=8,
-            text='Запись 0x%04X  (%d слов, КС в 0x%04X)' % (base, n, self.cksum_addr))
+            text='%s — 0x%04X (%d слов, КС 0x%04X)'
+                 % (title, base, n, self.cksum_addr))
         box.grid(row=r, column=0, sticky='ew', pady=5)
         box.columnconfigure(0, weight=1)
         parent.columnconfigure(0, weight=1)
@@ -151,7 +164,8 @@ class RecordFrame(object):
         grid = ttk.Frame(box)
         grid.grid(row=0, column=0, sticky='ew')
         grid.columnconfigure(0, weight=1)
-        self.rows = [WordRow(app, grid, i, base + 2 * i, i) for i in range(n)]
+        self.rows = [WordRow(app, grid, i, base + 2 * i, i, names.get(i))
+                     for i in range(n)]
 
         self.status = tk.StringVar()
         self.status_lbl = ttk.Label(box, textvariable=self.status,
@@ -231,7 +245,7 @@ class App(ttk.Frame):
                  bg=HEADER, fg='#ffffff',
                  font=('TkDefaultFont', 15, 'bold')).grid(
             row=0, column=0, sticky='w', padx=14, pady=(10, 0))
-        tk.Label(head, text='прошивка ne2r · записи INFO Flash с контрольной '
+        tk.Label(head, text='прошивка ne2r · трёхканальный измеритель · записи INFO Flash с '
                             'суммой XOR (пересчитывается автоматически)',
                  bg=HEADER, fg='#bcd3ea', font=('TkDefaultFont', 9)).grid(
             row=1, column=0, sticky='w', padx=14, pady=(0, 10))
@@ -276,8 +290,9 @@ class App(ttk.Frame):
         canvas.bind_all('<Button-4>', _wheel)
         canvas.bind_all('<Button-5>', _wheel)
 
-        for i, (base, n) in enumerate(RECORDS):
-            self.records.append(RecordFrame(self, inner, i, base, n))
+        for i, (base, n, title, names) in enumerate(RECORDS):
+            self.records.append(
+                RecordFrame(self, inner, i, base, n, title, names))
 
     def _build_footer(self):
         box = ttk.Frame(self, style='App.TFrame')
