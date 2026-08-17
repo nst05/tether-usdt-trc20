@@ -21,12 +21,13 @@ dumpedit3.py — простой редактор КОЭФФИЦИЕНТОВ ус
 
 import os
 import sys
+import math
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from dumpfile import DumpFile
 
-__version__ = '3.1'
+__version__ = '3.2'
 
 # Палитра (как в dumpedit.py).
 BG = '#eef1f5'; CARD = '#ffffff'; INK = '#1f2933'; MUTED = '#5b6673'
@@ -107,6 +108,20 @@ class Row(object):
         self._sync = False
         self._update(value)
         self.app.mark_dirty()
+        if self.effect_kind == 'energy':
+            self.app.main_changed()
+
+    def set_enabled(self, on):
+        # блокируем только ползунок (программная установка значения ему не мешает)
+        try:
+            self.scale.state(['!disabled'] if on else ['disabled'])
+        except tk.TclError:
+            pass
+
+    def _slave_locked(self):
+        """True, если это U/I и включена синхронизация (ручной ввод игнорируем)."""
+        return (self.effect_kind != 'energy' and self.app.sync_var.get()
+                and not self.app._syncing)
 
     def _update(self, value):
         if not self.original:
@@ -136,11 +151,15 @@ class Row(object):
             self.effect_lbl.configure(foreground=ACCENT)
 
     def _on_scale(self, _v):
-        if not self._sync:
-            self._set(float(self.scale.get()))
+        if self._sync:
+            return
+        if self._slave_locked():
+            self.app.sync_from_main()      # игнорировать ручной сдвиг, вернуть синхронно
+            return
+        self._set(float(self.scale.get()))
 
     def _on_dec(self, _e):
-        if self._sync:
+        if self._sync or self._slave_locked():
             return
         try:
             self._set(int(self.dec.get()))
@@ -148,7 +167,7 @@ class Row(object):
             pass
 
     def _on_hex(self, _e):
-        if self._sync:
+        if self._sync or self._slave_locked():
             return
         try:
             self._set(int(self.hexv.get(), 16))
@@ -182,6 +201,8 @@ class App(ttk.Frame):
         self.path = None
         self.preset = None
         self.rows = []
+        self.sync_var = tk.BooleanVar(value=False)
+        self._syncing = False
 
         self._build_header()
         self._build_file()
@@ -234,6 +255,13 @@ class App(ttk.Frame):
         self.file_var = tk.StringVar(value='файл не выбран')
         tk.Label(box, textvariable=self.file_var, bg=BG, fg=MUTED).grid(
             row=0, column=1, sticky='w', padx=8)
+        self.sync_chk = tk.Checkbutton(
+            box, variable=self.sync_var, command=self.on_sync_toggle,
+            text='Синхронно менять U и I с мощностью (P = U·I; U,I ~ √k)',
+            bg=BG, fg=INK, activebackground=BG, selectcolor=CARD,
+            anchor='w')
+        self.sync_chk.grid(row=1, column=0, columnspan=2, sticky='w',
+                           pady=(6, 0))
 
     def _build_fields(self):
         fields = ttk.Frame(self, style='App.TFrame')
@@ -296,6 +324,33 @@ class App(ttk.Frame):
     def mark_dirty(self):
         if self.path:
             self.status.set('Есть несохранённые изменения.')
+
+    def main_changed(self):
+        """Основной коэффициент изменился — при синхронизации подтянуть U и I."""
+        if self.sync_var.get():
+            self.sync_from_main()
+
+    def sync_from_main(self):
+        """U и I = исходное × √(множитель мощности) — чтобы U·I ∝ мощности."""
+        if self._syncing or not self.rows or self.rows[0].original is None:
+            return
+        main = self.rows[0]
+        m = main.value() / main.original if main.original else 1.0
+        factor = math.sqrt(m) if m > 0 else 0.0
+        self._syncing = True
+        try:
+            for row in self.rows[1:]:
+                if row.original is not None:
+                    row._set(round(row.original * factor))
+        finally:
+            self._syncing = False
+
+    def on_sync_toggle(self):
+        on = self.sync_var.get()
+        for row in self.rows[1:]:
+            row.set_enabled(not on)      # U и I ведомые -> блокируем ручной ввод
+        if on:
+            self.sync_from_main()
 
     def _suggest_name(self):
         """Имя файла = основной коэффициент + знаковый % от исходного."""
