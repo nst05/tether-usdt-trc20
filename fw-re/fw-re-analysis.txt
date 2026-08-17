@@ -1,0 +1,158 @@
+=== Таблица векторов прерываний ===
+  0xFFFE  RESET            -> 0x1100
+  0xFFFC  NMI              -> 0x2532
+  0xFFFA  TIMERB0          -> 0x445E
+  0xFFF8  TIMERB1          -> 0x2570
+  0xFFF6  COMPARATOR_A     -> 0x4460
+  0xFFF4  WDT              -> 0x2560
+  0xFFF2  TIMERA0          -> 0x2DC6
+  0xFFF0  TIMERA1          -> 0x2F12
+  0xFFEE  USCI_A0B0_RX     -> 0x2E32
+  0xFFEC  USCI_A0B0_TX     -> 0x2E72
+  0xFFEA  ADC12            -> 0x3CC2
+  0xFFE8  RESERVED_DMA     -> 0x4464
+  0xFFE6  PORT2            -> 0x4412
+  0xFFE4  PORT1            -> 0x4462
+  0xFFE2  USCI_A1B1_RX     -> 0x2EA2
+  0xFFE0  USCI_A1B1_TX     -> 0x2EE2
+
+=== Статистика обхода ===
+  распознано команд : 16077
+  байт кода         : 59778
+  найдено функций   : 168
+
+=== 25 самых вызываемых функций ===
+  0xC2E2  вызовов: 35
+  0xC3A2  вызовов: 34
+  0xCC58  вызовов: 20
+  0xCBF4  вызовов: 15
+  0x4CBC  вызовов: 15
+  0xC3DC  вызовов: 14
+  0xE428  вызовов: 13
+  0x594A  вызовов: 11
+  0xD272  вызовов: 10
+  0x55B6  вызовов: 10
+  0x587A  вызовов: 10
+  0x81FC  вызовов: 9
+  0x4B0C  вызовов: 9
+  0xE11E  вызовов: 9
+  0xC1A0  вызовов: 8
+  0x4AC0  вызовов: 8
+  0xBC42  вызовов: 8
+  0x6E64  вызовов: 7
+  0xDB84  вызовов: 5
+  0xD906  вызовов: 5
+  0xBC22  вызовов: 4
+  0xF164  вызовов: 4
+  0x4C1A  вызовов: 4
+  0xD2FC  вызовов: 4
+  0xD4C4  вызовов: 4
+
+=== Обращения к периферии (SFR) ===
+  RESLO        84
+  RESHI        81
+  OP2          61
+  P5OUT        41
+  P3OUT        33
+  TBCCTL6      30
+  P4OUT        26
+  MPY          26
+  P2OUT        16
+  P5DIR        15
+  MAC          14
+  P3DIR        12
+  TBCCTL1      12
+  MPYS         12
+  P1OUT        10
+  P1DIR        10
+  TACCTL2      10
+  UC1IE        9
+  ADC12CTL0    9
+  IE2          9
+  P1SEL        8
+  FCTL3        8
+  P4SEL        7
+  P4DIR        7
+  P2SEL        7
+  P2DIR        7
+  P3SEL        7
+  IFG1         7
+  TACCTL0      7
+  TACCR0       7
+  TBCTL        6
+  ADC12MCTL1   6
+  ADC12MCTL4   6
+  ADC12MCTL7   6
+  TACCR2       6
+  P2IFG        6
+  MACS         6
+  WDTCTL       5
+  TACCTL1      5
+  BCSCTL2      5
+  P5SEL        4
+  BCSCTL3      4
+  IE1          4
+  P2IE         4
+  FCTL1        4
+  BCSCTL1      3
+  UCA1CTL1     3
+  ADC12MCTL3   3
+  ADC12MCTL6   3
+  ADC12MCTL9   3
+  TACTL        3
+  TACCR1       3
+  CACTL2       3
+  IFG2         3
+  UC1IFG       3
+  UCA1STAT     3
+  UCA0STAT     3
+  UCA0CTL1     3
+  P5IN         3
+  UCA1CTL0     3
+  UCA0CTL0     3
+  DCOCTL       2
+  ADC12CTL1    2
+  ADC12IE      2
+  P6SEL        2
+  P1IN         2
+  CACTL1       2
+  CAPD         2
+  UCA1BR0      2
+  UCA1BR1      2
+  UCA0BR0      2
+  UCA0BR1      2
+  UCA0RXBUF    2
+  ADC12MEM9    2
+  FCTL2        2
+  UCA1RXBUF    2
+  TBR          1
+  TBCCR0       1
+  TBCCR1       1
+  TBCCTL5      1
+  TBCCR5       1
+  TBCCR6       1
+  UCA1MCTL     1
+  ADC12IFG     1
+  ADC12MCTL0   1
+  ADC12MCTL2   1
+  ADC12MCTL5   1
+  ADC12MCTL8   1
+  P1IFG        1
+  P1IES        1
+  P2IES        1
+  P3IN         1
+  P2IN         1
+  UCA0MCTL     1
+  P1IE         1
+  TAIV         1
+  UCA0TXBUF    1
+  ADC12MEM0    1
+  ADC12MEM1    1
+  ADC12MEM2    1
+  ADC12MEM3    1
+  ADC12MEM4    1
+  ADC12MEM5    1
+  ADC12MEM6    1
+  ADC12MEM7    1
+  ADC12MEM8    1
+  UCA1TXBUF    1
