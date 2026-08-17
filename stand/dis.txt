@@ -1919,8 +1919,964 @@ loc_2F0E:
 USART0_TX_ISR (0x2F12):
     2f12:  10 52 2e 01              add     &TAIV, pc
 
-; ---- gap 0x2F16-0x3CC1 (3500 bytes data/unreached) ----
+; ---- gap 0x2F16-0x2F1D (8 bytes data/unreached) ----
 
+
+sub_2F1E:
+    2f1e:  b2 b0 10 00 66 01        bit     #0x10, &TACCTL2
+    2f24:  2a 24                    jz      0x2f7a
+    2f26:  b2 b0 00 01 66 01        bit     #0x100, &TACCTL2
+    2f2c:  04 2c                    jc      0x2f36
+    2f2e:  b2 d0 00 01 66 01        bis     #0x100, &TACCTL2
+    2f34:  22 3c                    jmp     0x2f7a
+loc_2F36:
+    2f36:  a2 b3 66 01              bit     #2, &TACCTL2
+    2f3a:  08 24                    jz      0x2f4c
+    2f3c:  a2 c3 66 01              bic     #2, &TACCTL2
+    2f40:  b2 c0 10 00 66 01        bic     #0x10, &TACCTL2
+    2f46:  e2 d2 a0 05              bis.b   #4, &0x05a0
+    2f4a:  17 3c                    jmp     0x2f7a
+loc_2F4C:
+    2f4c:  f2 40 71 00 d2 00        mov.b   #0x71, &0x00d2
+    2f52:  e2 43 d3 00              mov.b   #2, &0x00d3
+    2f56:  f2 40 05 00 2f 04        mov.b   #5, &0x042f
+    2f5c:  d2 43 a8 02              mov.b   #1, &0x02a8
+    2f60:  c2 43 d0 00              clr.b   &0x00d0
+    2f64:  b2 c0 24 01 66 01        bic     #0x124, &TACCTL2
+    2f6a:  b2 50 f4 01 76 01        add     #0x1f4, &TACCR2
+    2f70:  b2 d0 20 00 66 01        bis     #0x20, &TACCTL2
+    2f76:  e2 d3 a0 05              bis.b   #2, &0x05a0
+loc_2F7A:
+    2f7a:  92 c3 66 01              bic     #1, &TACCTL2
+    2f7e:  00 13                    reti
+
+sub_2F80:
+    2f80:  b2 50 dc 05 74 01        add     #0x5dc, &TACCR1
+    2f86:  b2 c0 10 00 84 01        bic     #0x10, &TBCCTL1
+    2f8c:  b2 c0 10 00 8e 01        bic     #0x10, &TBCCTL6
+    2f92:  b2 c0 00 02 a6 01        bic     #0x200, &ADC12IE
+    2f98:  f2 c0 40 00 2d 00        bic.b   #0x40, &P2IE
+    2f9e:  32 d2                    eint
+    2fa0:  92 c3 64 01              bic     #1, &TACCTL1
+    2fa4:  b2 40 10 00 64 01        mov     #0x10, &TACCTL1
+    2faa:  b2 40 30 00 64 01        mov     #0x30, &TACCTL1
+    2fb0:  a2 d3 a0 01              bis     #2, &ADC12CTL0
+    2fb4:  d2 83 ac 02              dec.b   &0x02ac
+    2fb8:  02 24                    jz      0x2fbe
+    2fba:  30 40 a4 3c              br      #0x3ca4
+loc_2FBE:
+    2fbe:  b2 40 0c 5a 20 01        mov     #0x5a0c, &WDTCTL
+    2fc4:  e2 42 ac 02              mov.b   #4, &0x02ac
+    2fc8:  92 b3 8c 01              bit     #1, &TBCCTL5
+    2fcc:  74 24                    jz      0x30b6
+    2fce:  92 c3 8c 01              bic     #1, &TBCCTL5
+    2fd2:  0f 12                    push    r15
+    2fd4:  0e 12                    push    r14
+    2fd6:  d2 b3 23 00              bit.b   #1, &P1IFG
+    2fda:  02 24                    jz      0x2fe0
+    2fdc:  12 c3                    clrc
+    2fde:  01 3c                    jmp     0x2fe2
+loc_2FE0:
+    2fe0:  12 d3                    setc
+loc_2FE2:
+    2fe2:  12 10 36 06              rrc     &0x0636
+    2fe6:  12 10 34 06              rrc     &0x0634
+    2fea:  12 10 32 06              rrc     &0x0632
+    2fee:  12 10 30 06              rrc     &0x0630
+    2ff2:  c2 93 40 06              tst.b   &0x0640
+    2ff6:  20 20                    jnz     0x3038
+    2ff8:  a2 b3 6c 06              bit     #2, &0x066c
+    2ffc:  1f 20                    jnz     0x303c
+    2ffe:  3f 40 33 06              mov     #0x633, r15
+    3002:  92 d3 6c 06              bis     #1, &0x066c
+    3006:  b0 12 66 44              call    #0x4466
+    300a:  18 20                    jnz     0x303c
+    300c:  92 42 34 06 42 06        mov     &0x0634, &0x0642
+    3012:  92 42 36 06 44 06        mov     &0x0636, &0x0644
+    3018:  d2 42 33 06 41 06        mov.b   &0x0633, &0x0641
+    301e:  92 42 30 06 a8 06        mov     &0x0630, &0x06a8
+    3024:  d2 42 32 06 aa 06        mov.b   &0x0632, &0x06aa
+    302a:  b2 d0 42 00 6c 06        bis     #0x42, &0x066c
+    3030:  f2 40 3f 00 40 06        mov.b   #0x3f, &0x0640
+    3036:  02 3c                    jmp     0x303c
+loc_3038:
+    3038:  d2 83 40 06              dec.b   &0x0640
+loc_303C:
+    303c:  92 b3 38 06              bit     #1, &0x0638
+    3040:  04 20                    jnz     0x304a
+    3042:  d2 d3 22 00              bis.b   #1, &P1DIR
+    3046:  d2 c3 21 00              bic.b   #1, &P1OUT
+loc_304A:
+    304a:  12 11 3e 06              rra     &0x063e
+    304e:  12 10 3c 06              rrc     &0x063c
+    3052:  12 10 3a 06              rrc     &0x063a
+    3056:  12 10 38 06              rrc     &0x0638
+    305a:  d2 53 47 06              inc.b   &0x0647
+    305e:  f2 90 40 00 47 06        cmp.b   #0x40, &0x0647
+    3064:  22 20                    jnz     0x30aa
+    3066:  c2 43 47 06              clr.b   &0x0647
+    306a:  b2 b0 00 80 6c 06        bit     #0x8000, &0x066c
+    3070:  0d 2c                    jc      0x308c
+    3072:  92 42 00 06 38 06        mov     &0x0600, &0x0638
+    3078:  92 42 02 06 3a 06        mov     &0x0602, &0x063a
+    307e:  92 42 04 06 3c 06        mov     &0x0604, &0x063c
+    3084:  92 42 06 06 3e 06        mov     &0x0606, &0x063e
+    308a:  0f 3c                    jmp     0x30aa
+loc_308C:
+    308c:  92 42 a8 08 38 06        mov     &0x08a8, &0x0638
+    3092:  92 42 aa 08 3a 06        mov     &0x08aa, &0x063a
+    3098:  92 42 ac 08 3c 06        mov     &0x08ac, &0x063c
+    309e:  92 42 ae 08 3e 06        mov     &0x08ae, &0x063e
+    30a4:  b2 c0 00 80 6c 06        bic     #0x8000, &0x066c
+loc_30AA:
+    30aa:  d2 c3 22 00              bic.b   #1, &P1DIR
+    30ae:  d2 c3 23 00              bic.b   #1, &P1IFG
+    30b2:  3e 41                    mov     @sp+, r14
+    30b4:  3f 41                    mov     @sp+, r15
+loc_30B6:
+    30b6:  d2 b3 a7 04              bit.b   #1, &0x04a7
+    30ba:  26 24                    jz      0x3108
+    30bc:  c2 93 af 02              tst.b   &0x02af
+    30c0:  03 24                    jz      0x30c8
+    30c2:  d2 83 af 02              dec.b   &0x02af
+    30c6:  56 3c                    jmp     0x3174
+loc_30C8:
+    30c8:  d2 83 a9 02              dec.b   &0x02a9
+    30cc:  04 24                    jz      0x30d6
+    30ce:  d2 42 2f 04 af 02        mov.b   &0x042f, &0x02af
+    30d4:  4f 3c                    jmp     0x3174
+loc_30D6:
+    30d6:  e2 b3 a0 05              bit.b   #2, &0x05a0
+    30da:  09 24                    jz      0x30ee
+    30dc:  b2 90 b2 04 a4 04        cmp     #0x4b2, &0x04a4
+    30e2:  05 2c                    jc      0x30ee
+    30e4:  b2 c0 10 00 66 01        bic     #0x10, &TACCTL2
+    30ea:  e2 d2 a0 05              bis.b   #4, &0x05a0
+loc_30EE:
+    30ee:  d2 c3 a7 04              bic.b   #1, &0x04a7
+    30f2:  d2 c3 06 00              bic.b   #1, &0x0006
+    30f6:  e2 b3 a7 04              bit.b   #2, &0x04a7
+    30fa:  03 24                    jz      0x3102
+    30fc:  e2 c3 06 00              bic.b   #2, &0x0006
+    3100:  0a 3c                    jmp     0x3116
+loc_3102:
+    3102:  f2 d2 a7 04              bis.b   #8, &0x04a7
+    3106:  36 3c                    jmp     0x3174
+loc_3108:
+    3108:  f2 b0 10 00 a7 04        bit.b   #0x10, &0x04a7
+    310e:  32 24                    jz      0x3174
+    3110:  d2 b3 d5 00              bit.b   #1, &0x00d5
+    3114:  2f 2c                    jc      0x3174
+loc_3116:
+    3116:  b2 40 b0 04 a4 04        mov     #0x4b0, &0x04a4
+    311c:  f2 c0 7c 00 d5 00        bic.b   #0x7c, &0x00d5
+    3122:  f2 c0 bb 00 a7 04        bic.b   #0xbb, &0x04a7
+    3128:  e2 c2 29 00              bic.b   #4, &P2OUT
+    312c:  f2 40 e1 00 d1 00        mov.b   #0xe1, &0x00d1
+    3132:  d2 c3 d1 00              bic.b   #1, &0x00d1
+    3136:  d2 c3 07 00              bic.b   #1, &0x0007
+    313a:  d2 d3 06 00              bis.b   #1, &0x0006
+    313e:  f2 c0 80 00 26 00        bic.b   #0x80, &P1SEL
+    3144:  b2 40 04 81 66 01        mov     #-0x7efc, &TACCTL2
+    314a:  e2 b2 a0 05              bit.b   #4, &0x05a0
+    314e:  03 2c                    jc      0x3156
+    3150:  b2 d0 10 00 66 01        bis     #0x10, &TACCTL2
+loc_3156:
+    3156:  f2 d0 10 00 2e 00        bis.b   #0x10, &P2SEL
+    315c:  82 43 62 01              clr     &TACCTL0
+    3160:  d2 c3 a0 05              bic.b   #1, &0x05a0
+    3164:  e2 b3 a0 05              bit.b   #2, &0x05a0
+    3168:  05 24                    jz      0x3174
+    316a:  e2 c3 a0 05              bic.b   #2, &0x05a0
+    316e:  b2 d0 10 00 f6 04        bis     #0x10, &0x04f6
+loc_3174:
+    3174:  92 b3 3a 08              bit     #1, &0x083a
+    3178:  39 24                    jz      0x31ec
+    317a:  d2 b3 2b 08              bit.b   #1, &0x082b
+    317e:  1a 24                    jz      0x31b4
+    3180:  c2 93 2d 08              tst.b   &0x082d
+    3184:  03 24                    jz      0x318c
+    3186:  d2 83 2d 08              dec.b   &0x082d
+    318a:  30 3c                    jmp     0x31ec
+loc_318C:
+    318c:  d2 83 2f 08              dec.b   &0x082f
+    3190:  04 24                    jz      0x319a
+    3192:  d2 42 2c 08 2d 08        mov.b   &0x082c, &0x082d
+    3198:  29 3c                    jmp     0x31ec
+loc_319A:
+    319a:  d2 c3 2b 08              bic.b   #1, &0x082b
+    319e:  d2 c3 01 00              bic.b   #1, &IE2
+    31a2:  e2 b3 2b 08              bit.b   #2, &0x082b
+    31a6:  03 24                    jz      0x31ae
+    31a8:  e2 c3 01 00              bic.b   #2, &IE2
+    31ac:  0a 3c                    jmp     0x31c2
+loc_31AE:
+    31ae:  f2 d2 2b 08              bis.b   #8, &0x082b
+    31b2:  1c 3c                    jmp     0x31ec
+loc_31B4:
+    31b4:  f2 b0 10 00 2b 08        bit.b   #0x10, &0x082b
+    31ba:  18 24                    jz      0x31ec
+    31bc:  d2 b3 65 00              bit.b   #1, &0x0065
+    31c0:  15 2c                    jc      0x31ec
+loc_31C2:
+    31c2:  b2 40 10 08 28 08        mov     #0x810, &0x0828
+    31c8:  f2 c0 7c 00 65 00        bic.b   #0x7c, &0x0065
+    31ce:  f2 c0 bb 00 2b 08        bic.b   #0xbb, &0x082b
+    31d4:  f2 c0 40 00 31 00        bic.b   #0x40, &P5OUT
+    31da:  f2 40 e1 00 61 00        mov.b   #0xe1, &0x0061
+    31e0:  d2 c3 61 00              bic.b   #1, &0x0061
+    31e4:  d2 c3 03 00              bic.b   #1, &IFG2
+    31e8:  d2 d3 01 00              bis.b   #1, &IE2
+loc_31EC:
+    31ec:  f2 b0 20 00 ac 04        bit.b   #0x20, &0x04ac
+    31f2:  d2 24                    jz      0x3398
+    31f4:  f2 b0 80 00 fc 04        bit.b   #0x80, &0x04fc
+    31fa:  ce 24                    jz      0x3398
+    31fc:  b2 b0 40 00 f4 04        bit     #0x40, &0x04f4
+    3202:  ca 2c                    jc      0x3398
+    3204:  b2 b0 80 00 f4 04        bit     #0x80, &0x04f4
+    320a:  c6 2c                    jc      0x3398
+    320c:  92 b3 f4 04              bit     #1, &0x04f4
+    3210:  85 24                    jz      0x331c
+    3212:  92 42 b0 02 d0 04        mov     &0x02b0, &0x04d0
+    3218:  92 42 b2 02 d2 04        mov     &0x02b2, &0x04d2
+    321e:  92 42 b4 02 d4 04        mov     &0x02b4, &0x04d4
+    3224:  92 42 b6 02 d6 04        mov     &0x02b6, &0x04d6
+    322a:  92 42 b8 02 d8 04        mov     &0x02b8, &0x04d8
+    3230:  92 42 ba 02 da 04        mov     &0x02ba, &0x04da
+    3236:  92 42 bc 02 dc 04        mov     &0x02bc, &0x04dc
+    323c:  92 42 be 02 de 04        mov     &0x02be, &0x04de
+    3242:  82 43 b0 02              clr     &0x02b0
+    3246:  82 43 b2 02              clr     &0x02b2
+    324a:  82 43 b4 02              clr     &0x02b4
+    324e:  82 43 b6 02              clr     &0x02b6
+    3252:  82 43 b8 02              clr     &0x02b8
+    3256:  82 43 ba 02              clr     &0x02ba
+    325a:  82 43 bc 02              clr     &0x02bc
+    325e:  82 43 be 02              clr     &0x02be
+    3262:  b2 b0 80 00 f6 04        bit     #0x80, &0x04f6
+    3268:  1e 24                    jz      0x32a6
+    326a:  92 42 60 06 70 06        mov     &0x0660, &0x0670
+    3270:  92 42 62 06 72 06        mov     &0x0662, &0x0672
+    3276:  92 42 64 06 74 06        mov     &0x0664, &0x0674
+    327c:  92 42 66 06 76 06        mov     &0x0666, &0x0676
+    3282:  92 42 68 06 78 06        mov     &0x0668, &0x0678
+    3288:  92 42 6a 06 7a 06        mov     &0x066a, &0x067a
+    328e:  82 43 60 06              clr     &0x0660
+    3292:  82 43 62 06              clr     &0x0662
+    3296:  82 43 64 06              clr     &0x0664
+    329a:  82 43 66 06              clr     &0x0666
+    329e:  82 43 68 06              clr     &0x0668
+    32a2:  82 43 6a 06              clr     &0x066a
+loc_32A6:
+    32a6:  92 42 e0 05 f0 05        mov     &0x05e0, &0x05f0
+    32ac:  92 42 e2 05 f2 05        mov     &0x05e2, &0x05f2
+    32b2:  92 42 e4 05 f4 05        mov     &0x05e4, &0x05f4
+    32b8:  92 42 e6 05 f6 05        mov     &0x05e6, &0x05f6
+    32be:  92 42 e8 05 f8 05        mov     &0x05e8, &0x05f8
+    32c4:  92 42 ea 05 fa 05        mov     &0x05ea, &0x05fa
+    32ca:  92 42 ec 05 fc 05        mov     &0x05ec, &0x05fc
+    32d0:  92 42 ee 05 fe 05        mov     &0x05ee, &0x05fe
+    32d6:  f2 b0 20 00 15 05        bit.b   #0x20, &0x0515
+    32dc:  18 2c                    jc      0x330e
+    32de:  92 42 20 05 28 05        mov     &0x0520, &0x0528
+    32e4:  92 42 22 05 2a 05        mov     &0x0522, &0x052a
+    32ea:  92 42 24 05 2c 05        mov     &0x0524, &0x052c
+    32f0:  92 42 26 05 2e 05        mov     &0x0526, &0x052e
+    32f6:  92 42 10 06 18 06        mov     &0x0610, &0x0618
+    32fc:  92 42 12 06 1a 06        mov     &0x0612, &0x061a
+    3302:  92 42 14 06 1c 06        mov     &0x0614, &0x061c
+    3308:  92 42 16 06 1e 06        mov     &0x0616, &0x061e
+loc_330E:
+    330e:  92 c3 f4 04              bic     #1, &0x04f4
+    3312:  b2 d0 40 00 f4 04        bis     #0x40, &0x04f4
+    3318:  f2 c2 9f 03              bic.b   #8, &0x039f
+loc_331C:
+    331c:  a2 b3 f4 04              bit     #2, &0x04f4
+    3320:  3b 24                    jz      0x3398
+    3322:  92 52 d2 04 b2 02        add     &0x04d2, &0x02b2
+    3328:  92 62 d0 04 b0 02        addc    &0x04d0, &0x02b0
+    332e:  92 52 d6 04 b6 02        add     &0x04d6, &0x02b6
+    3334:  92 62 d4 04 b4 02        addc    &0x04d4, &0x02b4
+    333a:  92 52 da 04 ba 02        add     &0x04da, &0x02ba
+    3340:  92 62 d8 04 b8 02        addc    &0x04d8, &0x02b8
+    3346:  92 52 de 04 be 02        add     &0x04de, &0x02be
+    334c:  92 62 dc 04 bc 02        addc    &0x04dc, &0x02bc
+    3352:  b2 b0 80 00 f6 04        bit     #0x80, &0x04f6
+    3358:  12 24                    jz      0x337e
+    335a:  92 52 72 06 62 06        add     &0x0672, &0x0662
+    3360:  92 62 70 06 60 06        addc    &0x0670, &0x0660
+    3366:  92 52 76 06 66 06        add     &0x0676, &0x0666
+    336c:  92 62 74 06 64 06        addc    &0x0674, &0x0664
+    3372:  92 52 7a 06 6a 06        add     &0x067a, &0x066a
+    3378:  92 62 78 06 68 06        addc    &0x0678, &0x0668
+loc_337E:
+    337e:  92 42 8c 04 7c 04        mov     &0x048c, &0x047c
+
+sub_3384:
+    3384:  92 42 8e 04 7e 04        mov     &0x048e, &0x047e
+    338a:  a2 c3 f4 04              bic     #2, &0x04f4
+    338e:  92 d3 f4 04              bis     #1, &0x04f4
+    3392:  f2 c0 80 00 fc 04        bic.b   #0x80, &0x04fc
+loc_3398:
+    3398:  d2 83 ad 02              dec.b   &0x02ad
+    339c:  5b 20                    jnz     0x3454
+    339e:  f2 40 28 00 ad 02        mov.b   #0x28, &0x02ad
+    33a4:  d2 83 ae 02              dec.b   &0x02ae
+    33a8:  0f 20                    jnz     0x33c8
+    33aa:  f2 40 19 00 ae 02        mov.b   #0x19, &0x02ae
+    33b0:  a2 d2 f4 04              bis     #4, &0x04f4
+    33b4:  d2 b3 a0 05              bit.b   #1, &0x05a0
+    33b8:  07 2c                    jc      0x33c8
+    33ba:  a2 c3 66 01              bic     #2, &TACCTL2
+    33be:  b2 d0 10 00 66 01        bis     #0x10, &TACCTL2
+    33c4:  e2 c2 a0 05              bic.b   #4, &0x05a0
+loc_33C8:
+    33c8:  f2 b0 40 00 20 00        bit.b   #0x40, &P1IN
+    33ce:  0b 2c                    jc      0x33e6
+    33d0:  f2 b0 40 00 20 00        bit.b   #0x40, &P1IN
+    33d6:  07 2c                    jc      0x33e6
+    33d8:  f2 b0 40 00 20 00        bit.b   #0x40, &P1IN
+    33de:  03 2c                    jc      0x33e6
+    33e0:  d2 53 2d 03              inc.b   &0x032d
+    33e4:  0d 3c                    jmp     0x3400
+loc_33E6:
+    33e6:  c2 93 2d 03              tst.b   &0x032d
+    33ea:  0a 24                    jz      0x3400
+    33ec:  d2 d3 2c 03              bis.b   #1, &0x032c
+    33f0:  f2 90 19 00 2d 03        cmp.b   #0x19, &0x032d
+    33f6:  02 28                    jnc     0x33fc
+    33f8:  e2 d3 2c 03              bis.b   #2, &0x032c
+loc_33FC:
+    33fc:  c2 43 2d 03              clr.b   &0x032d
+loc_3400:
+    3400:  f2 b0 20 00 20 00        bit.b   #0x20, &P1IN
+    3406:  0b 2c                    jc      0x341e
+    3408:  f2 b0 20 00 20 00        bit.b   #0x20, &P1IN
+    340e:  07 2c                    jc      0x341e
+    3410:  f2 b0 20 00 20 00        bit.b   #0x20, &P1IN
+    3416:  03 2c                    jc      0x341e
+    3418:  d2 53 2e 03              inc.b   &0x032e
+    341c:  1b 3c                    jmp     0x3454
+loc_341E:
+    341e:  c2 93 2e 03              tst.b   &0x032e
+    3422:  0a 24                    jz      0x3438
+    3424:  e2 d2 2c 03              bis.b   #4, &0x032c
+    3428:  f2 90 19 00 2e 03        cmp.b   #0x19, &0x032e
+    342e:  02 28                    jnc     0x3434
+    3430:  f2 d2 2c 03              bis.b   #8, &0x032c
+loc_3434:
+    3434:  c2 43 2e 03              clr.b   &0x032e
+loc_3438:
+    3438:  c2 93 2c 03              tst.b   &0x032c
+    343c:  0b 24                    jz      0x3454
+    343e:  c2 93 2d 03              tst.b   &0x032d
+    3442:  08 20                    jnz     0x3454
+    3444:  c2 93 2e 03              tst.b   &0x032e
+    3448:  05 20                    jnz     0x3454
+    344a:  f2 b2 9f 03              bit.b   #8, &0x039f
+    344e:  02 2c                    jc      0x3454
+    3450:  f2 d2 9f 03              bis.b   #8, &0x039f
+loc_3454:
+    3454:  b2 b0 00 04 f4 04        bit     #0x400, &0x04f4
+    345a:  b2 24                    jz      0x35c0
+    345c:  b2 b0 80 00 f6 04        bit     #0x80, &0x04f6
+    3462:  ae 24                    jz      0x35c0
+    3464:  82 93 cc 02              tst     &0x02cc
+    3468:  37 30                    jn      0x34d8
+    346a:  92 82 ce 02 56 06        sub     &0x02ce, &0x0656
+    3470:  92 72 cc 02 54 06        subc    &0x02cc, &0x0654
+    3476:  82 93 54 06              tst     &0x0654
+    347a:  2e 34                    jge     0x34d8
+    347c:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    3482:  0d 24                    jz      0x349e
+    3484:  92 52 36 04 56 06        add     &0x0436, &0x0656
+    348a:  92 62 34 04 54 06        addc    &0x0434, &0x0654
+    3490:  92 83 6e 06              dec     &0x066e
+    3494:  21 20                    jnz     0x34d8
+    3496:  92 42 3a 04 6e 06        mov     &0x043a, &0x066e
+    349c:  0c 3c                    jmp     0x34b6
+loc_349E:
+    349e:  92 52 32 04 56 06        add     &0x0432, &0x0656
+    34a4:  92 62 30 04 54 06        addc    &0x0430, &0x0654
+    34aa:  92 83 6e 06              dec     &0x066e
+    34ae:  14 20                    jnz     0x34d8
+    34b0:  92 42 38 04 6e 06        mov     &0x0438, &0x066e
+loc_34B6:
+    34b6:  92 53 62 06              inc     &0x0662
+    34ba:  82 63 60 06              adc     &0x0660
+    34be:  92 92 76 03 60 06        cmp     &0x0376, &0x0660
+    34c4:  09 28                    jnc     0x34d8
+    34c6:  04 20                    jnz     0x34d0
+    34c8:  92 92 78 03 62 06        cmp     &0x0378, &0x0662
+    34ce:  04 28                    jnc     0x34d8
+loc_34D0:
+    34d0:  82 43 62 06              clr     &0x0662
+    34d4:  82 43 60 06              clr     &0x0660
+loc_34D8:
+    34d8:  82 93 dc 02              tst     &0x02dc
+    34dc:  37 30                    jn      0x354c
+    34de:  92 82 de 02 5a 06        sub     &0x02de, &0x065a
+    34e4:  92 72 dc 02 58 06        subc    &0x02dc, &0x0658
+    34ea:  82 93 58 06              tst     &0x0658
+    34ee:  2e 34                    jge     0x354c
+    34f0:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    34f6:  0d 24                    jz      0x3512
+    34f8:  92 52 36 04 5a 06        add     &0x0436, &0x065a
+    34fe:  92 62 34 04 58 06        addc    &0x0434, &0x0658
+    3504:  92 83 7c 06              dec     &0x067c
+    3508:  21 20                    jnz     0x354c
+    350a:  92 42 3a 04 7c 06        mov     &0x043a, &0x067c
+    3510:  0c 3c                    jmp     0x352a
+loc_3512:
+    3512:  92 52 32 04 5a 06        add     &0x0432, &0x065a
+    3518:  92 62 30 04 58 06        addc    &0x0430, &0x0658
+    351e:  92 83 7c 06              dec     &0x067c
+    3522:  14 20                    jnz     0x354c
+    3524:  92 42 38 04 7c 06        mov     &0x0438, &0x067c
+loc_352A:
+    352a:  92 53 66 06              inc     &0x0666
+    352e:  82 63 64 06              adc     &0x0664
+    3532:  92 92 76 03 64 06        cmp     &0x0376, &0x0664
+    3538:  09 28                    jnc     0x354c
+    353a:  04 20                    jnz     0x3544
+    353c:  92 92 78 03 66 06        cmp     &0x0378, &0x0666
+    3542:  04 28                    jnc     0x354c
+loc_3544:
+    3544:  82 43 66 06              clr     &0x0666
+    3548:  82 43 64 06              clr     &0x0664
+loc_354C:
+    354c:  82 93 ec 02              tst     &0x02ec
+    3550:  37 30                    jn      0x35c0
+    3552:  92 82 ee 02 5e 06        sub     &0x02ee, &0x065e
+    3558:  92 72 ec 02 5c 06        subc    &0x02ec, &0x065c
+    355e:  82 93 5c 06              tst     &0x065c
+    3562:  2e 34                    jge     0x35c0
+    3564:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    356a:  0d 24                    jz      0x3586
+    356c:  92 52 36 04 5e 06        add     &0x0436, &0x065e
+    3572:  92 62 34 04 5c 06        addc    &0x0434, &0x065c
+    3578:  92 83 7e 06              dec     &0x067e
+    357c:  21 20                    jnz     0x35c0
+    357e:  92 42 3a 04 7e 06        mov     &0x043a, &0x067e
+    3584:  0c 3c                    jmp     0x359e
+loc_3586:
+    3586:  92 52 32 04 5e 06        add     &0x0432, &0x065e
+    358c:  92 62 30 04 5c 06        addc    &0x0430, &0x065c
+    3592:  92 83 7e 06              dec     &0x067e
+    3596:  14 20                    jnz     0x35c0
+    3598:  92 42 38 04 7e 06        mov     &0x0438, &0x067e
+loc_359E:
+    359e:  92 53 6a 06              inc     &0x066a
+    35a2:  82 63 68 06              adc     &0x0668
+    35a6:  92 92 76 03 68 06        cmp     &0x0376, &0x0668
+    35ac:  09 28                    jnc     0x35c0
+    35ae:  04 20                    jnz     0x35b8
+    35b0:  92 92 78 03 6a 06        cmp     &0x0378, &0x066a
+    35b6:  04 28                    jnc     0x35c0
+loc_35B8:
+    35b8:  82 43 6a 06              clr     &0x066a
+    35bc:  82 43 68 06              clr     &0x0668
+loc_35C0:
+    35c0:  82 43 62 02              clr     &0x0262
+    35c4:  82 43 60 02              clr     &0x0260
+    35c8:  92 52 ce 02 62 02        add     &0x02ce, &0x0262
+    35ce:  92 62 cc 02 60 02        addc    &0x02cc, &0x0260
+    35d4:  92 52 de 02 62 02        add     &0x02de, &0x0262
+    35da:  92 62 dc 02 60 02        addc    &0x02dc, &0x0260
+    35e0:  92 52 ee 02 62 02        add     &0x02ee, &0x0262
+    35e6:  92 62 ec 02 60 02        addc    &0x02ec, &0x0260
+    35ec:  82 43 6a 02              clr     &0x026a
+    35f0:  82 43 68 02              clr     &0x0268
+    35f4:  92 52 3a 02 6a 02        add     &0x023a, &0x026a
+    35fa:  92 62 38 02 68 02        addc    &0x0238, &0x0268
+    3600:  92 52 4a 02 6a 02        add     &0x024a, &0x026a
+    3606:  92 62 48 02 68 02        addc    &0x0248, &0x0268
+    360c:  92 52 5a 02 6a 02        add     &0x025a, &0x026a
+    3612:  92 62 58 02 68 02        addc    &0x0258, &0x0268
+    3618:  c2 93 d1 03              tst.b   &0x03d1
+    361c:  03 24                    jz      0x3624
+    361e:  d2 83 d1 03              dec.b   &0x03d1
+    3622:  11 3c                    jmp     0x3646
+loc_3624:
+    3624:  d2 c3 29 00              bic.b   #1, &P2OUT
+    3628:  c2 93 39 08              tst.b   &0x0839
+    362c:  03 20                    jnz     0x3634
+    362e:  f2 c0 10 00 31 00        bic.b   #0x10, &P5OUT
+loc_3634:
+    3634:  b2 b0 00 40 f4 04        bit     #0x4000, &0x04f4
+    363a:  05 24                    jz      0x3646
+    363c:  92 b3 f8 04              bit     #1, &0x04f8
+    3640:  02 2c                    jc      0x3646
+    3642:  e2 c3 1d 00              bic.b   #2, &P4OUT
+loc_3646:
+    3646:  c2 93 d3 03              tst.b   &0x03d3
+    364a:  03 24                    jz      0x3652
+    364c:  d2 83 d3 03              dec.b   &0x03d3
+    3650:  09 3c                    jmp     0x3664
+loc_3652:
+    3652:  e2 c3 29 00              bic.b   #2, &P2OUT
+    3656:  f2 90 20 00 39 08        cmp.b   #0x20, &0x0839
+    365c:  03 20                    jnz     0x3664
+    365e:  f2 c0 10 00 31 00        bic.b   #0x10, &P5OUT
+loc_3664:
+    3664:  c2 93 d5 03              tst.b   &0x03d5
+    3668:  03 24                    jz      0x3670
+    366a:  d2 83 d5 03              dec.b   &0x03d5
+    366e:  10 3c                    jmp     0x3690
+loc_3670:
+    3670:  b2 b0 00 40 f4 04        bit     #0x4000, &0x04f4
+    3676:  0c 2c                    jc      0x3690
+    3678:  f2 90 10 00 39 08        cmp.b   #0x10, &0x0839
+    367e:  03 20                    jnz     0x3686
+    3680:  f2 c0 10 00 31 00        bic.b   #0x10, &P5OUT
+loc_3686:
+    3686:  92 b3 f8 04              bit     #1, &0x04f8
+    368a:  02 2c                    jc      0x3690
+    368c:  e2 c3 1d 00              bic.b   #2, &P4OUT
+loc_3690:
+    3690:  c2 93 d7 03              tst.b   &0x03d7
+    3694:  03 24                    jz      0x369c
+    3696:  d2 83 d7 03              dec.b   &0x03d7
+    369a:  09 3c                    jmp     0x36ae
+loc_369C:
+    369c:  d2 c3 1d 00              bic.b   #1, &P4OUT
+    36a0:  f2 90 30 00 39 08        cmp.b   #0x30, &0x0839
+    36a6:  03 20                    jnz     0x36ae
+    36a8:  f2 c0 10 00 31 00        bic.b   #0x10, &P5OUT
+loc_36AE:
+    36ae:  82 93 60 02              tst     &0x0260
+    36b2:  c6 30                    jn      0x3840
+    36b4:  92 82 62 02 f2 02        sub     &0x0262, &0x02f2
+    36ba:  92 72 60 02 f0 02        subc    &0x0260, &0x02f0
+    36c0:  82 93 f0 02              tst     &0x02f0
+    36c4:  15 35                    jge     0x38f0
+    36c6:  92 53 20 05              inc     &0x0520
+    36ca:  92 53 7e 08              inc     &0x087e
+    36ce:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    36d4:  0d 24                    jz      0x36f0
+    36d6:  92 52 36 04 f2 02        add     &0x0436, &0x02f2
+    36dc:  92 62 34 04 f0 02        addc    &0x0434, &0x02f0
+    36e2:  92 83 d8 03              dec     &0x03d8
+    36e6:  80 20                    jnz     0x37e8
+    36e8:  92 42 3a 04 d8 03        mov     &0x043a, &0x03d8
+    36ee:  0c 3c                    jmp     0x3708
+loc_36F0:
+    36f0:  92 52 32 04 f2 02        add     &0x0432, &0x02f2
+    36f6:  92 62 30 04 f0 02        addc    &0x0430, &0x02f0
+    36fc:  92 83 d8 03              dec     &0x03d8
+    3700:  73 20                    jnz     0x37e8
+    3702:  92 42 38 04 d8 03        mov     &0x0438, &0x03d8
+loc_3708:
+    3708:  92 53 b2 02              inc     &0x02b2
+    370c:  82 63 b0 02              adc     &0x02b0
+    3710:  92 92 76 03 b0 02        cmp     &0x0376, &0x02b0
+    3716:  09 28                    jnc     0x372a
+    3718:  04 20                    jnz     0x3722
+    371a:  92 92 78 03 b2 02        cmp     &0x0378, &0x02b2
+    3720:  04 28                    jnc     0x372a
+loc_3722:
+    3722:  82 43 b2 02              clr     &0x02b2
+    3726:  82 43 b0 02              clr     &0x02b0
+loc_372A:
+    372a:  92 92 7c 04 b0 02        cmp     &0x047c, &0x02b0
+    3730:  5b 20                    jnz     0x37e8
+    3732:  92 92 7e 04 b2 02        cmp     &0x047e, &0x02b2
+    3738:  57 20                    jnz     0x37e8
+    373a:  e2 b2 fc 04              bit.b   #4, &0x04fc
+    373e:  25 2c                    jc      0x378a
+    3740:  e2 b3 fc 04              bit.b   #2, &0x04fc
+    3744:  11 2c                    jc      0x3768
+    3746:  b2 b0 10 00 f8 04        bit     #0x10, &0x04f8
+    374c:  42 2c                    jc      0x37d2
+    374e:  b2 d0 10 00 f8 04        bis     #0x10, &0x04f8
+    3754:  b2 d0 00 01 f8 04        bis     #0x100, &0x04f8
+    375a:  a2 b2 f8 04              bit     #4, &0x04f8
+    375e:  39 24                    jz      0x37d2
+    3760:  b2 d0 10 00 48 05        bis     #0x10, &0x0548
+    3766:  35 3c                    jmp     0x37d2
+loc_3768:
+    3768:  b2 b0 20 00 f8 04        bit     #0x20, &0x04f8
+    376e:  31 2c                    jc      0x37d2
+    3770:  b2 d0 20 00 f8 04        bis     #0x20, &0x04f8
+    3776:  b2 d0 00 01 f8 04        bis     #0x100, &0x04f8
+    377c:  a2 b2 f8 04              bit     #4, &0x04f8
+    3780:  28 24                    jz      0x37d2
+    3782:  b2 d0 20 00 48 05        bis     #0x20, &0x0548
+    3788:  24 3c                    jmp     0x37d2
+loc_378A:
+    378a:  e2 b3 fc 04              bit.b   #2, &0x04fc
+    378e:  11 2c                    jc      0x37b2
+    3790:  b2 b0 40 00 f8 04        bit     #0x40, &0x04f8
+    3796:  1d 2c                    jc      0x37d2
+    3798:  b2 d0 40 00 f8 04        bis     #0x40, &0x04f8
+    379e:  b2 d0 00 01 f8 04        bis     #0x100, &0x04f8
+    37a4:  a2 b2 f8 04              bit     #4, &0x04f8
+    37a8:  14 24                    jz      0x37d2
+    37aa:  b2 d0 40 00 48 05        bis     #0x40, &0x0548
+    37b0:  10 3c                    jmp     0x37d2
+loc_37B2:
+    37b2:  b2 b0 80 00 f8 04        bit     #0x80, &0x04f8
+    37b8:  0c 2c                    jc      0x37d2
+    37ba:  b2 d0 80 00 f8 04        bis     #0x80, &0x04f8
+    37c0:  b2 d0 00 01 f8 04        bis     #0x100, &0x04f8
+    37c6:  a2 b2 f8 04              bit     #4, &0x04f8
+    37ca:  03 24                    jz      0x37d2
+    37cc:  b2 d0 80 00 48 05        bis     #0x80, &0x0548
+loc_37D2:
+    37d2:  92 b3 f8 04              bit     #1, &0x04f8
+    37d6:  08 24                    jz      0x37e8
+    37d8:  a2 b2 f8 04              bit     #4, &0x04f8
+    37dc:  05 24                    jz      0x37e8
+    37de:  e2 d3 1d 00              bis.b   #2, &P4OUT
+    37e2:  b2 d0 00 02 f8 04        bis     #0x200, &0x04f8
+loc_37E8:
+    37e8:  c2 93 d0 03              tst.b   &0x03d0
+    37ec:  12 24                    jz      0x3812
+    37ee:  d2 c3 29 00              bic.b   #1, &P2OUT
+    37f2:  c2 93 39 08              tst.b   &0x0839
+    37f6:  03 20                    jnz     0x37fe
+    37f8:  f2 c0 10 00 31 00        bic.b   #0x10, &P5OUT
+loc_37FE:
+    37fe:  b2 b0 00 40 f4 04        bit     #0x4000, &0x04f4
+    3804:  1a 24                    jz      0x383a
+    3806:  92 b3 f8 04              bit     #1, &0x04f8
+    380a:  17 2c                    jc      0x383a
+    380c:  e2 c3 1d 00              bic.b   #2, &P4OUT
+    3810:  14 3c                    jmp     0x383a
+loc_3812:
+    3812:  d2 d3 29 00              bis.b   #1, &P2OUT
+    3816:  c2 93 39 08              tst.b   &0x0839
+    381a:  03 20                    jnz     0x3822
+    381c:  f2 d0 10 00 31 00        bis.b   #0x10, &P5OUT
+loc_3822:
+    3822:  f2 40 64 00 d1 03        mov.b   #0x64, &0x03d1
+    3828:  b2 b0 00 40 f4 04        bit     #0x4000, &0x04f4
+    382e:  05 24                    jz      0x383a
+    3830:  92 b3 f8 04              bit     #1, &0x04f8
+    3834:  02 2c                    jc      0x383a
+    3836:  e2 d3 1d 00              bis.b   #2, &P4OUT
+loc_383A:
+    383a:  f2 e3 d0 03              inv.b   &0x03d0
+    383e:  58 3c                    jmp     0x38f0
+loc_3840:
+    3840:  92 52 62 02 f6 02        add     &0x0262, &0x02f6
+    3846:  92 62 60 02 f4 02        addc    &0x0260, &0x02f4
+    384c:  82 93 f4 02              tst     &0x02f4
+    3850:  4f 34                    jge     0x38f0
+    3852:  92 53 22 05              inc     &0x0522
+    3856:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    385c:  0d 24                    jz      0x3878
+    385e:  92 52 36 04 f6 02        add     &0x0436, &0x02f6
+    3864:  92 62 34 04 f4 02        addc    &0x0434, &0x02f4
+    386a:  92 83 da 03              dec     &0x03da
+    386e:  21 20                    jnz     0x38b2
+    3870:  92 42 3a 04 da 03        mov     &0x043a, &0x03da
+    3876:  0c 3c                    jmp     0x3890
+loc_3878:
+    3878:  92 52 32 04 f6 02        add     &0x0432, &0x02f6
+    387e:  92 62 30 04 f4 02        addc    &0x0430, &0x02f4
+    3884:  92 83 da 03              dec     &0x03da
+    3888:  14 20                    jnz     0x38b2
+    388a:  92 42 38 04 da 03        mov     &0x0438, &0x03da
+loc_3890:
+    3890:  92 53 b6 02              inc     &0x02b6
+    3894:  82 63 b4 02              adc     &0x02b4
+    3898:  92 92 76 03 b4 02        cmp     &0x0376, &0x02b4
+    389e:  09 28                    jnc     0x38b2
+    38a0:  04 20                    jnz     0x38aa
+    38a2:  92 92 78 03 b6 02        cmp     &0x0378, &0x02b6
+    38a8:  04 28                    jnc     0x38b2
+loc_38AA:
+    38aa:  82 43 b6 02              clr     &0x02b6
+    38ae:  82 43 b4 02              clr     &0x02b4
+loc_38B2:
+    38b2:  b2 b0 00 80 f4 04        bit     #0x8000, &0x04f4
+    38b8:  1b 2c                    jc      0x38f0
+    38ba:  c2 93 d2 03              tst.b   &0x03d2
+    38be:  0a 24                    jz      0x38d4
+    38c0:  e2 c3 29 00              bic.b   #2, &P2OUT
+    38c4:  f2 90 20 00 39 08        cmp.b   #0x20, &0x0839
+    38ca:  10 20                    jnz     0x38ec
+    38cc:  f2 c0 10 00 31 00        bic.b   #0x10, &P5OUT
+    38d2:  0c 3c                    jmp     0x38ec
+loc_38D4:
+    38d4:  e2 d3 29 00              bis.b   #2, &P2OUT
+    38d8:  f2 90 20 00 39 08        cmp.b   #0x20, &0x0839
+    38de:  03 20                    jnz     0x38e6
+    38e0:  f2 d0 10 00 31 00        bis.b   #0x10, &P5OUT
+loc_38E6:
+    38e6:  f2 40 64 00 d3 03        mov.b   #0x64, &0x03d3
+loc_38EC:
+    38ec:  f2 e3 d2 03              inv.b   &0x03d2
+loc_38F0:
+    38f0:  b2 b0 00 40 f4 04        bit     #0x4000, &0x04f4
+    38f6:  b6 2c                    jc      0x3a64
+    38f8:  82 93 68 02              tst     &0x0268
+    38fc:  5b 30                    jn      0x39b4
+    38fe:  92 82 6a 02 fa 02        sub     &0x026a, &0x02fa
+    3904:  92 72 68 02 f8 02        subc    &0x0268, &0x02f8
+    390a:  82 93 f8 02              tst     &0x02f8
+    390e:  aa 34                    jge     0x3a64
+    3910:  92 53 24 05              inc     &0x0524
+    3914:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    391a:  0d 24                    jz      0x3936
+    391c:  92 52 36 04 fa 02        add     &0x0436, &0x02fa
+    3922:  92 62 34 04 f8 02        addc    &0x0434, &0x02f8
+    3928:  92 83 dc 03              dec     &0x03dc
+    392c:  21 20                    jnz     0x3970
+    392e:  92 42 3a 04 dc 03        mov     &0x043a, &0x03dc
+    3934:  0c 3c                    jmp     0x394e
+loc_3936:
+    3936:  92 52 32 04 fa 02        add     &0x0432, &0x02fa
+    393c:  92 62 30 04 f8 02        addc    &0x0430, &0x02f8
+    3942:  92 83 dc 03              dec     &0x03dc
+    3946:  14 20                    jnz     0x3970
+    3948:  92 42 38 04 dc 03        mov     &0x0438, &0x03dc
+loc_394E:
+    394e:  92 53 ba 02              inc     &0x02ba
+    3952:  82 63 b8 02              adc     &0x02b8
+    3956:  92 92 76 03 b8 02        cmp     &0x0376, &0x02b8
+    395c:  09 28                    jnc     0x3970
+    395e:  04 20                    jnz     0x3968
+    3960:  92 92 78 03 ba 02        cmp     &0x0378, &0x02ba
+    3966:  04 28                    jnc     0x3970
+loc_3968:
+    3968:  82 43 ba 02              clr     &0x02ba
+    396c:  82 43 b8 02              clr     &0x02b8
+loc_3970:
+    3970:  c2 93 d4 03              tst.b   &0x03d4
+    3974:  0d 24                    jz      0x3990
+    3976:  f2 90 10 00 39 08        cmp.b   #0x10, &0x0839
+    397c:  03 20                    jnz     0x3984
+    397e:  f2 c0 10 00 31 00        bic.b   #0x10, &P5OUT
+loc_3984:
+    3984:  92 b3 f8 04              bit     #1, &0x04f8
+    3988:  12 2c                    jc      0x39ae
+    398a:  e2 c3 1d 00              bic.b   #2, &P4OUT
+    398e:  0f 3c                    jmp     0x39ae
+loc_3990:
+    3990:  f2 40 64 00 d5 03        mov.b   #0x64, &0x03d5
+    3996:  f2 90 10 00 39 08        cmp.b   #0x10, &0x0839
+    399c:  03 20                    jnz     0x39a4
+    399e:  f2 d0 10 00 31 00        bis.b   #0x10, &P5OUT
+loc_39A4:
+    39a4:  92 b3 f8 04              bit     #1, &0x04f8
+    39a8:  02 2c                    jc      0x39ae
+    39aa:  e2 d3 1d 00              bis.b   #2, &P4OUT
+loc_39AE:
+    39ae:  f2 e3 d4 03              inv.b   &0x03d4
+    39b2:  58 3c                    jmp     0x3a64
+loc_39B4:
+    39b4:  92 52 6a 02 fe 02        add     &0x026a, &0x02fe
+    39ba:  92 62 68 02 fc 02        addc    &0x0268, &0x02fc
+    39c0:  82 93 fc 02              tst     &0x02fc
+    39c4:  4f 34                    jge     0x3a64
+    39c6:  92 53 26 05              inc     &0x0526
+    39ca:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    39d0:  0d 24                    jz      0x39ec
+    39d2:  92 52 36 04 fe 02        add     &0x0436, &0x02fe
+    39d8:  92 62 34 04 fc 02        addc    &0x0434, &0x02fc
+    39de:  92 83 de 03              dec     &0x03de
+    39e2:  21 20                    jnz     0x3a26
+    39e4:  92 42 3a 04 de 03        mov     &0x043a, &0x03de
+    39ea:  0c 3c                    jmp     0x3a04
+loc_39EC:
+    39ec:  92 52 32 04 fe 02        add     &0x0432, &0x02fe
+    39f2:  92 62 30 04 fc 02        addc    &0x0430, &0x02fc
+    39f8:  92 83 de 03              dec     &0x03de
+    39fc:  14 20                    jnz     0x3a26
+    39fe:  92 42 38 04 de 03        mov     &0x0438, &0x03de
+loc_3A04:
+    3a04:  92 53 be 02              inc     &0x02be
+    3a08:  82 63 bc 02              adc     &0x02bc
+    3a0c:  92 92 76 03 bc 02        cmp     &0x0376, &0x02bc
+    3a12:  09 28                    jnc     0x3a26
+    3a14:  04 20                    jnz     0x3a1e
+    3a16:  92 92 78 03 be 02        cmp     &0x0378, &0x02be
+    3a1c:  04 28                    jnc     0x3a26
+loc_3A1E:
+    3a1e:  82 43 be 02              clr     &0x02be
+    3a22:  82 43 bc 02              clr     &0x02bc
+loc_3A26:
+    3a26:  b2 b0 00 80 f4 04        bit     #0x8000, &0x04f4
+    3a2c:  1b 2c                    jc      0x3a64
+    3a2e:  c2 93 d6 03              tst.b   &0x03d6
+    3a32:  0a 24                    jz      0x3a48
+    3a34:  d2 c3 1d 00              bic.b   #1, &P4OUT
+    3a38:  f2 90 30 00 39 08        cmp.b   #0x30, &0x0839
+    3a3e:  10 20                    jnz     0x3a60
+    3a40:  f2 c0 10 00 31 00        bic.b   #0x10, &P5OUT
+    3a46:  0c 3c                    jmp     0x3a60
+loc_3A48:
+    3a48:  d2 d3 1d 00              bis.b   #1, &P4OUT
+    3a4c:  f2 90 30 00 39 08        cmp.b   #0x30, &0x0839
+    3a52:  03 20                    jnz     0x3a5a
+    3a54:  f2 d0 10 00 31 00        bis.b   #0x10, &P5OUT
+loc_3A5A:
+    3a5a:  f2 40 64 00 d7 03        mov.b   #0x64, &0x03d7
+loc_3A60:
+    3a60:  f2 e3 d6 03              inv.b   &0x03d6
+loc_3A64:
+    3a64:  b2 b0 00 04 f4 04        bit     #0x400, &0x04f4
+    3a6a:  1c 25                    jz      0x3ca4
+    3a6c:  82 43 b2 05              clr     &0x05b2
+    3a70:  82 43 b0 05              clr     &0x05b0
+    3a74:  92 52 b6 05 b2 05        add     &0x05b6, &0x05b2
+    3a7a:  92 62 b4 05 b0 05        addc    &0x05b4, &0x05b0
+    3a80:  92 52 ba 05 b2 05        add     &0x05ba, &0x05b2
+    3a86:  92 62 b8 05 b0 05        addc    &0x05b8, &0x05b0
+    3a8c:  92 52 be 05 b2 05        add     &0x05be, &0x05b2
+    3a92:  92 62 bc 05 b0 05        addc    &0x05bc, &0x05b0
+    3a98:  82 43 c2 05              clr     &0x05c2
+    3a9c:  82 43 c0 05              clr     &0x05c0
+    3aa0:  92 52 c6 05 c2 05        add     &0x05c6, &0x05c2
+    3aa6:  92 62 c4 05 c0 05        addc    &0x05c4, &0x05c0
+    3aac:  92 52 ca 05 c2 05        add     &0x05ca, &0x05c2
+    3ab2:  92 62 c8 05 c0 05        addc    &0x05c8, &0x05c0
+    3ab8:  92 52 ce 05 c2 05        add     &0x05ce, &0x05c2
+    3abe:  92 62 cc 05 c0 05        addc    &0x05cc, &0x05c0
+    3ac4:  82 93 b0 05              tst     &0x05b0
+    3ac8:  3a 30                    jn      0x3b3e
+    3aca:  92 82 b2 05 d2 05        sub     &0x05b2, &0x05d2
+    3ad0:  92 72 b0 05 d0 05        subc    &0x05b0, &0x05d0
+    3ad6:  82 93 d0 05              tst     &0x05d0
+    3ada:  6a 34                    jge     0x3bb0
+    3adc:  92 53 10 06              inc     &0x0610
+    3ae0:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    3ae6:  0d 24                    jz      0x3b02
+    3ae8:  92 52 36 04 d2 05        add     &0x0436, &0x05d2
+    3aee:  92 62 34 04 d0 05        addc    &0x0434, &0x05d0
+    3af4:  92 83 08 06              dec     &0x0608
+    3af8:  21 20                    jnz     0x3b3c
+    3afa:  92 42 3a 04 08 06        mov     &0x043a, &0x0608
+    3b00:  0c 3c                    jmp     0x3b1a
+loc_3B02:
+    3b02:  92 52 32 04 d2 05        add     &0x0432, &0x05d2
+    3b08:  92 62 30 04 d0 05        addc    &0x0430, &0x05d0
+    3b0e:  92 83 08 06              dec     &0x0608
+    3b12:  14 20                    jnz     0x3b3c
+    3b14:  92 42 38 04 08 06        mov     &0x0438, &0x0608
+loc_3B1A:
+    3b1a:  92 53 e2 05              inc     &0x05e2
+    3b1e:  82 63 e0 05              adc     &0x05e0
+    3b22:  92 92 76 03 e0 05        cmp     &0x0376, &0x05e0
+    3b28:  09 28                    jnc     0x3b3c
+    3b2a:  04 20                    jnz     0x3b34
+    3b2c:  92 92 78 03 e2 05        cmp     &0x0378, &0x05e2
+    3b32:  04 28                    jnc     0x3b3c
+loc_3B34:
+    3b34:  82 43 e2 05              clr     &0x05e2
+    3b38:  82 43 e0 05              clr     &0x05e0
+loc_3B3C:
+    3b3c:  39 3c                    jmp     0x3bb0
+loc_3B3E:
+    3b3e:  92 52 b2 05 d6 05        add     &0x05b2, &0x05d6
+    3b44:  92 62 b0 05 d4 05        addc    &0x05b0, &0x05d4
+    3b4a:  82 93 d4 05              tst     &0x05d4
+    3b4e:  30 34                    jge     0x3bb0
+    3b50:  92 53 12 06              inc     &0x0612
+    3b54:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    3b5a:  0d 24                    jz      0x3b76
+    3b5c:  92 52 36 04 d6 05        add     &0x0436, &0x05d6
+    3b62:  92 62 34 04 d4 05        addc    &0x0434, &0x05d4
+    3b68:  92 83 0a 06              dec     &0x060a
+    3b6c:  21 20                    jnz     0x3bb0
+    3b6e:  92 42 3a 04 0a 06        mov     &0x043a, &0x060a
+    3b74:  0c 3c                    jmp     0x3b8e
+loc_3B76:
+    3b76:  92 52 32 04 d6 05        add     &0x0432, &0x05d6
+    3b7c:  92 62 30 04 d4 05        addc    &0x0430, &0x05d4
+    3b82:  92 83 0a 06              dec     &0x060a
+    3b86:  14 20                    jnz     0x3bb0
+    3b88:  92 42 38 04 0a 06        mov     &0x0438, &0x060a
+loc_3B8E:
+    3b8e:  92 53 e6 05              inc     &0x05e6
+    3b92:  82 63 e4 05              adc     &0x05e4
+    3b96:  92 92 76 03 e4 05        cmp     &0x0376, &0x05e4
+    3b9c:  09 28                    jnc     0x3bb0
+    3b9e:  04 20                    jnz     0x3ba8
+    3ba0:  92 92 78 03 e6 05        cmp     &0x0378, &0x05e6
+    3ba6:  04 28                    jnc     0x3bb0
+loc_3BA8:
+    3ba8:  82 43 e6 05              clr     &0x05e6
+    3bac:  82 43 e4 05              clr     &0x05e4
+loc_3BB0:
+    3bb0:  b2 b0 00 40 f4 04        bit     #0x4000, &0x04f4
+    3bb6:  76 2c                    jc      0x3ca4
+    3bb8:  82 93 c0 05              tst     &0x05c0
+    3bbc:  3a 30                    jn      0x3c32
+    3bbe:  92 82 c2 05 da 05        sub     &0x05c2, &0x05da
+    3bc4:  92 72 c0 05 d8 05        subc    &0x05c0, &0x05d8
+    3bca:  82 93 d8 05              tst     &0x05d8
+    3bce:  6a 34                    jge     0x3ca4
+    3bd0:  92 53 14 06              inc     &0x0614
+    3bd4:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    3bda:  0d 24                    jz      0x3bf6
+    3bdc:  92 52 36 04 da 05        add     &0x0436, &0x05da
+    3be2:  92 62 34 04 d8 05        addc    &0x0434, &0x05d8
+    3be8:  92 83 0c 06              dec     &0x060c
+    3bec:  21 20                    jnz     0x3c30
+    3bee:  92 42 3a 04 0c 06        mov     &0x043a, &0x060c
+    3bf4:  0c 3c                    jmp     0x3c0e
+loc_3BF6:
+    3bf6:  92 52 32 04 da 05        add     &0x0432, &0x05da
+    3bfc:  92 62 30 04 d8 05        addc    &0x0430, &0x05d8
+    3c02:  92 83 0c 06              dec     &0x060c
+    3c06:  14 20                    jnz     0x3c30
+    3c08:  92 42 38 04 0c 06        mov     &0x0438, &0x060c
+loc_3C0E:
+    3c0e:  92 53 ea 05              inc     &0x05ea
+    3c12:  82 63 e8 05              adc     &0x05e8
+    3c16:  92 92 76 03 e8 05        cmp     &0x0376, &0x05e8
+    3c1c:  09 28                    jnc     0x3c30
+    3c1e:  04 20                    jnz     0x3c28
+    3c20:  92 92 78 03 ea 05        cmp     &0x0378, &0x05ea
+    3c26:  04 28                    jnc     0x3c30
+loc_3C28:
+    3c28:  82 43 ea 05              clr     &0x05ea
+    3c2c:  82 43 e8 05              clr     &0x05e8
+loc_3C30:
+    3c30:  39 3c                    jmp     0x3ca4
+loc_3C32:
+    3c32:  92 52 c2 05 de 05        add     &0x05c2, &0x05de
+    3c38:  92 62 c0 05 dc 05        addc    &0x05c0, &0x05dc
+    3c3e:  82 93 dc 05              tst     &0x05dc
+    3c42:  30 34                    jge     0x3ca4
+    3c44:  92 53 16 06              inc     &0x0616
+    3c48:  b2 b0 00 02 f4 04        bit     #0x200, &0x04f4
+    3c4e:  0d 24                    jz      0x3c6a
+    3c50:  92 52 36 04 de 05        add     &0x0436, &0x05de
+    3c56:  92 62 34 04 dc 05        addc    &0x0434, &0x05dc
+    3c5c:  92 83 0e 06              dec     &0x060e
+    3c60:  21 20                    jnz     0x3ca4
+    3c62:  92 42 3a 04 0e 06        mov     &0x043a, &0x060e
+    3c68:  0c 3c                    jmp     0x3c82
+loc_3C6A:
+    3c6a:  92 52 32 04 de 05        add     &0x0432, &0x05de
+    3c70:  92 62 30 04 dc 05        addc    &0x0430, &0x05dc
+    3c76:  92 83 0e 06              dec     &0x060e
+    3c7a:  14 20                    jnz     0x3ca4
+    3c7c:  92 42 38 04 0e 06        mov     &0x0438, &0x060e
+loc_3C82:
+    3c82:  92 53 ee 05              inc     &0x05ee
+    3c86:  82 63 ec 05              adc     &0x05ec
+    3c8a:  92 92 76 03 ec 05        cmp     &0x0376, &0x05ec
+    3c90:  09 28                    jnc     0x3ca4
+    3c92:  04 20                    jnz     0x3c9c
+    3c94:  92 92 78 03 ee 05        cmp     &0x0378, &0x05ee
+    3c9a:  04 28                    jnc     0x3ca4
+loc_3C9C:
+    3c9c:  82 43 ee 05              clr     &0x05ee
+    3ca0:  82 43 ec 05              clr     &0x05ec
+loc_3CA4:
+    3ca4:  32 c2                    dint
+    3ca6:  03 43                    clr     cg
+    3ca8:  f2 d0 40 00 2d 00        bis.b   #0x40, &P2IE
+    3cae:  b2 d0 10 00 84 01        bis     #0x10, &TBCCTL1
+    3cb4:  b2 d0 10 00 8e 01        bis     #0x10, &TBCCTL6
+    3cba:  b2 d0 00 02 a6 01        bis     #0x200, &ADC12IE
+    3cc0:  00 13                    reti
 
 TIMERA1_ISR (0x3CC2):
     3cc2:  a2 c3 a0 01              bic     #2, &ADC12CTL0
@@ -2443,7 +3399,7 @@ PORT1_ISR (0x4464):
     4464:  00 13                    reti
 
 sub_4466:
-;  callers: 0xF108
+;  callers: 0x3006, 0xF108
     4466:  0e 12                    push    r14
     4468:  0d 12                    push    r13
     446a:  0c 12                    push    r12

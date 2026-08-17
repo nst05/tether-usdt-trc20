@@ -1,0 +1,1852 @@
+{
+ "0x00": {
+  "name": "тест связи",
+  "handler": 33944,
+  "top": {
+   "cmps": [
+    4
+   ],
+   "req": [],
+   "resp": [],
+   "reads": [
+    "subcmd"
+   ],
+   "writes": [
+    "0x04F4",
+    "subcmd"
+   ],
+   "to_err": false
+  }
+ },
+ "0x01": {
+  "name": "открыть канал",
+  "handler": 34036,
+  "top": {
+   "cmps": [
+    11
+   ],
+   "req": [
+    2
+   ],
+   "resp": [],
+   "reads": [
+    "0x06B6",
+    "subcmd"
+   ],
+   "writes": [
+    "0x02A1",
+    "0x04F2",
+    "0x04F4",
+    "0x0838",
+    "subcmd"
+   ],
+   "to_err": false
+  }
+ },
+ "0x02": {
+  "name": "закрыть канал",
+  "handler": 34192,
+  "top": {
+   "cmps": [
+    4
+   ],
+   "req": [],
+   "resp": [],
+   "reads": [
+    "subcmd"
+   ],
+   "writes": [
+    "0x02A1",
+    "0x04F4",
+    "0x0838",
+    "subcmd"
+   ],
+   "to_err": false
+  }
+ },
+ "0x03": {
+  "name": "запись параметров",
+  "handler": 34226,
+  "top": {
+   "cmps": [],
+   "req": [
+    0,
+    2
+   ],
+   "resp": [],
+   "reads": [
+    "NET_ADDR"
+   ],
+   "writes": [],
+   "to_err": false
+  },
+  "subs": {
+   "0x00": {
+    "handler": 34488,
+    "cmps": [
+     7
+    ],
+    "req": [
+     3,
+     4
+    ],
+    "resp": [],
+    "reads": [
+     "0x0501",
+     "0x0502",
+     "0x0504",
+     "0x0505",
+     "0x0506",
+     "0x0510",
+     "0x0512",
+     "0x0513",
+     "0x0514"
+    ],
+    "writes": [
+     "0x04E3",
+     "0x04E4",
+     "0x04E5",
+     "0x04E6",
+     "0x04E7",
+     "0x04E8",
+     "0x04F0",
+     "0x04F4",
+     "0x0510",
+     "0x0512",
+     "0x0513",
+     "0x0514",
+     "0x0515",
+     "0x051E",
+     "0x0520",
+     "0x0522",
+     "0x0524",
+     "0x0526",
+     "0x0610",
+     "0x0612",
+     "0x0614",
+     "0x0616",
+     "baud_idx",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x01": {
+    "handler": 34786,
+    "cmps": [
+     13
+    ],
+    "req": [
+     3,
+     5,
+     7,
+     9
+    ],
+    "resp": [],
+    "reads": [
+     "0x06B6"
+    ],
+    "writes": [
+     "0x04F4",
+     "0x04FC"
+    ],
+    "to_err": false
+   },
+   "0x02": {
+    "handler": 34966,
+    "cmps": [
+     9
+    ],
+    "req": [
+     3,
+     4,
+     5,
+     6
+    ],
+    "resp": [],
+    "reads": [
+     "0x0420",
+     "0x0421",
+     "0x0423",
+     "0x06B6"
+    ],
+    "writes": [
+     "0x02A0",
+     "0x02A2",
+     "0x02A3"
+    ],
+    "to_err": false
+   },
+   "0x04": {
+    "handler": 35092,
+    "cmps": [
+     6
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x050C"
+    ],
+    "to_err": false
+   },
+   "0x05": {
+    "handler": 35136,
+    "cmps": [
+     6
+    ],
+    "req": [
+     0,
+     3
+    ],
+    "resp": [],
+    "reads": [
+     "NET_ADDR"
+    ],
+    "writes": [
+     "NET_ADDR",
+     "baud_idx"
+    ],
+    "to_err": false
+   },
+   "0x08": {
+    "handler": 35202,
+    "cmps": [
+     5
+    ],
+    "req": [
+     0
+    ],
+    "resp": [],
+    "reads": [
+     "0x03BE",
+     "0x0502",
+     "0x0504",
+     "0x0506",
+     "energy_HH",
+     "pwd_L1"
+    ],
+    "writes": [
+     "0x03BE",
+     "0x04E4",
+     "0x04E6",
+     "0x04F0",
+     "0x04F2",
+     "0x04F4",
+     "0x04FA",
+     "baud_idx",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x0A": {
+    "handler": 35740,
+    "cmps": [
+     5
+    ],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F4",
+     "0x04F6",
+     "0x05AE",
+     "0x08B8"
+    ],
+    "to_err": false
+   },
+   "0x0C": {
+    "handler": 35786,
+    "cmps": [
+     13
+    ],
+    "req": [
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "resp": [],
+    "reads": [
+     "0x0468",
+     "0x046A",
+     "0x0502",
+     "0x0504",
+     "0x0506",
+     "0x06B6",
+     "pwd_L1"
+    ],
+    "writes": [
+     "0x04F4",
+     "0x050C",
+     "0x050D",
+     "0x050E",
+     "0x0540",
+     "0x087A",
+     "pwd_crc"
+    ],
+    "to_err": false
+   },
+   "0x0D": {
+    "handler": 36114,
+    "cmps": [
+     8
+    ],
+    "req": [
+     3,
+     4,
+     5,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21
+    ],
+    "resp": [
+     3,
+     4,
+     5
+    ],
+    "reads": [
+     "0x0501",
+     "0x0502",
+     "0x0504",
+     "0x0505",
+     "0x0506",
+     "0x054A",
+     "pwd_L1",
+     "uart_cfg"
+    ],
+    "writes": [
+     "0x04E6",
+     "0x04E8",
+     "0x04EA",
+     "0x04F2",
+     "0x04F4",
+     "0x04FA",
+     "0x050C",
+     "0x050D",
+     "0x050E",
+     "0x051C",
+     "0x051D",
+     "0x0540",
+     "0x054A",
+     "0x087A"
+    ],
+    "to_err": false
+   },
+   "0x10": {
+    "handler": 38156,
+    "cmps": [
+     6
+    ],
+    "req": [
+     2,
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F0",
+     "0x04F4",
+     "0x066C",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x11": {
+    "handler": 36666,
+    "cmps": [
+     14
+    ],
+    "req": [
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F6",
+     "0x066C",
+     "0x08A8",
+     "0x08A9",
+     "0x08AA",
+     "0x08AB",
+     "0x08AC",
+     "0x08AD",
+     "0x08AE",
+     "0x08AF"
+    ],
+    "to_err": false
+   },
+   "0x14": {
+    "handler": 36934,
+    "cmps": [
+     7
+    ],
+    "req": [
+     3,
+     4
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F6",
+     "0x083A",
+     "net_addr2",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x15": {
+    "handler": 37054,
+    "cmps": [
+     6
+    ],
+    "req": [
+     2,
+     3
+    ],
+    "resp": [],
+    "reads": [
+     "0x06B6"
+    ],
+    "writes": [
+     "0x04F6"
+    ],
+    "to_err": false
+   },
+   "0x16": {
+    "handler": 37162,
+    "cmps": [
+     5
+    ],
+    "req": [],
+    "resp": [],
+    "reads": [
+     "0x0510",
+     "0x0514",
+     "0x051C",
+     "0x0520",
+     "0x0522",
+     "0x0524",
+     "0x0526",
+     "0x0610",
+     "0x0612",
+     "0x0614",
+     "0x0616"
+    ],
+    "writes": [
+     "0x04F0",
+     "0x04F4",
+     "0x04F6",
+     "0x04FC",
+     "0x051C",
+     "0x0528",
+     "0x052A",
+     "0x052C",
+     "0x052E",
+     "0x0618",
+     "0x061A",
+     "0x061C",
+     "0x061E",
+     "baud_idx",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x17": {
+    "handler": 37578,
+    "cmps": [
+     24
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x08B8",
+     "meas_phaseA",
+     "meas_phaseB",
+     "meas_phaseC"
+    ],
+    "to_err": false
+   },
+   "0x18": {
+    "handler": 38156,
+    "cmps": [
+     6
+    ],
+    "req": [
+     2,
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F0",
+     "0x04F4",
+     "0x066C",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x19": {
+    "handler": 38296,
+    "cmps": [
+     11
+    ],
+    "req": [
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ],
+    "resp": [],
+    "reads": [
+     "0x06B6"
+    ],
+    "writes": [
+     "0x04F4",
+     "0x050C"
+    ],
+    "to_err": false
+   },
+   "0x1B": {
+    "handler": 38434,
+    "cmps": [
+     9
+    ],
+    "req": [],
+    "resp": [],
+    "reads": [
+     "0x06B6"
+    ],
+    "writes": [],
+    "to_err": false
+   },
+   "0x1F": {
+    "handler": 36748,
+    "cmps": [
+     18
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F2"
+    ],
+    "to_err": false
+   },
+   "0x20": {
+    "handler": 38476,
+    "cmps": [
+     5
+    ],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x21": {
+    "handler": 38734,
+    "cmps": [
+     5
+    ],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04E4",
+     "0x04E6",
+     "0x04F4",
+     "baud_idx",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x22": {
+    "handler": 38820,
+    "cmps": [
+     9
+    ],
+    "req": [],
+    "resp": [],
+    "reads": [
+     "0x06B6"
+    ],
+    "writes": [],
+    "to_err": false
+   },
+   "0x23": {
+    "handler": 38862,
+    "cmps": [
+     14
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x24": {
+    "handler": 39026,
+    "cmps": [
+     5
+    ],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x27": {
+    "handler": 39114,
+    "cmps": [
+     6
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [
+     "0x0430",
+     "0x0432",
+     "0x0434",
+     "0x0436",
+     "0x0438",
+     "0x043A"
+    ],
+    "writes": [
+     "0x04F0",
+     "0x04F4",
+     "0x066E",
+     "0x067C",
+     "0x067E",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x28": {
+    "handler": 39322,
+    "cmps": [
+     7
+    ],
+    "req": [
+     2,
+     3,
+     4
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [],
+    "to_err": false
+   },
+   "0x29": {
+    "handler": 39322,
+    "cmps": [
+     7
+    ],
+    "req": [
+     2,
+     3,
+     4
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [],
+    "to_err": false
+   },
+   "0x2A": {
+    "handler": 39396,
+    "cmps": [
+     6
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [
+     "0x04FC"
+    ],
+    "writes": [
+     "0x04F2",
+     "0x04F4",
+     "0x04FC",
+     "0x087A",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x2B": {
+    "handler": 39604,
+    "cmps": [
+     6
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [
+     "0x04FC"
+    ],
+    "writes": [
+     "0x04F4",
+     "0x04FC"
+    ],
+    "to_err": false
+   },
+   "0x2C": {
+    "handler": 39690,
+    "cmps": [
+     8
+    ],
+    "req": [
+     3,
+     4,
+     5
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x049D",
+     "0x049E",
+     "0x04F8"
+    ],
+    "to_err": false
+   },
+   "0x2D": {
+    "handler": 39798,
+    "cmps": [
+     6
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F0",
+     "0x04F8"
+    ],
+    "to_err": false
+   },
+   "0x2E": {
+    "handler": 39862,
+    "cmps": [
+     10
+    ],
+    "req": [
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "resp": [
+     4,
+     5,
+     6,
+     7
+    ],
+    "reads": [
+     "0x0376",
+     "0x0378",
+     "0x03BE",
+     "0x04FC",
+     "baud_idx",
+     "uart_cfg"
+    ],
+    "writes": [
+     "0x03BE",
+     "0x047C",
+     "0x047E",
+     "0x04F8",
+     "chan_idx"
+    ],
+    "to_err": false
+   },
+   "0x2F": {
+    "handler": 40274,
+    "cmps": [
+     6
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [
+     "0x04FC"
+    ],
+    "writes": [
+     "0x04F0",
+     "0x04F8"
+    ],
+    "to_err": false
+   },
+   "0x30": {
+    "handler": 40414,
+    "cmps": [
+     6
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [
+     "0x04FC"
+    ],
+    "writes": [
+     "0x04F0",
+     "0x04F8"
+    ],
+    "to_err": false
+   },
+   "0x31": {
+    "handler": 40520,
+    "cmps": [
+     6
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F0",
+     "0x04F8"
+    ],
+    "to_err": false
+   },
+   "0x32": {
+    "handler": 37054,
+    "cmps": [
+     6
+    ],
+    "req": [
+     2,
+     3
+    ],
+    "resp": [],
+    "reads": [
+     "0x06B6"
+    ],
+    "writes": [
+     "0x04F6"
+    ],
+    "to_err": false
+   },
+   "0x33": {
+    "handler": 40634,
+    "cmps": [
+     7
+    ],
+    "req": [
+     3,
+     4
+    ],
+    "resp": [],
+    "reads": [
+     "uart_cfg"
+    ],
+    "writes": [
+     "0x04F4",
+     "0x04F6",
+     "0x0580",
+     "net_addr2",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x34": {
+    "handler": 40738,
+    "cmps": [
+     17
+    ],
+    "req": [],
+    "resp": [],
+    "reads": [
+     "0x06B6"
+    ],
+    "writes": [
+     "0x04F4",
+     "0x04F6"
+    ],
+    "to_err": false
+   },
+   "0x35": {
+    "handler": 40842,
+    "cmps": [
+     6
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [
+     "uart_cfg"
+    ],
+    "writes": [
+     "0x04F0",
+     "0x04F4",
+     "0x0839",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x36": {
+    "handler": 40944,
+    "cmps": [
+     21
+    ],
+    "req": [],
+    "resp": [],
+    "reads": [
+     "0x06B6"
+    ],
+    "writes": [
+     "0x04F6"
+    ],
+    "to_err": false
+   },
+   "0x37": {
+    "handler": 41024,
+    "cmps": [
+     7
+    ],
+    "req": [
+     3,
+     4
+    ],
+    "resp": [],
+    "reads": [
+     "energy_HH"
+    ],
+    "writes": [
+     "0x030E",
+     "0x04E3",
+     "0x04E4",
+     "0x04E6",
+     "0x04F6",
+     "baud_idx",
+     "energy_HH",
+     "energy_LH",
+     "energy_LL",
+     "energy_div",
+     "net_addr2"
+    ],
+    "to_err": false
+   }
+  },
+  "sub_table": 34264
+ },
+ "0x04": {
+  "name": "запись расширенная",
+  "handler": 41214,
+  "top": {
+   "cmps": [
+    5,
+    6
+   ],
+   "req": [
+    2,
+    3
+   ],
+   "resp": [],
+   "reads": [
+    "uart_cfg"
+   ],
+   "writes": [
+    "0x04F2",
+    "0x04F4",
+    "0x04F6",
+    "0x04FA",
+    "uart_cfg"
+   ],
+   "to_err": false
+  }
+ },
+ "0x05": {
+  "name": "чтение массивов",
+  "handler": 41910,
+  "top": {
+   "cmps": [
+    6
+   ],
+   "req": [
+    2,
+    3
+   ],
+   "resp": [],
+   "reads": [
+    "0x03BE"
+   ],
+   "writes": [],
+   "to_err": false
+  },
+  "subs": {
+   "0x00": {
+    "handler": 42062,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x03BE",
+     "0x04F0",
+     "0x04F2",
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x01": {
+    "handler": 42070,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x03BE",
+     "0x04F0",
+     "0x04F2",
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x02": {
+    "handler": 42080,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x03BE",
+     "0x04F0",
+     "0x04F2",
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x03": {
+    "handler": 42090,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [
+     "0x0505"
+    ],
+    "writes": [
+     "0x03BE",
+     "0x04F0",
+     "0x04F2",
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x04": {
+    "handler": 42162,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x03BE",
+     "0x04F0",
+     "0x04F2",
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x05": {
+    "handler": 42172,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x03BE",
+     "0x04F0",
+     "0x04F2",
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x06": {
+    "handler": 42182,
+    "cmps": [],
+    "req": [
+     2
+    ],
+    "resp": [],
+    "reads": [
+     "0x03BE",
+     "0x04FC"
+    ],
+    "writes": [
+     "0x03BE",
+     "0x04E4",
+     "0x04E6",
+     "0x04E8",
+     "0x04EA",
+     "0x04F2",
+     "0x04F4",
+     "0x04F6",
+     "0x04FA",
+     "0x04FC",
+     "baud_idx",
+     "uart_cfg"
+    ],
+    "to_err": false
+   }
+  },
+  "sub_table": 42034
+ },
+ "0x06": {
+  "name": "спец. операции",
+  "handler": 42950,
+  "top": {
+   "cmps": [
+    8
+   ],
+   "req": [
+    2,
+    5
+   ],
+   "resp": [],
+   "reads": [],
+   "writes": [],
+   "to_err": false
+  },
+  "subs": {
+   "0x01": {
+    "handler": 43102,
+    "cmps": [],
+    "req": [
+     3,
+     4
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [],
+    "to_err": false
+   },
+   "0x02": {
+    "handler": 43166,
+    "cmps": [],
+    "req": [
+     3,
+     4
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F2",
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x03": {
+    "handler": 43326,
+    "cmps": [],
+    "req": [
+     2,
+     3,
+     4
+    ],
+    "resp": [
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ],
+    "reads": [
+     "0x0516",
+     "0x0518",
+     "0x051B"
+    ],
+    "writes": [
+     "0x04F2",
+     "0x04F4",
+     "0x04F6",
+     "0x0515",
+     "0x0516",
+     "0x0518",
+     "0x051B"
+    ],
+    "to_err": false
+   },
+   "0x04": {
+    "handler": 43702,
+    "cmps": [],
+    "req": [
+     3,
+     4
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [],
+    "to_err": false
+   }
+  },
+  "sub_table": 43082
+ },
+ "0x07": {
+  "name": "чтение вспомогательное",
+  "handler": 43756,
+  "top": {
+   "cmps": [],
+   "req": [
+    0,
+    2,
+    5
+   ],
+   "resp": [],
+   "reads": [
+    "NET_ADDR"
+   ],
+   "writes": [],
+   "to_err": false
+  },
+  "subs": {
+   "0x01": {
+    "handler": 43834,
+    "cmps": [],
+    "req": [
+     3,
+     4,
+     5,
+     8
+    ],
+    "resp": [],
+    "reads": [
+     "0x0468",
+     "0x046A",
+     "0x04A0"
+    ],
+    "writes": [
+     "0x04A0",
+     "0x04A2",
+     "0x04F4",
+     "0x04F6",
+     "0x050D",
+     "0x050E",
+     "0x08B8"
+    ],
+    "to_err": false
+   },
+   "0x02": {
+    "handler": 44242,
+    "cmps": [],
+    "req": [
+     3,
+     4,
+     5
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F4",
+     "0x087A"
+    ],
+    "to_err": false
+   }
+  },
+  "sub_table": 43822
+ },
+ "0x08": {
+  "name": "чтение параметров",
+  "handler": 44440,
+  "top": {
+   "cmps": [
+    5,
+    6
+   ],
+   "req": [
+    2
+   ],
+   "resp": [],
+   "reads": [],
+   "writes": [],
+   "to_err": false
+  },
+  "subs": {
+   "0x00": {
+    "handler": 44736,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F2"
+    ],
+    "to_err": false
+   },
+   "0x01": {
+    "handler": 44788,
+    "cmps": [
+     5
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F2",
+     "0x05AA",
+     "0x0834"
+    ],
+    "to_err": false
+   },
+   "0x02": {
+    "handler": 44844,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F0"
+    ],
+    "to_err": false
+   },
+   "0x03": {
+    "handler": 44870,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [],
+    "to_err": false
+   },
+   "0x04": {
+    "handler": 44896,
+    "cmps": [],
+    "req": [
+     2
+    ],
+    "resp": [
+     2
+    ],
+    "reads": [
+     "NET_ADDR",
+     "net_addr2"
+    ],
+    "writes": [
+     "0x04F2",
+     "0x083A"
+    ],
+    "to_err": false
+   },
+   "0x05": {
+    "handler": 44896,
+    "cmps": [],
+    "req": [
+     2
+    ],
+    "resp": [
+     2
+    ],
+    "reads": [
+     "NET_ADDR",
+     "net_addr2"
+    ],
+    "writes": [
+     "0x04F2",
+     "0x083A"
+    ],
+    "to_err": false
+   },
+   "0x07": {
+    "handler": 44950,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F0",
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x09": {
+    "handler": 44994,
+    "cmps": [],
+    "req": [],
+    "resp": [
+     1,
+     2
+    ],
+    "reads": [
+     "0x04F4",
+     "0x04F5",
+     "0x0839"
+    ],
+    "writes": [
+     "0x066C"
+    ],
+    "to_err": false
+   },
+   "0x0A": {
+    "handler": 45044,
+    "cmps": [],
+    "req": [],
+    "resp": [
+     1,
+     2
+    ],
+    "reads": [
+     "0x04FA",
+     "0x04FB"
+    ],
+    "writes": [],
+    "to_err": false
+   },
+   "0x0B": {
+    "handler": 45080,
+    "cmps": [],
+    "req": [],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F0"
+    ],
+    "to_err": false
+   },
+   "0x0C": {
+    "handler": 45106,
+    "cmps": [],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F2",
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x0D": {
+    "handler": 45194,
+    "cmps": [],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F2",
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x11": {
+    "handler": 45284,
+    "cmps": [],
+    "req": [
+     2,
+     3
+    ],
+    "resp": [
+     2,
+     3
+    ],
+    "reads": [
+     "0x0368",
+     "0x0369",
+     "energy_HH",
+     "energy_HL"
+    ],
+    "writes": [
+     "0x027C",
+     "0x028C",
+     "0x029C"
+    ],
+    "to_err": false
+   },
+   "0x12": {
+    "handler": 46022,
+    "cmps": [
+     5
+    ],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [
+     "0x08BA",
+     "0x08BB"
+    ],
+    "writes": [
+     "0x04F2"
+    ],
+    "to_err": false
+   },
+   "0x13": {
+    "handler": 46142,
+    "cmps": [],
+    "req": [],
+    "resp": [
+     1,
+     2
+    ],
+    "reads": [
+     "0x0510",
+     "0x0516"
+    ],
+    "writes": [
+     "0x04F2",
+     "0x04F4",
+     "0x0515",
+     "0x0516",
+     "0x0518",
+     "0x051B"
+    ],
+    "to_err": false
+   },
+   "0x14": {
+    "handler": 46236,
+    "cmps": [],
+    "req": [
+     3
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x16": {
+    "handler": 45284,
+    "cmps": [],
+    "req": [
+     2,
+     3
+    ],
+    "resp": [
+     2,
+     3
+    ],
+    "reads": [
+     "0x0368",
+     "0x0369",
+     "energy_HH",
+     "energy_HL"
+    ],
+    "writes": [
+     "0x027C",
+     "0x028C",
+     "0x029C"
+    ],
+    "to_err": false
+   },
+   "0x17": {
+    "handler": 46600,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [
+     2
+    ],
+    "reads": [
+     "0x04FC"
+    ],
+    "writes": [],
+    "to_err": false
+   },
+   "0x18": {
+    "handler": 46618,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [
+     1,
+     2
+    ],
+    "reads": [
+     "0x04F8"
+    ],
+    "writes": [],
+    "to_err": false
+   },
+   "0x19": {
+    "handler": 46640,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [
+     1,
+     2,
+     3
+    ],
+    "reads": [
+     "0x049D",
+     "0x049E",
+     "0x049F"
+    ],
+    "writes": [],
+    "to_err": false
+   },
+   "0x1A": {
+    "handler": 46664,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     3,
+     4,
+     6,
+     16,
+     18
+    ],
+    "resp": [
+     0,
+     1
+    ],
+    "reads": [
+     "0x0376",
+     "0x0378",
+     "0x03BE"
+    ],
+    "writes": [
+     "0x03BE",
+     "0x04F8",
+     "baud_idx",
+     "uart_cfg"
+    ],
+    "to_err": false
+   },
+   "0x1B": {
+    "handler": 46852,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [],
+    "to_err": false
+   },
+   "0x1C": {
+    "handler": 46864,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [],
+    "to_err": false
+   },
+   "0x1D": {
+    "handler": 46876,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [
+     2
+    ],
+    "reads": [
+     "0x02A8"
+    ],
+    "writes": [],
+    "to_err": false
+   },
+   "0x1E": {
+    "handler": 46894,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [
+     0,
+     1,
+     2
+    ],
+    "reads": [
+     "0x0580"
+    ],
+    "writes": [
+     "0x04F4"
+    ],
+    "to_err": false
+   },
+   "0x1F": {
+    "handler": 46924,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [
+     0,
+     1
+    ],
+    "reads": [],
+    "writes": [
+     "0x04F2",
+     "0x04F4",
+     "0x04FA"
+    ],
+    "to_err": false
+   },
+   "0x20": {
+    "handler": 46986,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [
+     0,
+     1
+    ],
+    "reads": [],
+    "writes": [
+     "0x04F2",
+     "0x04F6"
+    ],
+    "to_err": false
+   },
+   "0x21": {
+    "handler": 47018,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [
+     0,
+     1,
+     2
+    ],
+    "reads": [
+     "baud_idx",
+     "net_addr2"
+    ],
+    "writes": [
+     "0x04F2",
+     "0x04F6"
+    ],
+    "to_err": false
+   },
+   "0x26": {
+    "handler": 47056,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [],
+    "reads": [],
+    "writes": [],
+    "to_err": false
+   },
+   "0x27": {
+    "handler": 47076,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     3,
+     4,
+     6
+    ],
+    "resp": [
+     0,
+     1
+    ],
+    "reads": [],
+    "writes": [
+     "0x04F6"
+    ],
+    "to_err": false
+   },
+   "0x29": {
+    "handler": 47124,
+    "cmps": [],
+    "req": [
+     0,
+     2,
+     4,
+     6
+    ],
+    "resp": [],
+    "reads": [
+     "0x03E9",
+     "0x03F9",
+     "0x0409",
+     "meas_phaseA",
+     "meas_phaseB",
+     "meas_phaseC"
+    ],
+    "writes": [],
+    "to_err": false
+   }
+  },
+  "sub_table": 44568
+ }
+}

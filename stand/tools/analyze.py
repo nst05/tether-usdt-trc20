@@ -64,6 +64,14 @@ for v,n in entries:
     if CODE_LO<=v<=CODE_HI:
         queue.append(v); funcs.add(v)
 
+# Точки входа, достижимые только через косвенные/таймерные диспетчеры
+# (add &TAIV,pc; периодический опрос кнопок; вызовы через указатель).
+SEEDS = [0x2F80, 0x2F1E, 0x3384, 0x4466, 0x4D76, 0x50B4, 0x537E,
+         0x602E, 0x5FBE, 0x604C, 0x60F4, 0x6114, 0x7EE0]
+for v in SEEDS:
+    if CODE_LO<=v<=CODE_HI:
+        queue.append(v); funcs.add(v)
+
 # also seed from any word in flash that points to a plausible function start?
 # do main pass first
 jumptables={}
