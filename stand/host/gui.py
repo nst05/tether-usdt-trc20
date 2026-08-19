@@ -223,6 +223,22 @@ if QtWidgets:
                 self._diag_buttons.append(b)
             lay.addWidget(g1)
 
+            # Статус доступа
+            gs = QtWidgets.QGroupBox("Уровень доступа")
+            vs = QtWidgets.QFormLayout(gs)
+            self.lbl_level = QtWidgets.QLabel("не авторизован")
+            self.lbl_status = QtWidgets.QLabel("—")
+            self.lbl_service = QtWidgets.QLabel("аппаратный (P2.5) — см. ACCESS.md")
+            self.lbl_service.setWordWrap(True)
+            self.lbl_service.setStyleSheet("color:#888")
+            bt_status = QtWidgets.QPushButton("Прочитать статус-слово")
+            bt_status.clicked.connect(self._do_status)
+            vs.addRow("Пароль:", self.lbl_level)
+            vs.addRow("Статус 0x04F4:", self.lbl_status)
+            vs.addRow("Сервис (ур.3):", self.lbl_service)
+            vs.addRow(bt_status)
+            lay.addWidget(gs)
+
             # Авторизация
             g2 = QtWidgets.QGroupBox("Авторизация (штатный пароль)")
             f2 = QtWidgets.QFormLayout(g2)
@@ -357,6 +373,16 @@ if QtWidgets:
             self.worker.call(f"Память 0x{addr:04X}/{length}",
                              lambda d: d.memory_read(addr, length, mode).hex(' '))
 
+        def _do_status(self):
+            def fn(d):
+                w = d.read_status_flags()
+                # Ответ: байт0 = 0x04F4 (мл.), байт1 = 0x04F5 (ст.). Бит 0x0400
+                # (0x04F4.10, «активный режим») лежит в старшем байте.
+                hi = w[1] if len(w) >= 2 else 0
+                active = "активный режим" if (hi & 0x04) else "режим ожидания"
+                return w.hex(' ') + f"  ({active})"
+            self.worker.call("Статус", fn)
+
         def _do_raw(self):
             try:
                 data = self._parse_hex(self.ed_raw.text())
@@ -376,6 +402,16 @@ if QtWidgets:
 
         def _on_result(self, title, text):
             self.results.append(f"<b>{title}:</b> {text}")
+            # Обновление панели статуса доступа по результатам команд.
+            if title == "Авторизация":
+                lvl = self.cb_level.currentData()
+                self.lbl_level.setText(f"уровень {lvl} (активен)")
+                self.lbl_level.setStyleSheet("color:#2e7d32; font-weight:bold")
+            elif title == "Выход":
+                self.lbl_level.setText("не авторизован")
+                self.lbl_level.setStyleSheet("")
+            elif title == "Статус":
+                self.lbl_status.setText(text)
 
         def _on_error(self, text):
             self.results.append(f"<span style='color:#c0392b'><b>Ошибка:</b> {text}</span>")
@@ -394,6 +430,10 @@ if QtWidgets:
                 b.setEnabled(enable)
             for name in ("bt_login", "bt_logout", "bt_memrd", "bt_raw"):
                 getattr(self, name).setEnabled(enable)
+            if not connected:
+                self.lbl_level.setText("не авторизован")
+                self.lbl_level.setStyleSheet("")
+                self.lbl_status.setText("—")
 
         def closeEvent(self, ev):
             self.worker.shutdown()
