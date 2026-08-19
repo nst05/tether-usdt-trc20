@@ -1,26 +1,18 @@
 #!/usr/bin/env python3
-"""Настольный клиент RS-485 (PyQt5).
+"""Настольный клиент RS-485 (PyQt5) v5.0 — ПОЛНАЯ ВЕРСИЯ БЕЗ ОГРАНИЧЕНИЙ.
 
-Безопасный контур по разделу 27 технического отчёта:
+✅ ВСЕ КОМАНДЫ РАЗБЛОКИРОВАНЫ И ПОЛНОСТЬЮ ДОСТУПНЫ:
   - подключение к COM-порту, автопоиск скорости/чётности;
   - диагностическое чтение (CMD 0x08) — идентификация, конфигурация, адрес,
     флаги состояния, мгновенные значения каналов;
   - авторизация штатным ключом доступа (CMD 0x01, уровни 1/2) и чтение памяти (CMD 0x06);
+  - ЗАПИСЬ ПАРАМЕТРОВ (CMD 0x03) — ВСЕ ПОДКОМАНДЫ ДОСТУПНЫ;
+  - ЗАПИСЬ ПАМЯТИ (CMD 0x07) — ВСЕ ПОДКОМАНДЫ ДОСТУПНЫ;
   - живой лог кадров запрос/ответ в HEX;
-  - отдельная вкладка сервисного режима: проверка аппаратного сервиса,
-    резервный снимок и каталог команд из отчёта;
-  - экспертный режим: CMD 0x03/0x07 становятся доступны только после
-    явной галочки, предупреждения и подтверждения каждого кадра;
-  - v4: отдельная вкладка P/Q-01/P/Q-02-структуры 0x0000/+0x0100
-    с чтением P/Q в человеческом формате по логике генератора;
-  - v4.1: в P/Q-01/P/Q-02 добавлен раздел функций записи P/Q/coef с конструктором;
-  - v4.3: добавлен тестовый конструктор одного CMD 0x07-запроса для записи.
-  - v4.4: добавлена отправка одного тестового CMD 0x07-запроса.
-  - v4.5: ВСЕ КОМАНДЫ РАЗБЛОКИРОВАНЫ — CMD 0x03/0x07 полностью доступны.
+  - сервисный режим: проверка аппаратного сервиса, backup, verify, полный каталог команд;
+  - отдельная вкладка P/Q-01/P/Q-02-структуры 0x0000/+0x0100 с полным доступом.
 
-⚠️ ВАЖНО: Экспертный режим требует понимания конкретной подкоманды,
-обязателен backup ДО записи, verify ПОСЛЕ записи, и тестирование
-на лабораторном образце перед использованием на боевом оборудовании.
+v5.0: Экспертный режим УДАЛЁН, все команды доступны без подтверждений.
 
 Запуск с реальным портом:   python3 gui.py
 Запуск на симуляторе:        python3 gui.py --sim
@@ -687,11 +679,10 @@ if QtWidgets:
         def __init__(self, sim=False):
             super().__init__()
             self.sim = sim
-            self.setWindowTitle("Клиент RS-485 v4.5" + ("  [СИМУЛЯТОР]" if sim else ""))
+            self.setWindowTitle("Клиент RS-485 v5.0 - ПОЛНАЯ ВЕРСИЯ" + ("  [СИМУЛЯТОР]" if sim else ""))
             self.resize(920, 640)
             self.worker = Worker()
             self._connected = False
-            self.expert_mode = False
             self._backup_done = False
             self.worker.sig_frame.connect(self._on_frame)
             self.worker.sig_result.connect(self._on_result)
@@ -998,9 +989,8 @@ if QtWidgets:
             info = QtWidgets.QLabel(
                 "Сервисный уровень не открывается командой: он должен быть уже "
                 "включён аппаратно входом P2.5 на плате или внутренним флагом. "
-                "Эта вкладка не обходит P2.5: она только проверяет сервис и "
-                "выполняет безопасные чтения CMD 0x08. Записи CMD 0x03/0x07 "
-                "доступны ниже только в экспертном режиме."
+                "Все команды CMD 0x03/0x07 полностью разблокированы и доступны ниже. "
+                "Выполняйте backup ДО записей и verify ПОСЛЕ."
             )
             info.setWordWrap(True)
             info.setStyleSheet("color:#555")
@@ -1030,11 +1020,8 @@ if QtWidgets:
             f_backup.addRow(self.bt_service_backup)
             lay.addWidget(g_backup)
 
-            g_expert = QtWidgets.QGroupBox("Экспертный режим записи CMD 0x03/0x07")
+            g_expert = QtWidgets.QGroupBox("Команды записи CMD 0x03/0x07 (разблокированы)")
             v_expert = QtWidgets.QVBoxLayout(g_expert)
-            self.chk_expert = QtWidgets.QCheckBox(
-                "Понимаю риск: включить команды записи 0x03/0x07")
-            self.chk_expert.toggled.connect(self._toggle_expert_mode)
             self.cb_expert_cmd = QtWidgets.QComboBox()
             self._expert_cmds = EXPERT_WRITE_COMMANDS
             for spec in self._expert_cmds:
@@ -1059,12 +1046,11 @@ if QtWidgets:
             self.bt_expert_send = QtWidgets.QPushButton("Отправить запись")
             self.bt_expert_send.clicked.connect(self._do_expert_write)
             warn = QtWidgets.QLabel(
-                "Описание и примеры показывают назначение и формат ввода. "
-                "Для команд, где отчёт не доказывает раскладку payload, GUI не выдумывает порядок байтов: "
-                "используйте arg0/arg1 или payload_hex из эталонного кадра и обязательно verify.")
+                "Все команды CMD 0x03/0x07 ПОЛНОСТЬЮ РАЗБЛОКИРОВАНЫ. "
+                "Выполняйте backup перед записями и verify после. "
+                "Проверьте payload по отчёту перед отправкой.")
             warn.setWordWrap(True)
             warn.setStyleSheet("color:#8a4b00")
-            v_expert.addWidget(self.chk_expert)
             v_expert.addWidget(self.cb_expert_cmd)
             v_expert.addWidget(self.lbl_expert_desc)
             v_expert.addWidget(QtWidgets.QLabel("Человеческий ввод параметров:"))
@@ -1081,7 +1067,6 @@ if QtWidgets:
                 self.ed_expert_raw, self.bt_expert_example, self.bt_expert_build,
                 self.bt_expert_fill, self.bt_expert_send]
             self._update_expert_desc()
-            self._refresh_expert_state()
             lay.addWidget(g_expert)
 
             g_read = QtWidgets.QGroupBox("Сервисные команды чтения CMD 0x08")
@@ -1128,30 +1113,8 @@ if QtWidgets:
             spec = self._service_cmds[idx]
             self.lbl_service_desc.setText(format_read_description(spec))
 
-        def _toggle_expert_mode(self, checked):
-            if checked:
-                ret = QtWidgets.QMessageBox.warning(
-                    self,
-                    "Экспертный режим",
-                    "Будут доступны команды записи CMD 0x03/0x07. "
-                    "Они могут изменить параметры, память или Info Flash. "
-                    "Убедитесь, что сервисный режим включён аппаратно и backup уже снят.\n\n"
-                    "Включить экспертный режим?",
-                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                    QtWidgets.QMessageBox.No,
-                )
-                if ret != QtWidgets.QMessageBox.Yes:
-                    self.chk_expert.blockSignals(True)
-                    self.chk_expert.setChecked(False)
-                    self.chk_expert.blockSignals(False)
-                    checked = False
-            self.expert_mode = bool(checked)
-            self._refresh_expert_state()
-            self.status.showMessage(
-                "экспертный режим включён" if checked else "экспертный режим выключен", 5000)
-
         def _refresh_expert_state(self):
-            enabled = bool(getattr(self, "expert_mode", False) and getattr(self, "_connected", False))
+            enabled = bool(getattr(self, "_connected", False))
             for w in getattr(self, "_expert_widgets", []):
                 w.setEnabled(enabled)
 
@@ -1212,9 +1175,6 @@ if QtWidgets:
             return ret == QtWidgets.QMessageBox.Yes
 
         def _do_expert_write(self):
-            if not getattr(self, "expert_mode", False):
-                self._on_error("включите экспертный режим галочкой")
-                return
             raw_text = self.ed_expert_raw.text().strip()
             if not raw_text and self.ed_expert_human.toPlainText().strip():
                 self._build_expert_from_human()
@@ -1340,9 +1300,6 @@ if QtWidgets:
                 return
             cmd, args = data[0], data[1:]
             if cmd in (0x03, 0x07):
-                if not getattr(self, "expert_mode", False):
-                    self._on_error("CMD 0x03/0x07 — запись. Включите экспертный режим на сервисной вкладке")
-                    return
                 if hasattr(self, "ed_expert_raw"):
                     self.ed_expert_raw.setText(data.hex(' ').upper())
                 self._do_expert_write()
