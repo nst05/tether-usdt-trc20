@@ -103,6 +103,9 @@ class Stand:
         self.address = address
         self.retries = retries
         self._timeout = timeout
+        # Необязательный колбэк логирования кадров: on_frame(direction, frame_bytes),
+        # direction — 'TX' или 'RX'. Используется GUI для живого лога обмена.
+        self.on_frame = None
         self._serial = serial.Serial(
             port=port,
             baudrate=baudrate,
@@ -127,11 +130,15 @@ class Stand:
 
     # ---- транспорт -------------------------------------------------
 
-    def transfer(self, payload: bytes, expect: int | None = None) -> bytes:
+    def transfer(self, payload: bytes, expect: int | None = None,
+                 ack: bool = False) -> bytes:
         """Отправляет кадр и возвращает тело ответа без адреса и CRC.
 
         `expect` — ожидаемая полная длина ответа; None означает «читать до
         межсимвольной паузы».
+        `ack` — ждать квитанцию: тело из одного байта трактуется как код
+        результата (0 — успех, иначе ResultError). Для команд чтения ack=False,
+        и тело возвращается как данные.
         """
         if len(payload) + 2 > MAX_FRAME:
             raise ValueError(f"кадр длиннее {MAX_FRAME} байт")
@@ -144,22 +151,28 @@ class Stand:
             self._serial.reset_input_buffer()
             self._serial.write(frame)
             self._serial.flush()
+            if self.on_frame:
+                self.on_frame('TX', frame)
 
             reply = self._read_reply(expect)
+            if self.on_frame and reply:
+                self.on_frame('RX', reply)
             if not reply:
                 last = ProtocolError("нет ответа от стенда")
                 continue
             if not check(reply):
                 last = ProtocolError(f"ошибка CRC в ответе: {reply.hex(' ')}")
                 continue
-            if reply[0] != payload[0]:
+            # На широковещательный запрос (0x00) прибор отвечает своим адресом,
+            # поэтому проверяем совпадение только для адресных запросов.
+            if payload[0] != ADDR_BROADCAST and reply[0] != payload[0]:
                 last = ProtocolError(
                     f"чужой адрес в ответе: {reply[0]:#04x} вместо {payload[0]:#04x}")
                 continue
 
             body = reply[1:-2]
-            # Квитанция: один байт кода результата.
-            if len(body) == 1 and body[0] & 0x7F != RESULT_OK:
+            # Квитанция: один байт кода результата (только для ack-команд).
+            if ack and len(body) == 1 and body[0] & 0x7F != RESULT_OK:
                 raise ResultError(body[0])
             return body
 
@@ -184,7 +197,7 @@ class Stand:
 
     def test_link(self) -> bool:
         """CMD 0x00 — тест канала связи (обработчик 0x8498, длина запроса 4)."""
-        self.transfer(bytes((self.address, 0x00)), expect=4)
+        self.transfer(bytes((self.address, 0x00)), expect=4, ack=True)
         return True
 
     def open_channel(self, password: bytes, level: int = 1) -> None:
@@ -193,11 +206,11 @@ class Stand:
             raise ValueError("уровень доступа: 1 или 2")
         if len(password) != 6:
             raise ValueError("пароль ровно 6 байт")
-        self.transfer(bytes((self.address, 0x01, level)) + password, expect=4)
+        self.transfer(bytes((self.address, 0x01, level)) + password, expect=4, ack=True)
 
     def close_channel(self) -> None:
         """CMD 0x02 — закрытие канала (0x8590, длина запроса 4)."""
-        self.transfer(bytes((self.address, 0x02)), expect=4)
+        self.transfer(bytes((self.address, 0x02)), expect=4, ack=True)
 
     def read_identity(self) -> Identity:
         """CMD 0x08/0x00 — серийный номер и дата выпуска (0xAEC0, 7 байт из INFO 0x1080)."""
@@ -213,8 +226,45 @@ class Stand:
             raise ProtocolError(f"ожидался 1 байт, получено {len(body)}")
         return body[0]
 
+    def read_config(self) -> bytes:
+        """CMD 0x08/0x02 — базовая конфигурация 0x04E0-0x04E3 (0xAF2C). Только чтение."""
+        return self.transfer(bytes((self.address, 0x08, 0x02)))
+
+    def read_status_flags(self) -> bytes:
+        """CMD 0x08/0x09 — слово состояния 0x04F4/0x04F5 + режим (0xAFC2). Только чтение."""
+        return self.transfer(bytes((self.address, 0x08, 0x09)))
+
+    def read_phase_values(self) -> tuple[int, int, int]:
+        """CMD 0x08/0x29 — мгновенные значения фаз A/B/C (0xB814), по 2 байта BE."""
+        body = self.transfer(bytes((self.address, 0x08, 0x29)))
+        if len(body) < 6:
+            raise ProtocolError(f"ожидалось 6 байт, получено {len(body)}")
+        return (int.from_bytes(body[0:2], "big"),
+                int.from_bytes(body[2:4], "big"),
+                int.from_bytes(body[4:6], "big"))
+
+    # ---- авторизованное чтение (требует открытого канала) -------------
+
+    def login(self, password: bytes, level: int = 1) -> None:
+        """Открывает канал штатным паролем. Синоним open_channel для GUI."""
+        self.open_channel(password, level)
+
+    def logout(self) -> None:
+        """Сбрасывает права доступа. Синоним close_channel."""
+        self.close_channel()
+
+    def memory_read(self, addr: int, length: int, mode: int = 0x02) -> bytes:
+        """CMD 0x06 — чтение памяти/таблиц (0xA7C6). MODE 0x01/0x02, длина блока <= 0x10.
+
+        Штатная команда чтения; записи (CMD 0x03/0x07) в клиенте не реализованы.
+        """
+        if not (1 <= length <= 0x10):
+            raise ValueError("длина блока 1..16 байт")
+        req = bytes((self.address, 0x06, mode, (addr >> 8) & 0xFF, addr & 0xFF, length))
+        return self.transfer(req)
+
     def raw(self, cmd: int, *args: int, expect: int | None = None) -> bytes:
-        """Произвольная команда — для разбора ещё не описанных подкоманд."""
+        """Произвольная команда — для разбора ещё не описанных подкоманд (только чтение)."""
         return self.transfer(bytes((self.address, cmd, *args)), expect=expect)
 
 
