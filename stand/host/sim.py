@@ -79,6 +79,22 @@ class SimSerial:
             elif sub == 0x29:
                 b = b"".join(v.to_bytes(2, "big") for v in SIM_PHASES)
                 self._reply(r, b)
+            elif sub == 0x07:                 # расширенная конфигурация
+                self._reply(r, SIM_CONFIG + bytes((0x00, 0x00)))
+            elif sub == 0x0A:
+                self._reply(r, bytes((0x00, 0x00, 0x00, 0x00)))
+            elif sub in (0x17, 0x1D):
+                self._reply(r, bytes((SIM_ADDR,)))
+            elif sub == 0x18:
+                self._reply(r, bytes((0x00, 0x00)))
+            elif sub == 0x19:
+                self._reply(r, bytes((0x00, 0x00, 0x00)))
+            elif sub == 0x1B:
+                self._reply(r, bytes(8))
+            elif sub == 0x1C:
+                self._reply(r, bytes(4))
+            elif sub == 0x1F:                 # служебная область (сервис активен в СИМ)
+                self._reply(r, bytes(12))
             else:
                 self._ack(r, RESULT_BAD_REQUEST)
         elif cmd == 0x06:                     # чтение памяти — вернём нули нужной длины
