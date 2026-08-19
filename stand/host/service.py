@@ -173,32 +173,64 @@ class ServiceSession:
         self.dev.close_channel()
 
     # ---- определение сервисного уровня ----
-    def probe_service(self, probe_request: tuple[int, ...] = (0x08, 0x1F)) -> bool | None:
-        """Функциональная проверка сервисного уровня.
+    def service_state(self, aggressive: bool = False) -> str:
+        """Определение состояния сервисного уровня — честно, по возможностям прибора.
 
-        Шлёт сервисно-зависимую операцию чтения и трактует ответ:
-          данные            -> сервис активен (True),
-          ошибка доступа 03 -> сервис неактивен (False),
-          иное              -> определить нельзя (None).
+        В прошивке НЕТ сервисной команды чтения: сервисный бит 0x08B8.8 гейтит
+        только записи и в ответ не попадает. Поэтому:
 
-        Важно: чистого read-only признака сервиса в протоколе может не быть —
-        достоверный источник состояния P2.5 аппаратный. По умолчанию берётся
-        08 1F (чтение служебной области, требует расширенного режима); при
-        необходимости передайте свою заведомо сервисную команду чтения.
+          * 'off'      — сервисная команда отклонена по доступу (код 03/01),
+                         прибор точно НЕ в сервисе; запись не производилась;
+          * 'unknown'  — безопасно подтвердить «включён» нельзя;
+          * 'on'       — только при aggressive=True и ценой побочного эффекта.
+
+        Безопасный режим (aggressive=False) никогда не вызывает запись: он
+        возвращает 'off' лишь если удаётся получить отказ по доступу без риска,
+        иначе 'unknown'. Достоверное «включён» подтверждается результатом первой
+        верифицированной операции (backup → safe_write → сверка), а не пробой.
+
+        aggressive=True шлёт сервисную команду CMD 03/0A: при выключенном сервисе
+        она безвредно вернёт код 03, но при ВКЛЮЧЁННОМ — выполнит операцию
+        (побочный эффект, флаг 0x04F6.8). Использовать только осознанно.
         """
+        if not aggressive:
+            self._note("service_state: безопасный режим — 'on' подтверждается "
+                       "только верифицированной операцией")
+            return 'unknown'
         try:
-            self.dev.raw(*probe_request)
-            self._note(f"probe_service {tuple(hex(x) for x in probe_request)} -> активен")
+            self.dev.raw(0x03, 0x0A)          # длина 5; сервисно-зависимая
+            self._note("service_state(aggressive) -> on (ВНИМАНИЕ: побочный эффект)")
+            return 'on'
+        except ResultError as e:
+            state = 'off' if (e.code & 0x7F) in (ERR_ACCESS, ERR_BAD_REQUEST) else 'unknown'
+            self._note(f"service_state(aggressive) -> {state} (код {e.code:#04x})")
+            return state
+        except ProtocolError as e:
+            self._note(f"service_state -> нет ответа ({e})")
+            return 'unknown'
+
+    def confirm_service_by_operation(self, operation: Callable[[Stand], None],
+                                     verify_read: tuple[int, ...],
+                                     expected: bytes) -> bool:
+        """Достоверное подтверждение сервиса: выполнить операцию и сверить.
+
+        Если операция прошла и обратное чтение совпало — сервис был включён
+        (возвращает True). Если прибор отклонил по доступу — сервис выключен,
+        запись не выполнялась (возвращает False). Требует backup() в сессии.
+        Операцию задавайте идемпотентной (запись того же значения), чтобы
+        подтверждение не меняло состояние прибора.
+        """
+        if not self._have_backup:
+            raise ServiceError("подтверждение записью запрещено без backup()")
+        try:
+            self.safe_write(operation, verify_read, expected,
+                            description="подтверждение сервиса идемпотентной операцией")
             return True
         except ResultError as e:
-            if e.code & 0x7F == ERR_ACCESS:
-                self._note("probe_service -> неактивен (ошибка доступа 03)")
+            if (e.code & 0x7F) in (ERR_ACCESS, ERR_BAD_REQUEST):
+                self._note("confirm_service -> сервис выключен (запись отклонена)")
                 return False
-            self._note(f"probe_service -> не определено ({e})")
-            return None
-        except ProtocolError as e:
-            self._note(f"probe_service -> нет ответа ({e})")
-            return None
+            raise
 
     # ---- снятие резервной копии ----
     def backup(self, reads: dict[str, tuple[int, ...]] | None = None,
@@ -278,7 +310,7 @@ def demo(dev: Stand):
     """Демонстрация безопасного порядка работы (без реальных записей)."""
     with ServiceSession(dev, dry_run=True) as s:
         print("связь:", "ok" if dev.test_link() else "нет")
-        print("сервис активен:", s.probe_service())
+        print("состояние сервиса (безопасно):", s.service_state())
         snap = s.backup()
         print("снимок:", json.dumps(snap.data, ensure_ascii=False, indent=1))
         # Пример штатной верифицированной записи в dry_run (ничего не пишется):
