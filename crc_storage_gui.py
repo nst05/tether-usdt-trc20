@@ -735,12 +735,25 @@ class MainWindow(QtWidgets.QMainWindow):
 
         layout.addLayout(grid)
 
-        # ── Смещение (опционально) ────────────────────────────────────
+        # ── Микросхема и смещение ─────────────────────────────────────
         offset_layout = QtWidgets.QHBoxLayout()
-        offset_layout.addWidget(QtWidgets.QLabel("Смещение в EEPROM (опционально):"))
-        self.i2c_offset_input = QtWidgets.QLineEdit("0x0000")
+        offset_layout.addWidget(QtWidgets.QLabel("Микросхема:"))
+        self.i2c_chip_combo = QtWidgets.QComboBox()
+        self.i2c_chip_combo.addItems(["24C256", "24C128", "24C64",
+                                      "24C32", "24C16", "24C08"])
+        self.i2c_chip_combo.setMaximumWidth(140)
+        offset_layout.addWidget(self.i2c_chip_combo)
+
+        offset_layout.addSpacing(16)
+        offset_layout.addWidget(QtWidgets.QLabel("Смещение блока:"))
+        self.i2c_offset_input = QtWidgets.QLineEdit("0x01C1")
         self.i2c_offset_input.setMaximumWidth(150)
         offset_layout.addWidget(self.i2c_offset_input)
+
+        self.i2c_probe_button = QtWidgets.QPushButton("Определить чип")
+        self.i2c_probe_button.clicked.connect(self.i2c_probe_chip)
+        offset_layout.addWidget(self.i2c_probe_button)
+
         offset_layout.addStretch()
         layout.addLayout(offset_layout)
 
@@ -859,6 +872,52 @@ class MainWindow(QtWidgets.QMainWindow):
             self.i2c_hex_display.setText("✗ Ошибка")
             self.i2c_crc_display.setText("✗ Ошибка")
 
+    def i2c_probe_chip(self):
+        """Определить схему адресации микросхемы опросом шины"""
+        if I2CWriter is None:
+            self.update_i2c_status("✗ i2cpy не установлена. Установите: pip install i2cpy", "error")
+            return
+
+        try:
+            offset = parse_offset(self.i2c_offset_input.text())
+        except ValueError as e:
+            self.update_i2c_status(f"✗ {e}", "error")
+            return
+
+        self.i2c_probe_button.setEnabled(False)
+        writer = I2CWriter(offset=offset, chip=self.i2c_chip_combo.currentText())
+
+        try:
+            writer.open_programmer()
+            report = writer.probe()
+
+            lines = ["Опрос микросхемы по смещению 0x%04X:" % offset, ""]
+            for bits in (8, 16):
+                data = report[str(bits)]
+                shown = data.hex(" ").upper() if data else "ошибка чтения"
+                mark = "стабильно" if report[f"stable{bits}"] else "НЕСТАБИЛЬНО"
+                lines.append(f"  адрес {bits:>2} бит: {shown}  [{mark}]")
+
+            lines.append("")
+            if report["recommend"]:
+                lines.append(f"➜ Рекомендуется: {report['recommend']}")
+                idx = self.i2c_chip_combo.findText(report["recommend"])
+                if idx >= 0:
+                    self.i2c_chip_combo.setCurrentIndex(idx)
+                    lines.append("  (выбрано автоматически)")
+                self.update_i2c_status("\n".join(lines), "success")
+            else:
+                lines.append("➜ Определить не удалось — обе схемы нестабильны.")
+                lines.append("  Проверьте питание, подтяжки SDA/SCL и контакты.")
+                self.update_i2c_status("\n".join(lines), "error")
+
+        except Exception as e:
+            self.update_i2c_status(f"✗ Ошибка опроса: {e}", "error")
+
+        finally:
+            writer.close_programmer()
+            self.i2c_probe_button.setEnabled(True)
+
     def i2c_write_and_verify(self):
         """Запись в EEPROM с проверкой"""
         if I2CWriter is None:
@@ -876,7 +935,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         try:
             offset = parse_offset(self.i2c_offset_input.text())
-            writer = I2CWriter(offset=offset)
+            writer = I2CWriter(offset=offset,
+                               chip=self.i2c_chip_combo.currentText())
 
             def progress_callback(percent, text):
                 self.i2c_progress.setValue(percent)
