@@ -1140,8 +1140,13 @@ class srt29Tab(QtWidgets.QWidget):
 # =============================
 # Main Window
 # =============================
+# Полный состав вкладок. Сборка без 231-AT-01 передаёт сюда укороченный
+# список — код вкладок при этом не дублируется.
+ALL_TABS = ("ART", "AR", "231-AT-01")
+
+
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, tabs_wanted=ALL_TABS):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.setMinimumSize(1040, 800)
@@ -1177,27 +1182,37 @@ class MainWindow(QtWidgets.QMainWindow):
         tabs = QtWidgets.QTabWidget()
         tabs.setDocumentMode(True)
 
-        self.tab_srt = srt03Tab()
-        self.tab_ar = srtotalsTab()
-        self.tab_srt29 = srt29Tab()
+        self.tab_srt = None
+        self.tab_ar = None
+        self.tab_srt29 = None
 
-        if TAB_ICON_srt03:
-            tabs.addTab(self.tab_srt, QtGui.QIcon(resource_path(TAB_ICON_srt03)), "ART")
-        else:
-            tabs.addTab(self.tab_srt, "ART")
+        # Виджет вкладки создаётся только если она нужна: иначе он повис бы
+        # без родителя и всплыл отдельным окном.
+        if "ART" in tabs_wanted:
+            self.tab_srt = srt03Tab()
+            icon_path = resource_path(TAB_ICON_srt03) if TAB_ICON_srt03 else None
+            if icon_path:
+                tabs.addTab(self.tab_srt, QtGui.QIcon(icon_path), "ART")
+            else:
+                tabs.addTab(self.tab_srt, "ART")
 
-        if TAB_ICON_AR:
-            tabs.addTab(self.tab_ar, QtGui.QIcon(resource_path(TAB_ICON_AR)), "AR")
-        else:
-            tabs.addTab(self.tab_ar, "AR")
+        if "AR" in tabs_wanted:
+            self.tab_ar = srtotalsTab()
+            icon_path = resource_path(TAB_ICON_AR) if TAB_ICON_AR else None
+            if icon_path:
+                tabs.addTab(self.tab_ar, QtGui.QIcon(icon_path), "AR")
+            else:
+                tabs.addTab(self.tab_ar, "AR")
 
-        tabs.addTab(self.tab_srt29, "231-AT-01")
+        if "231-AT-01" in tabs_wanted:
+            self.tab_srt29 = srt29Tab()
+            tabs.addTab(self.tab_srt29, "231-AT-01")
 
         central_l.addWidget(tabs)
         self.setCentralWidget(central)
 
 
-def main() -> int:
+def main(tabs_wanted=ALL_TABS) -> int:
     app = QtWidgets.QApplication(sys.argv)
     apply_pretty_ui(app)
 
@@ -1223,7 +1238,7 @@ def main() -> int:
     if splash:
         splash.step("Подготовка вкладок...", 55)
 
-    win = MainWindow()
+    win = MainWindow(tabs_wanted)
     if not icon.isNull():
         win.setWindowIcon(icon)
 
