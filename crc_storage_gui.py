@@ -373,6 +373,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.worker = None
         self.values = []
         self.selected_row = -1
+        self.updating_table = False  # Флаг: обновляем ли таблицу из кода
         self.init_ui()
         self.load_last_file()
 
@@ -414,7 +415,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setColumnWidth(2, 120)
         self.table.setColumnWidth(3, 100)
         self.table.setColumnWidth(4, 100)
-        self.table.itemSelectionChanged.connect(self.on_value_selected)
+        self.table.itemChanged.connect(self.on_value_edited)
         values_layout.addWidget(self.table)
 
         # ── Нижняя панель (редактирование) ────────────────────────────
@@ -925,47 +926,94 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def update_table(self):
         """Обновляет таблицу"""
+        # Временно отключаем сигнал itemChanged чтобы избежать рекурсии
+        self.table.itemChanged.disconnect()
         self.table.setRowCount(len(self.values))
 
         for row, item in enumerate(self.values):
+            # Позиция (не редактируется)
             pos_cell = QtWidgets.QTableWidgetItem(f"0x{item['pos']:06X}")
             pos_cell.setFlags(pos_cell.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 0, pos_cell)
 
+            # Значение (РЕДАКТИРУЕТСЯ — кликни и меняй)
             val_cell = QtWidgets.QTableWidgetItem(f"{item['value']:.2f}")
-            val_cell.setFlags(val_cell.flags() & ~Qt.ItemIsEditable)
+            val_cell.setFlags(val_cell.flags() | Qt.ItemIsEditable)
             self.table.setItem(row, 1, val_cell)
 
-            # HEX представление
+            # HEX (обновляется автоматически при редактировании)
             hex_val = int(item['value'] * SCALE)
             hex_cell = QtWidgets.QTableWidgetItem(f"0x{hex_val:08X}")
             hex_cell.setFlags(hex_cell.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 2, hex_cell)
 
+            # CRC (обновляется автоматически)
             crc_cell = QtWidgets.QTableWidgetItem(f"0x{item['crc']:04X}")
             crc_cell.setFlags(crc_cell.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 3, crc_cell)
 
+            # Статус
             status_cell = QtWidgets.QTableWidgetItem("✓ OK" if item['valid'] else "✗ ERROR")
             status_cell.setFlags(status_cell.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 4, status_cell)
 
-    def on_value_selected(self):
-        """Выбрано значение в таблице"""
-        selected = self.table.selectedItems()
-        if not selected:
+        # Переподключаем сигнал после обновления таблицы
+        self.table.itemChanged.connect(self.on_value_edited)
+
+    def on_value_edited(self, table_item):
+        """Значение отредактировано в таблице"""
+        if self.updating_table or table_item is None:
             return
 
-        row = self.table.row(selected[0])
-        if 0 <= row < len(self.values):
-            item = self.values[row]
-            self.selected_row = row
+        # Безопасно получаем row/column (могут быть -1 если объект удален)
+        try:
+            row = table_item.row()
+            col = table_item.column()
+        except RuntimeError:
+            # Объект был удален
+            return
 
-            self.pos_display.setText(f"0x{item['pos']:06X}")
-            self.current_value_display.setText(f"{item['value']:.2f}")
-            self.new_value_input.clear()
-            self.new_crc_display.clear()
-            self.new_value_input.setFocus()
+        if col != 1 or row < 0 or row >= len(self.values):
+            return
+
+        try:
+            new_value = float(table_item.text().replace(",", "."))
+            item = self.values[row]
+
+            # Вычисляем новый CRC
+            val_bytes = encode_value(new_value)
+            block = val_bytes + val_bytes + b'\x00' * 32
+            new_crc = crc16_ccitt(block)
+
+            # Обновляем в памяти
+            old_value = item['value']
+            item['value'] = new_value
+            item['crc'] = new_crc
+
+            # Обновляем дамп
+            pos = item['pos']
+            self.file_data[pos:pos+BLOCK_SIZE] = block
+            self.file_data[pos+BLOCK_SIZE:pos+BLOCK_SIZE+CRC_SIZE] = struct.pack('>H', new_crc)
+
+            # Обновляем таблицу (с флагом чтобы избежать повторного вызова on_value_edited)
+            self.updating_table = True
+            self.update_table()
+            self.updating_table = False
+
+            self.refresh_dump()
+
+            self.update_status(
+                f"✓ В памяти: {old_value:.2f} → {new_value:.2f} | CRC 0x{new_crc:04X} | "
+                f"Нажми Сохранить"
+            )
+
+        except ValueError:
+            # Откатываем на старое значение если ввод неверный
+            item = self.values[row]
+            self.updating_table = True
+            table_item.setText(f"{item['value']:.2f}")
+            self.updating_table = False
+            self.update_status(f"✗ Некорректное число")
 
     def update_value(self):
         """Обновляет значение в памяти и дампе (без записи на диск)"""
