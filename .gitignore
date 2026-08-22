@@ -10,3 +10,8 @@ crc_storage_tools.tar.gz
 
 *.bak
 *.tar.gz
+
+# Артефакты сборки PyInstaller
+build/
+dist/
+*.dll

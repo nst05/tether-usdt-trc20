@@ -267,13 +267,18 @@ class RecordSlot(QtWidgets.QGroupBox):
         # ── Кнопки ────────────────────────────────────────────────────
         buttons = QtWidgets.QHBoxLayout()
 
+        # По умолчанию работает как MT_Writer: вводится целая часть, копейки
+        # подставляются случайно. Галочка нужна, когда правится существующее
+        # значение и его дробная часть значима (например 9399.56).
         self.exact_check = QtWidgets.QCheckBox("точное значение")
-        self.exact_check.setChecked(True)
+        self.exact_check.setChecked(False)
         self.exact_check.setToolTip(
-            "Включено — пишется ровно введённое число.\n"
-            "Выключено — дробная часть 01–99 подставляется случайно."
+            "Выключено (по умолчанию) — вводится целая часть, дробная 01–99\n"
+            "  подставляется случайно при записи, как в MT_Writer.\n\n"
+            "Включено — пишется ровно введённое число, вместе с копейками."
         )
         self.exact_check.setStyleSheet("color: #8b949e; font-weight: normal;")
+        self.exact_check.stateChanged.connect(self.recalculate)
         buttons.addWidget(self.exact_check)
         buttons.addStretch()
 
@@ -361,21 +366,36 @@ class RecordSlot(QtWidgets.QGroupBox):
 
         try:
             value = float(text.replace(",", "."))
+            bcd = self.format() == FORMAT_BCD
 
-            if self.format() == FORMAT_BCD:
+            # В случайном режиме записано будет НЕ то, что введено: копейки
+            # подставятся при записи. Показываем диапазон, а не одно значение,
+            # чтобы превью не расходилось с тем, что реально ляжет в память.
+            if not self.is_exact():
+                whole = int(value)
+                low, high = whole + 0.01, whole + 0.99
+
+                if bcd:
+                    self.hex_display.setText(
+                        f"{encode_bcd(low).hex(' ').upper()} … "
+                        f"{encode_bcd(high).hex(' ').upper()}")
+                    self.crc_display.setText("4 × (нет CRC)")
+                else:
+                    self.hex_display.setText(
+                        f"0x{self.encode_fixed(low).hex().upper()} … "
+                        f"0x{self.encode_fixed(high).hex().upper()}")
+                    self.crc_display.setText("рассчитается при записи")
+                return
+
+            if bcd:
                 # BCD: значение × 100 упаковывается в цифры и кладётся
                 # обратным порядком байт. CRC у формата нет — целостность
                 # держится на четырёх одинаковых копиях.
-                payload = encode_bcd(value)
-                self.hex_display.setText(payload.hex(" ").upper())
+                self.hex_display.setText(encode_bcd(value).hex(" ").upper())
                 self.crc_display.setText("4 × (нет CRC)")
                 return
 
-            raw = int(round(value * SCALE))
-            if not 0 <= raw <= 0xFFFFFFFF:
-                raise ValueError("вне диапазона")
-
-            hex_bytes = raw.to_bytes(4, "big", signed=False)
+            hex_bytes = self.encode_fixed(value)
             self.hex_display.setText(f"0x{hex_bytes.hex().upper()}")
 
             block = hex_bytes + hex_bytes + b"\x00" * 32
@@ -384,6 +404,14 @@ class RecordSlot(QtWidgets.QGroupBox):
         except (ValueError, OverflowError, struct.error):
             self.hex_display.setText("✗ ошибка")
             self.crc_display.setText("✗ ошибка")
+
+    @staticmethod
+    def encode_fixed(value: float) -> bytes:
+        """Значение → fixed-point BIG-ENDIAN, 4 байта"""
+        raw = int(round(value * SCALE))
+        if not 0 <= raw <= 0xFFFFFFFF:
+            raise ValueError("вне диапазона")
+        return raw.to_bytes(4, "big", signed=False)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -948,7 +976,10 @@ class MainWindow(QtWidgets.QMainWindow):
         hint = QtWidgets.QLabel(
             "Каждая запись — отдельный слот со своим смещением. "
             "HEX и CRC-16 считаются на лету, слоты пишутся независимо друг "
-            "от друга: правка одного не трогает остальные."
+            "от друга: правка одного не трогает остальные.\n"
+            "По умолчанию вводится целая часть, а дробная 01–99 "
+            "подставляется случайно при записи. Чтобы записать число ровно "
+            "как введено, поставьте в слоте галочку «точное значение»."
         )
         hint.setStyleSheet("color: #8b949e; font-size: 13px;")
         hint.setWordWrap(True)
@@ -1339,13 +1370,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         Правятся ровно 16 байт (4 копии × 4 байта). Заголовок, нули между
         копиями и хвост записи не трогаются.
-        """
-        value = float(text.replace(",", "."))
-        payload = encode_bcd(value)
 
+        Галочка «точное значение» действует так же, как для поля T: когда
+        она снята, дробная часть 01–99 подставляется случайно.
+        """
         writer = I2CWriter(offset=offset,
                            chip=self.i2c_chip_combo.currentText())
+
+        value = writer.parse_value(text, exact=slot.is_exact())
+        payload = encode_bcd(value)
+
         log = [f"Значение {value:.2f} → BCD {payload.hex(' ').upper()}"]
+        if not slot.is_exact():
+            log.append(f"Введено {text}, дробная часть подставлена случайно")
 
         try:
             self.i2c_progress.setValue(10)

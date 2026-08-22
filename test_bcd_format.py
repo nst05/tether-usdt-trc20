@@ -10,6 +10,7 @@
 import sys
 
 from crc_storage_i2c import (
+    I2CWriter,
     encode_bcd, decode_bcd, find_bcd_records, patch_bcd_record,
     find_records, crc16_ccitt,
     BCD_RECORD_SIZE, BCD_VALUE_SIZE, BCD_COPY_OFFSETS,
@@ -178,6 +179,42 @@ def main():
             passed &= check(f"{bad} отвергнуто", False, "исключения не было")
         except ValueError:
             passed &= check(f"{bad} отвергнуто", True)
+
+    print()
+    print("=" * 72)
+    print("7. Случайная дробная часть работает и для поля S")
+    print("=" * 72)
+
+    writer = I2CWriter(chip="24C256")
+
+    exact = writer.parse_value("3456.78", exact=True)
+    passed &= check("точный режим сохраняет копейки", exact == 3456.78,
+                    f"получили {exact}")
+
+    fractions = set()
+    for _ in range(200):
+        value = writer.parse_value("3456", exact=False)
+        cents = round((value - 3456) * 100)
+        fractions.add(cents)
+        if not (3456.01 <= value <= 3456.99):
+            passed &= check("случайное значение в диапазоне", False,
+                            f"получили {value}")
+            break
+        # Значение из случайного режима обязано кодироваться в BCD.
+        if decode_bcd(encode_bcd(value)) != value:
+            passed &= check("BCD кодирует случайное значение", False,
+                            f"сломалось на {value}")
+            break
+    else:
+        passed &= check("200 случайных значений в 3456.01–3456.99", True)
+        passed &= check("BCD кодирует каждое из них", True)
+
+    passed &= check("копейки не выходят за 01–99",
+                    fractions and min(fractions) >= 1 and max(fractions) <= 99,
+                    f"диапазон {min(fractions)}–{max(fractions)}")
+    passed &= check("значения действительно разные", len(fractions) > 20,
+                    f"различных копеек: {len(fractions)}")
+    passed &= check("нулевые копейки не подставляются", 0 not in fractions)
 
     print()
     print("=" * 72)
