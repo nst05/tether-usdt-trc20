@@ -69,9 +69,13 @@ def load_app_icon() -> "QtGui.QIcon":
 
 def close_pyinstaller_splash():
     """Погасить заставку PyInstaller: она есть только внутри собранного exe"""
+    # Ловим не только ImportError: pyi_splash соединяется с заставкой прямо
+    # при импорте и, если она недоступна, кидает RuntimeError или
+    # ConnectionError. С узким except приложение падало бы на старте, так и
+    # не показав окна.
     try:
         import pyi_splash
-    except ImportError:
+    except Exception:
         return
     try:
         pyi_splash.close()
