@@ -456,10 +456,11 @@ class MainWindow(QtWidgets.QMainWindow):
         reload_btn.clicked.connect(self.reload_file)
         layout.addWidget(reload_btn)
 
-        save_btn = QtWidgets.QPushButton("Сохранить")
-        save_btn.setMaximumWidth(100)
-        save_btn.clicked.connect(self.save_file)
-        layout.addWidget(save_btn)
+        self.save_btn = QtWidgets.QPushButton("Сохранить дамп")
+        self.save_btn.setMaximumWidth(120)
+        self.save_btn.clicked.connect(self.save_dump)
+        self.save_btn.setToolTip("Сохранить только дамп (на вкладке Значения сохранение автоматическое)")
+        layout.addWidget(self.save_btn)
 
         layout.addStretch()
 
@@ -967,13 +968,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self.new_value_input.setFocus()
 
     def update_value(self):
-        """Обновляет выбранное значение"""
+        """Обновляет и сохраняет значение сразу"""
         if self.selected_row < 0:
             self.update_status("✗ Выберите значение в таблице")
             return
 
         if not self.new_value_input.text():
             self.update_status("✗ Введите новое значение")
+            return
+
+        if not self.filepath:
+            self.update_status("✗ Файл не загружен")
             return
 
         try:
@@ -988,13 +993,33 @@ class MainWindow(QtWidgets.QMainWindow):
             self.new_crc_display.setText(f"0x{new_crc:04X}")
 
             # Обновляем значение в памяти
+            old_value = item['value']
             item['value'] = new_value
             item['crc'] = new_crc
 
+            # ── Сразу пишем на диск (только 42 байта для этого блока) ────
+            pos = item['pos']
+            self.file_data[pos:pos+BLOCK_SIZE] = block
+            self.file_data[pos+BLOCK_SIZE:pos+BLOCK_SIZE+CRC_SIZE] = struct.pack('>H', new_crc)
+
+            # Резервная копия только при первой записи
+            path = Path(self.filepath)
+            backup = path.with_suffix(path.suffix + '.bak')
+            if not backup.exists():
+                backup.write_bytes(bytes(self.original_data))
+
+            # Пишем файл
+            path.write_bytes(bytes(self.file_data))
+            self.original_data = bytes(self.file_data)
+
             self.update_table()
             self.table.selectRow(self.selected_row)
+            self.refresh_dump()
 
-            self.update_status(f"✓ Значение обновлено: {new_value:.2f}")
+            self.update_status(
+                f"✓ {old_value:.2f} → {new_value:.2f} | "
+                f"CRC 0x{new_crc:04X} | Сохранено в {path.name}"
+            )
 
         except ValueError as e:
             self.update_status(f"✗ Ошибка: {e}")
@@ -1003,43 +1028,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """Перезагружает файл"""
         if self.filepath:
             self.load_file(self.filepath)
-
-    def save_file(self):
-        """Сохраняет файл"""
-        if not self.filepath:
-            self.update_status("✗ Файл не загружен")
-            return
-
-        try:
-            # Правим рабочую копию — точечно, по 42 байта на значение
-            for item in self.values:
-                pos = item['pos']
-                val_bytes = encode_value(item['value'])
-                block = val_bytes + val_bytes + b'\x00' * 32
-
-                self.file_data[pos:pos+BLOCK_SIZE] = block
-                self.file_data[pos+BLOCK_SIZE:pos+BLOCK_SIZE+CRC_SIZE] = struct.pack('>H', item['crc'])
-
-            # Резервная копия исходного состояния
-            path = Path(self.filepath)
-            backup = path.with_suffix(path.suffix + '.bak')
-            backup.write_bytes(bytes(self.original_data))
-
-            path.write_bytes(bytes(self.file_data))
-
-            self.original_data = bytes(self.file_data)
-            self.dump_writes = []
-            self.refresh_dump()
-
-            self.update_status(f"✓ Файл сохранён | Резервная копия: {backup.name}")
-            QtWidgets.QMessageBox.information(
-                self, "Успех",
-                f"Файл сохранён\n\nОригинал: {self.filepath}\nРезервная копия: {backup}"
-            )
-
-        except Exception as e:
-            self.update_status(f"✗ Ошибка сохранения: {e}")
-            QtWidgets.QMessageBox.critical(self, "Ошибка сохранения", str(e))
 
     def update_status(self, text):
         """Обновляет строку состояния"""
