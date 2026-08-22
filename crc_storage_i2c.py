@@ -78,6 +78,166 @@ def decode_value(data: bytes) -> float:
     return int.from_bytes(data, "big", signed=False) / SCALE
 
 
+def build_block(value: float) -> tuple:
+    """
+    Собрать 42-байтовую запись из значения.
+    Возвращает (block_data, crc).
+    """
+    val_bytes = encode_value(value)
+    block = val_bytes + val_bytes + b"\x00" * 32
+    crc = crc16_ccitt(block)
+    return block + struct.pack(">H", crc), crc
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Второй формат хранения: BCD
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Часть значений лежит в дампе НЕ в fixed-point, а в упакованном BCD с
+# обратным порядком байт. Пример — 9399.56:
+#
+#   9399.56 × 100 = 939956  →  цифры "00939956"  →  байты 00 93 99 56
+#   →  обратный порядок     →  56 99 93 00
+#
+# Запись занимает 65 байт (0x41) и хранит значение ЧЕТЫРЕ раза:
+#
+#   +0   3 байта   заголовок (01 01 44 / 01 05 02 / 01 05 12)
+#   +3   4 байта   значение BCD
+#   +7   4 байта   копия
+#   +11  12 байт   нули
+#   +23  4 байта   копия
+#   +27  4 байта   копия
+#   +31  34 байта  нули до конца записи
+#
+# Все четыре копии обязаны совпадать, поэтому правка значения обновляет их
+# одновременно. CRC у этого формата нет — целостность держится на дублях.
+
+BCD_RECORD_SIZE = 0x41      # 65 байт
+BCD_VALUE_SIZE = 4
+BCD_HEADER_SIZE = 3
+BCD_COPY_OFFSETS = (3, 7, 23, 27)
+
+
+def encode_bcd(value: float) -> bytes:
+    """Значение → упакованный BCD, обратный порядок байт (4 байта)"""
+    raw = int(round(value * SCALE))
+    if not 0 <= raw <= 99999999:
+        raise ValueError("Диапазон BCD: 0.00 – 999999.99")
+    digits = f"{raw:08d}"
+    return bytes.fromhex(digits)[::-1]
+
+
+def decode_bcd(data: bytes):
+    """
+    Упакованный BCD (обратный порядок байт) → значение.
+    Возвращает None, если байты не являются корректным BCD.
+    """
+    if len(data) != BCD_VALUE_SIZE:
+        raise ValueError("Неверная длина данных")
+
+    for byte in data:
+        if (byte >> 4) > 9 or (byte & 0x0F) > 9:
+            return None
+
+    return int(data[::-1].hex()) / SCALE
+
+
+def find_bcd_records(data: bytes, min_value: float = 0.01,
+                     max_value: float = 999999.99) -> list:
+    """
+    Найти записи формата BCD.
+
+    Запись признаётся валидной, когда все четыре копии значения совпадают,
+    12 байт между второй и третьей копией нулевые, а само значение
+    попадает в заданный диапазон.
+
+    Возвращает список {'offset', 'value', 'header', 'copies'}.
+    """
+    records = []
+    offset = 0
+    limit = len(data) - (BCD_COPY_OFFSETS[-1] + BCD_VALUE_SIZE)
+
+    while offset <= limit:
+        first = data[offset + 3:offset + 7]
+        value = decode_bcd(first)
+
+        if (value is not None and min_value <= value <= max_value
+                and all(data[offset + c:offset + c + BCD_VALUE_SIZE] == first
+                        for c in BCD_COPY_OFFSETS[1:])
+                and data[offset + 11:offset + 23] == b"\x00" * 12):
+            records.append({
+                'offset': offset,
+                'value': value,
+                'header': bytes(data[offset:offset + BCD_HEADER_SIZE]),
+                'copies': [offset + c for c in BCD_COPY_OFFSETS],
+            })
+            offset += BCD_RECORD_SIZE
+            continue
+
+        offset += 1
+
+    return records
+
+
+def patch_bcd_record(data: bytearray, offset: int, value: float) -> list:
+    """
+    Записать значение во все четыре копии записи BCD, ничего больше не трогая.
+
+    Возвращает список смещений, куда легли байты.
+    """
+    payload = encode_bcd(value)
+    written = []
+
+    for copy_offset in BCD_COPY_OFFSETS:
+        position = offset + copy_offset
+        data[position:position + BCD_VALUE_SIZE] = payload
+        written.append(position)
+
+    return written
+
+
+def find_records(data: bytes) -> list:
+    """
+    Найти все валидные 42-байтовые записи в блобе.
+
+    Запись считается валидной, когда выполнены ВСЕ условия:
+      • байты 0-3 равны байтам 4-7 (значение и его дубль);
+      • байты 8-39 нулевые (паддинг);
+      • байты 40-41 совпадают с CRC-16 CCITT от первых 40 байт.
+
+    Три условия вместе дают пренебрежимо малую вероятность ложного
+    срабатывания, поэтому дополнительная фильтрация не нужна.
+
+    Возвращает список словарей {'offset', 'value', 'crc'}, по возрастанию
+    смещения.
+    """
+    records = []
+    total = BLOCK_SIZE + CRC_SIZE
+    limit = len(data) - total
+
+    offset = 0
+    while offset <= limit:
+        block = data[offset:offset + BLOCK_SIZE]
+
+        if (block[0:4] == block[4:8]
+                and block[8:BLOCK_SIZE] == b"\x00" * 32):
+            stored = struct.unpack(
+                ">H", data[offset + BLOCK_SIZE:offset + total])[0]
+            if crc16_ccitt(block) == stored:
+                records.append({
+                    'offset': offset,
+                    'value': decode_value(block[0:4]),
+                    'crc': stored,
+                })
+                # Записи не перекрываются — перескакиваем через найденную.
+                offset += total
+                continue
+
+        offset += 1
+
+    return records
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  I2C писатель
 # ═══════════════════════════════════════════════════════════════════════════
@@ -324,32 +484,79 @@ class I2CWriter:
         Создать 42-байтовый блок (40 байт + 2 CRC) из значения.
         Возвращает (block_data, crc_value)
         """
-        val_bytes = encode_value(value)
-        block = val_bytes + val_bytes + b"\x00" * 32
-        crc = crc16_ccitt(block)
-        return block + struct.pack(">H", crc), crc
+        return build_block(value)
 
-    def parse_value(self, text: str) -> float:
+    def scan_records(self, progress_callback=None) -> list:
         """
-        Преобразовать введённое значение: добавить случайную дробную часть 01-99.
-        Например: "3456" → 3456.XX (где XX = 01..99)
+        Вычитать всю микросхему и найти в ней валидные записи.
+
+        Возвращает список {'offset', 'value', 'crc'} — то же, что find_records.
+        """
+        if self.i2c is None:
+            raise RuntimeError("Программатор не инициализирован.")
+
+        chunk = 256
+        data = bytearray()
+
+        while len(data) < self.size:
+            piece = min(chunk, self.size - len(data))
+            data.extend(self.read_bytes(len(data), piece))
+            if progress_callback:
+                progress_callback(int(len(data) * 100 / self.size),
+                                  f"Чтение {len(data)}/{self.size} байт...")
+
+        return find_records(bytes(data))
+
+    def read_record(self, offset: int) -> dict:
+        """
+        Прочитать запись по смещению и проверить её CRC.
+
+        Возвращает {'offset', 'value', 'crc', 'crc_stored', 'valid'}.
+        """
+        if self.i2c is None:
+            raise RuntimeError("Программатор не инициализирован.")
+
+        total = BLOCK_SIZE + CRC_SIZE
+        raw = self.read_bytes(offset, total)
+        block = raw[:BLOCK_SIZE]
+        stored = struct.unpack(">H", raw[BLOCK_SIZE:total])[0]
+        calculated = crc16_ccitt(block)
+
+        return {
+            'offset': offset,
+            'value': decode_value(block[0:4]),
+            'crc': calculated,
+            'crc_stored': stored,
+            'valid': calculated == stored and block[0:4] == block[4:8],
+        }
+
+    def parse_value(self, text: str, exact: bool = False) -> float:
+        """
+        Преобразовать введённое значение.
+
+        exact=False — добавить случайную дробную часть 01-99: "3456" → 3456.XX
+        exact=True  — взять значение как есть: "9399.56" → 9399.56
+
+        Точный режим нужен при правке уже существующей записи, когда дробная
+        часть значима.
         """
         text = str(text).strip().replace(",", ".")
         if not text:
-            raise ValueError("Введите целую часть.")
+            raise ValueError("Введите значение.")
 
         base_value = float(text)
         if base_value < 0:
             raise ValueError("Значение не может быть отрицательным.")
 
-        integer_part = int(base_value)
-        fraction = random.randint(1, 99)
-        value = integer_part + fraction / 100.0
+        value = base_value if exact else (
+            int(base_value) + random.randint(1, 99) / 100.0
+        )
         encode_value(value)
 
         return value
 
-    def write_and_verify(self, value: str, progress_callback=None, debug=False) -> dict:
+    def write_and_verify(self, value: str, progress_callback=None, debug=False,
+                         offset: int = None, exact: bool = False) -> dict:
         """
         Полный цикл записи и проверки с опциональным логированием:
         1. Открыть программатор
@@ -361,6 +568,9 @@ class I2CWriter:
         7. Проверить значение (10 попыток)
         8. Закрыть программатор
 
+        offset: смещение записи; None — взять self.offset
+        exact:  писать значение как есть, без случайной дробной части
+
         Возвращает словарь:
         {
             'success': bool,
@@ -368,15 +578,19 @@ class I2CWriter:
             'before': float or None,
             'after': float or None,
             'crc': int or None,
+            'offset': int,
             'debug': str (если debug=True)
         }
         """
+        target = self.offset if offset is None else offset
+
         result = {
             'success': False,
             'message': '',
             'before': None,
             'after': None,
             'crc': None,
+            'offset': target,
             'debug': '',
         }
 
@@ -392,7 +606,7 @@ class I2CWriter:
 
         try:
             progress(5, "Парсинг значения...")
-            parsed_value = self.parse_value(value)
+            parsed_value = self.parse_value(value, exact=exact)
             log_debug(f"Распарсено значение: {parsed_value}")
 
             progress(20, "Открытие программатора...")
@@ -400,11 +614,11 @@ class I2CWriter:
             log_debug(
                 f"Программатор открыт | чип {self.chip}: {self.size} байт, "
                 f"адрес памяти {self.addrsize} бит, страница {self.page_size} байт, "
-                f"смещение блока 0x{self.offset:04X}"
+                f"смещение блока 0x{target:04X}"
             )
 
             progress(30, "Чтение текущего значения...")
-            before_bytes = self.read_bytes(self.offset, VALUE_SIZE)
+            before_bytes = self.read_bytes(target, VALUE_SIZE)
             result['before'] = decode_value(before_bytes)
             log_debug(f"Текущее значение: {result['before']:.2f} (байты: {before_bytes.hex().upper()})")
 
@@ -412,8 +626,8 @@ class I2CWriter:
             block_data, crc = self.make_block(parsed_value)
             log_debug(f"Блок создан: {len(block_data)} байт, CRC: 0x{crc:04X}")
             log_debug(f"Данные: {block_data[:8].hex().upper()}... (первые 8 байт)")
-            self.write_bytes(self.offset, block_data, log=log_debug)
-            log_debug(f"Записано по смещению 0x{self.offset:04X}")
+            self.write_bytes(target, block_data, log=log_debug)
+            log_debug(f"Записано по смещению 0x{target:04X}")
 
             progress(60, "Закрытие программатора...")
             self.close_programmer()
@@ -431,7 +645,7 @@ class I2CWriter:
             actual = None
             for attempt in range(10):
                 try:
-                    actual = self.read_bytes(self.offset, BLOCK_SIZE + CRC_SIZE)
+                    actual = self.read_bytes(target, BLOCK_SIZE + CRC_SIZE)
                     actual_value = decode_value(actual[:4])
                     actual_crc = struct.unpack(">H", actual[BLOCK_SIZE:BLOCK_SIZE+CRC_SIZE])[0]
 

@@ -17,7 +17,11 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread
 
 try:
-    from crc_storage_i2c import I2CWriter
+    from crc_storage_i2c import (
+        I2CWriter, encode_bcd, decode_bcd, find_bcd_records,
+        patch_bcd_record, find_records,
+        BCD_RECORD_SIZE, BCD_VALUE_SIZE, BCD_COPY_OFFSETS,
+    )
 except ImportError:
     I2CWriter = None
 
@@ -31,6 +35,38 @@ CRC_SIZE = 2
 VALUE_SIZE = 4
 INIT_CRC = 0xFFFF
 POLY_CRC = 0x1021
+
+# ── Два формата хранения, найденные в дампе ────────────────────────────────
+#
+# Поле T — value × 100 в BIG-ENDIAN. Блок 42 байта: значение, дубль,
+#          32 байта нулей, CRC-16 CCITT. Целостность проверяется по CRC.
+#          Пример: 9442.36 по 0x01C1.
+#
+# Поле S — упакованный BCD с обратным порядком байт. Запись 65 байт:
+#          заголовок и ЧЕТЫРЕ копии значения. CRC у формата нет —
+#          целостность держится на совпадении копий.
+#          Пример: 9399.56 по 0x1446.
+#
+FORMAT_FIXED = "fixed"
+FORMAT_BCD = "bcd"
+
+FIELD_LABEL = {
+    FORMAT_FIXED: "T",
+    FORMAT_BCD: "S",
+}
+
+FIELD_DESCRIPTION = {
+    FORMAT_FIXED: "fixed-point × 100, BIG-ENDIAN, 42 байта, CRC-16 CCITT",
+    FORMAT_BCD: "BCD обратным порядком байт, 4 копии, без CRC",
+}
+
+# Записи, реально присутствующие в дампе: (смещение, значение, формат).
+DEFAULT_SLOTS = [
+    (0x01C1, 9442.36, FORMAT_FIXED),
+    (0x0201, 9440.38, FORMAT_FIXED),
+    (0x03E8, 9441.38, FORMAT_FIXED),
+    (0x1446, 9399.56, FORMAT_BCD),
+]
 
 
 def crc16_ccitt(data):
@@ -103,6 +139,251 @@ def hex_dump(data: bytes, start: int = 0, length: int = 256) -> str:
         lines.append(f"{row:08X}  " + " ".join(hex_cells) + "   " + "".join(ascii_cells))
 
     return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Слот записи — одно значение со своим смещением, HEX и CRC
+# ═══════════════════════════════════════════════════════════════════════════
+
+class RecordSlot(QtWidgets.QGroupBox):
+    """
+    Одна запись: смещение, значение, HEX и CRC-16.
+
+    HEX и CRC пересчитываются при каждом изменении значения. Слоты
+    независимы — правка одного не трогает остальные.
+    """
+
+    write_requested = pyqtSignal(object)   # сам слот
+    read_requested = pyqtSignal(object)
+    remove_requested = pyqtSignal(object)
+
+    def __init__(self, title: str, offset: int = 0x0000,
+                 value: float = None, fmt: str = None, parent=None):
+        super().__init__(title, parent)
+
+        fmt = fmt or FORMAT_FIXED
+
+        self.setStyleSheet("""
+            QGroupBox {
+                border: 2px solid #30363d;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding-top: 10px;
+                font-weight: bold;
+                color: #58a6ff;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 6px;
+            }
+        """)
+
+        grid = QtWidgets.QGridLayout(self)
+        grid.setSpacing(8)
+        grid.setContentsMargins(12, 8, 12, 12)
+
+        mono = "'Courier New', monospace"
+
+        # ── Формат ────────────────────────────────────────────────────
+        grid.addWidget(QtWidgets.QLabel("Формат:"), 0, 4)
+        self.format_combo = QtWidgets.QComboBox()
+        self.format_combo.addItem("T — fixed-point + CRC", FORMAT_FIXED)
+        self.format_combo.addItem("S — BCD ×4 копии", FORMAT_BCD)
+        self.format_combo.setMinimumWidth(180)
+        self.format_combo.setToolTip(
+            "Поле T — значение × 100 в BIG-ENDIAN, блок 42 байта,\n"
+            "  в конце CRC-16 CCITT. Целостность проверяется по CRC.\n\n"
+            "Поле S — упакованный BCD обратным порядком байт,\n"
+            "  значение продублировано четыре раза. CRC у формата нет,\n"
+            "  целостность держится на совпадении копий."
+        )
+        self.format_combo.currentIndexChanged.connect(self.on_format_changed)
+        grid.addWidget(self.format_combo, 0, 5)
+
+        # ── Смещение ──────────────────────────────────────────────────
+        grid.addWidget(QtWidgets.QLabel("Смещение:"), 0, 0)
+        self.offset_input = QtWidgets.QLineEdit(f"0x{offset:04X}")
+        self.offset_input.setMaximumWidth(110)
+        self.offset_input.setStyleSheet(f"font-family: {mono};")
+        grid.addWidget(self.offset_input, 0, 1)
+
+        # ── Значение ──────────────────────────────────────────────────
+        grid.addWidget(QtWidgets.QLabel("Значение:"), 0, 2)
+        self.value_input = QtWidgets.QLineEdit()
+        self.value_input.setPlaceholderText("например 9399.56")
+        self.value_input.setMinimumHeight(38)
+        self.value_input.setStyleSheet("""
+            QLineEdit {
+                font-size: 15px;
+                font-weight: bold;
+                padding: 4px 8px;
+                border: 2px solid #30363d;
+                border-radius: 6px;
+            }
+            QLineEdit:focus { border: 2px solid #58a6ff; }
+        """)
+        validator = QtGui.QDoubleValidator(0.0, 42949672.95, 2, self)
+        validator.setNotation(QtGui.QDoubleValidator.StandardNotation)
+        self.value_input.setValidator(validator)
+        self.value_input.textChanged.connect(self.recalculate)
+        grid.addWidget(self.value_input, 0, 3)
+
+        # ── HEX ───────────────────────────────────────────────────────
+        grid.addWidget(QtWidgets.QLabel("HEX:"), 1, 0)
+        self.hex_display = QtWidgets.QLineEdit()
+        self.hex_display.setReadOnly(True)
+        self.hex_display.setStyleSheet(f"""
+            QLineEdit {{
+                font-family: {mono};
+                font-weight: bold;
+                background-color: #0d1117;
+                border: 2px solid #30363d;
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: #58a6ff;
+            }}
+        """)
+        grid.addWidget(self.hex_display, 1, 1, 1, 1)
+
+        # ── CRC ───────────────────────────────────────────────────────
+        self.crc_label = QtWidgets.QLabel("CRC-16:")
+        grid.addWidget(self.crc_label, 1, 2)
+        self.crc_display = QtWidgets.QLineEdit()
+        self.crc_display.setReadOnly(True)
+        self.crc_display.setStyleSheet(f"""
+            QLineEdit {{
+                font-family: {mono};
+                font-weight: bold;
+                background-color: #0d1117;
+                border: 2px solid #30363d;
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: #f85149;
+            }}
+        """)
+        grid.addWidget(self.crc_display, 1, 3)
+
+        # ── Кнопки ────────────────────────────────────────────────────
+        buttons = QtWidgets.QHBoxLayout()
+
+        self.exact_check = QtWidgets.QCheckBox("точное значение")
+        self.exact_check.setChecked(True)
+        self.exact_check.setToolTip(
+            "Включено — пишется ровно введённое число.\n"
+            "Выключено — дробная часть 01–99 подставляется случайно."
+        )
+        self.exact_check.setStyleSheet("color: #8b949e; font-weight: normal;")
+        buttons.addWidget(self.exact_check)
+        buttons.addStretch()
+
+        self.read_button = QtWidgets.QPushButton("Прочитать")
+        self.read_button.clicked.connect(lambda: self.read_requested.emit(self))
+        buttons.addWidget(self.read_button)
+
+        self.write_button = QtWidgets.QPushButton("Записать")
+        self.write_button.setStyleSheet("""
+            QPushButton {
+                font-weight: bold;
+                background-color: #238636;
+                border: 1px solid #2ea043;
+                border-radius: 6px;
+                color: white;
+                padding: 6px 18px;
+            }
+            QPushButton:hover { background-color: #2ea043; }
+            QPushButton:disabled {
+                background-color: #21262d;
+                border-color: #30363d;
+                color: #6e7681;
+            }
+        """)
+        self.write_button.clicked.connect(lambda: self.write_requested.emit(self))
+        buttons.addWidget(self.write_button)
+
+        self.remove_button = QtWidgets.QPushButton("✕")
+        self.remove_button.setMaximumWidth(34)
+        self.remove_button.setToolTip("Убрать слот")
+        self.remove_button.clicked.connect(
+            lambda: self.remove_requested.emit(self))
+        buttons.addWidget(self.remove_button)
+
+        grid.addLayout(buttons, 2, 0, 1, 6)
+
+        index = self.format_combo.findData(fmt)
+        if index >= 0:
+            self.format_combo.setCurrentIndex(index)
+
+        if value is not None:
+            self.value_input.setText(f"{value:.2f}")
+
+        self.on_format_changed()
+
+    # ── Данные слота ──────────────────────────────────────────────────
+
+    def format(self) -> str:
+        return self.format_combo.currentData()
+
+    def on_format_changed(self):
+        """Подстроить подписи под выбранный формат и пересчитать поля"""
+        if self.format() == FORMAT_BCD:
+            self.crc_label.setText("Копии:")
+            self.value_input.setPlaceholderText("например 9399.56")
+        else:
+            self.crc_label.setText("CRC-16:")
+            self.value_input.setPlaceholderText("например 9442.36")
+        self.recalculate()
+
+    def offset(self) -> int:
+        """Смещение слота. Бросает ValueError при неразборчивом вводе."""
+        return parse_offset(self.offset_input.text())
+
+    def value_text(self) -> str:
+        return self.value_input.text().strip()
+
+    def is_exact(self) -> bool:
+        return self.exact_check.isChecked()
+
+    def set_value(self, value: float):
+        self.value_input.setText(f"{value:.2f}")
+
+    def set_busy(self, busy: bool):
+        self.write_button.setEnabled(not busy)
+        self.read_button.setEnabled(not busy)
+
+    def recalculate(self):
+        """Пересчитать HEX и CRC (или число копий) из текущего значения"""
+        text = self.value_text()
+        if not text:
+            self.hex_display.clear()
+            self.crc_display.clear()
+            return
+
+        try:
+            value = float(text.replace(",", "."))
+
+            if self.format() == FORMAT_BCD:
+                # BCD: значение × 100 упаковывается в цифры и кладётся
+                # обратным порядком байт. CRC у формата нет — целостность
+                # держится на четырёх одинаковых копиях.
+                payload = encode_bcd(value)
+                self.hex_display.setText(payload.hex(" ").upper())
+                self.crc_display.setText("4 × (нет CRC)")
+                return
+
+            raw = int(round(value * SCALE))
+            if not 0 <= raw <= 0xFFFFFFFF:
+                raise ValueError("вне диапазона")
+
+            hex_bytes = raw.to_bytes(4, "big", signed=False)
+            self.hex_display.setText(f"0x{hex_bytes.hex().upper()}")
+
+            block = hex_bytes + hex_bytes + b"\x00" * 32
+            self.crc_display.setText(f"0x{crc16_ccitt(block):04X}")
+
+        except (ValueError, OverflowError, struct.error):
+            self.hex_display.setText("✗ ошибка")
+            self.crc_display.setText("✗ ошибка")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -664,78 +945,16 @@ class MainWindow(QtWidgets.QMainWindow):
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #58a6ff;")
         layout.addWidget(title)
 
-        hint = QtWidgets.QLabel("Введите целую часть. Дробная часть 01–99 добавляется автоматически.\n"
-                                 "Поля HEX и CRC-16 обновляются автоматически.")
+        hint = QtWidgets.QLabel(
+            "Каждая запись — отдельный слот со своим смещением. "
+            "HEX и CRC-16 считаются на лету, слоты пишутся независимо друг "
+            "от друга: правка одного не трогает остальные."
+        )
         hint.setStyleSheet("color: #8b949e; font-size: 13px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
-        # ── Основные поля ─────────────────────────────────────────────
-        grid = QtWidgets.QGridLayout()
-        grid.setSpacing(12)
-
-        # Поле 1: Значение (редактируется)
-        grid.addWidget(QtWidgets.QLabel("1. Значение:"), 0, 0)
-        self.i2c_value_input = QtWidgets.QLineEdit()
-        self.i2c_value_input.setPlaceholderText("Например: 3456")
-        self.i2c_value_input.setMinimumHeight(48)
-        self.i2c_value_input.setStyleSheet("""
-            QLineEdit {
-                font-size: 16px;
-                font-weight: bold;
-                padding: 8px 12px;
-                border: 2px solid #30363d;
-                border-radius: 6px;
-            }
-            QLineEdit:focus {
-                border: 2px solid #58a6ff;
-            }
-        """)
-        validator = QtGui.QDoubleValidator(0.0, 42949672.95, 2, self)
-        validator.setNotation(QtGui.QDoubleValidator.StandardNotation)
-        self.i2c_value_input.setValidator(validator)
-        self.i2c_value_input.textChanged.connect(self.on_i2c_value_changed)
-        grid.addWidget(self.i2c_value_input, 0, 1)
-
-        # Поле 2: HEX (автоматически)
-        grid.addWidget(QtWidgets.QLabel("2. HEX (auto):"), 1, 0)
-        self.i2c_hex_display = QtWidgets.QLineEdit()
-        self.i2c_hex_display.setReadOnly(True)
-        self.i2c_hex_display.setMinimumHeight(48)
-        self.i2c_hex_display.setStyleSheet("""
-            QLineEdit {
-                font-size: 14px;
-                font-weight: bold;
-                padding: 8px 12px;
-                background-color: #0d1117;
-                border: 2px solid #30363d;
-                border-radius: 6px;
-                color: #58a6ff;
-            }
-        """)
-        grid.addWidget(self.i2c_hex_display, 1, 1)
-
-        # Поле 3: CRC-16 (автоматически)
-        grid.addWidget(QtWidgets.QLabel("3. CRC-16 (auto):"), 2, 0)
-        self.i2c_crc_display = QtWidgets.QLineEdit()
-        self.i2c_crc_display.setReadOnly(True)
-        self.i2c_crc_display.setMinimumHeight(48)
-        self.i2c_crc_display.setStyleSheet("""
-            QLineEdit {
-                font-size: 14px;
-                font-weight: bold;
-                padding: 8px 12px;
-                background-color: #0d1117;
-                border: 2px solid #30363d;
-                border-radius: 6px;
-                color: #f85149;
-            }
-        """)
-        grid.addWidget(self.i2c_crc_display, 2, 1)
-
-        layout.addLayout(grid)
-
-        # ── Микросхема и смещение ─────────────────────────────────────
+        # ── Микросхема ────────────────────────────────────────────────
         offset_layout = QtWidgets.QHBoxLayout()
         offset_layout.addWidget(QtWidgets.QLabel("Микросхема:"))
         self.i2c_chip_combo = QtWidgets.QComboBox()
@@ -744,18 +963,49 @@ class MainWindow(QtWidgets.QMainWindow):
         self.i2c_chip_combo.setMaximumWidth(140)
         offset_layout.addWidget(self.i2c_chip_combo)
 
-        offset_layout.addSpacing(16)
-        offset_layout.addWidget(QtWidgets.QLabel("Смещение блока:"))
-        self.i2c_offset_input = QtWidgets.QLineEdit("0x01C1")
-        self.i2c_offset_input.setMaximumWidth(150)
-        offset_layout.addWidget(self.i2c_offset_input)
-
         self.i2c_probe_button = QtWidgets.QPushButton("Определить чип")
         self.i2c_probe_button.clicked.connect(self.i2c_probe_chip)
         offset_layout.addWidget(self.i2c_probe_button)
 
+        self.i2c_scan_button = QtWidgets.QPushButton("Найти записи")
+        self.i2c_scan_button.setToolTip(
+            "Вычитать микросхему целиком и создать слот для каждой найденной "
+            "записи")
+        self.i2c_scan_button.clicked.connect(self.i2c_scan_records)
+        offset_layout.addWidget(self.i2c_scan_button)
+
+        self.i2c_scan_file_button = QtWidgets.QPushButton("Найти в файле")
+        self.i2c_scan_file_button.setToolTip(
+            "Найти записи в открытом дампе, не обращаясь к железу")
+        self.i2c_scan_file_button.clicked.connect(self.i2c_scan_file)
+        offset_layout.addWidget(self.i2c_scan_file_button)
+
+        self.i2c_add_button = QtWidgets.QPushButton("+ Слот")
+        self.i2c_add_button.clicked.connect(lambda: self.add_i2c_slot())
+        offset_layout.addWidget(self.i2c_add_button)
+
         offset_layout.addStretch()
         layout.addLayout(offset_layout)
+
+        # ── Слоты записей ─────────────────────────────────────────────
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setMinimumHeight(260)
+        scroll.setStyleSheet("QScrollArea { border: none; }")
+
+        container = QtWidgets.QWidget()
+        self.i2c_slots_layout = QtWidgets.QVBoxLayout(container)
+        self.i2c_slots_layout.setContentsMargins(0, 0, 0, 0)
+        self.i2c_slots_layout.setSpacing(10)
+        self.i2c_slots_layout.addStretch()
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+
+        self.i2c_slots = []
+
+        # Слоты под записи, реально присутствующие в дампе.
+        for offset, value, fmt in DEFAULT_SLOTS:
+            self.add_i2c_slot(offset=offset, value=value, fmt=fmt)
 
         # ── Прогресс и статус ─────────────────────────────────────────
         self.i2c_progress = QtWidgets.QProgressBar()
@@ -794,8 +1044,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """)
         layout.addWidget(self.i2c_status)
 
-        # ── Кнопка записи ─────────────────────────────────────────────
-        self.i2c_write_button = QtWidgets.QPushButton("ЗАПИСАТЬ И ПРОВЕРИТЬ")
+        # ── Запись всех слотов ────────────────────────────────────────
+        self.i2c_write_button = QtWidgets.QPushButton("ЗАПИСАТЬ ВСЕ СЛОТЫ")
         self.i2c_write_button.setMinimumHeight(56)
         self.i2c_write_button.setStyleSheet("""
             QPushButton {
@@ -845,32 +1095,301 @@ class MainWindow(QtWidgets.QMainWindow):
 
         return tab
 
-    def on_i2c_value_changed(self):
-        """Обновляет HEX и CRC-16 при изменении значения"""
-        text = self.i2c_value_input.text().strip()
-        if not text:
-            self.i2c_hex_display.clear()
-            self.i2c_crc_display.clear()
+    # ── Управление слотами ────────────────────────────────────────────
+
+    def add_i2c_slot(self, offset: int = 0x0000, value: float = None,
+                     fmt: str = None) -> 'RecordSlot':
+        """Добавить слот записи на вкладку I2C"""
+        slot = RecordSlot("", offset=offset, value=value, fmt=fmt)
+        slot.format_combo.currentIndexChanged.connect(self.renumber_i2c_slots)
+        slot.write_requested.connect(self.i2c_write_slot)
+        slot.read_requested.connect(self.i2c_read_slot)
+        slot.remove_requested.connect(self.remove_i2c_slot)
+
+        # Перед распоркой, чтобы слоты прижимались кверху.
+        self.i2c_slots_layout.insertWidget(
+            self.i2c_slots_layout.count() - 1, slot)
+        self.i2c_slots.append(slot)
+        self.renumber_i2c_slots()
+        return slot
+
+    def remove_i2c_slot(self, slot: 'RecordSlot'):
+        """Убрать слот"""
+        if slot not in self.i2c_slots:
+            return
+        self.i2c_slots.remove(slot)
+        self.i2c_slots_layout.removeWidget(slot)
+        slot.setParent(None)
+        slot.deleteLater()
+        self.renumber_i2c_slots()
+
+    def clear_i2c_slots(self):
+        """Убрать все слоты"""
+        for slot in list(self.i2c_slots):
+            self.remove_i2c_slot(slot)
+
+    def renumber_i2c_slots(self):
+        """Обновить заголовки слотов: обозначение поля, номер, формат"""
+        counters = {}
+        for slot in self.i2c_slots:
+            label = FIELD_LABEL[slot.format()]
+            counters[label] = counters.get(label, 0) + 1
+            number = counters[label]
+            slot.setTitle(
+                f"Поле {label}{number}  ·  {FIELD_DESCRIPTION[slot.format()]}")
+
+    def populate_i2c_slots(self, fixed_records, bcd_records, source: str):
+        """Пересобрать слоты по найденным записям"""
+        total = len(fixed_records) + len(bcd_records)
+        if not total:
+            self.update_i2c_status(
+                f"Записей не найдено ({source}). Слоты оставлены как есть.",
+                "error")
+            return
+
+        self.clear_i2c_slots()
+
+        for record in fixed_records:
+            self.add_i2c_slot(offset=record['offset'], value=record['value'],
+                              fmt=FORMAT_FIXED)
+        for record in bcd_records:
+            self.add_i2c_slot(offset=record['offset'], value=record['value'],
+                              fmt=FORMAT_BCD)
+
+        lines = [f"Найдено записей: {total} ({source})", ""]
+        for record in fixed_records:
+            lines.append(f"  fixed-point  0x{record['offset']:04X}  "
+                         f"{record['value']:>12.2f}  CRC 0x{record['crc']:04X}")
+        for record in bcd_records:
+            lines.append(f"  BCD          0x{record['offset']:04X}  "
+                         f"{record['value']:>12.2f}  "
+                         f"копии {', '.join('0x%04X' % c for c in record['copies'])}")
+
+        self.update_i2c_status("\n".join(lines), "success")
+
+    def i2c_scan_file(self):
+        """Найти записи в открытом дампе, не обращаясь к железу"""
+        if not self.file_data:
+            self.update_i2c_status(
+                "Сначала откройте файл дампа на вкладке «Значения».", "error")
+            return
+
+        data = bytes(self.file_data)
+        self.populate_i2c_slots(find_records(data),
+                                find_bcd_records(data, 0.01, 999999.99),
+                                f"файл, {len(data)} байт")
+
+    def i2c_scan_records(self):
+        """Вычитать микросхему целиком и создать слот на каждую запись"""
+        if I2CWriter is None:
+            self.update_i2c_status(
+                "✗ i2cpy не установлена. Установите: pip install i2cpy", "error")
+            return
+
+        self.i2c_scan_button.setEnabled(False)
+        self.i2c_progress.setVisible(True)
+        self.i2c_progress.setValue(0)
+
+        writer = I2CWriter(chip=self.i2c_chip_combo.currentText())
+
+        try:
+            writer.open_programmer()
+
+            data = bytearray()
+            while len(data) < writer.size:
+                piece = min(256, writer.size - len(data))
+                data.extend(writer.read_bytes(len(data), piece))
+                self.i2c_progress.setValue(int(len(data) * 100 / writer.size))
+                QtWidgets.QApplication.processEvents()
+
+            data = bytes(data)
+            self.populate_i2c_slots(find_records(data),
+                                    find_bcd_records(data, 0.01, 999999.99),
+                                    f"{writer.chip}, {len(data)} байт")
+
+        except Exception as exc:
+            self.update_i2c_status(f"✗ Ошибка чтения: {exc}", "error")
+
+        finally:
+            writer.close_programmer()
+            self.i2c_progress.setVisible(False)
+            self.i2c_scan_button.setEnabled(True)
+
+    def i2c_read_slot(self, slot: 'RecordSlot'):
+        """Прочитать значение слота из микросхемы"""
+        if I2CWriter is None:
+            self.update_i2c_status(
+                "✗ i2cpy не установлена. Установите: pip install i2cpy", "error")
             return
 
         try:
-            value = float(text.replace(",", "."))
+            offset = slot.offset()
+        except ValueError as exc:
+            self.update_i2c_status(f"✗ Смещение: {exc}", "error")
+            return
 
-            # Вычисляем HEX
-            raw = int(round(value * SCALE))
-            if not 0 <= raw <= 0xFFFFFFFF:
-                raise ValueError("Значение вне диапазона")
-            hex_bytes = raw.to_bytes(4, "big", signed=False)
-            self.i2c_hex_display.setText(f"0x{hex_bytes.hex().upper()}")
+        slot.set_busy(True)
+        writer = I2CWriter(offset=offset,
+                           chip=self.i2c_chip_combo.currentText())
 
-            # Вычисляем CRC-16
-            block = hex_bytes + hex_bytes + b'\x00' * 32
-            crc = crc16_ccitt(block)
-            self.i2c_crc_display.setText(f"0x{crc:04X}")
+        try:
+            writer.open_programmer()
 
-        except (ValueError, struct.error):
-            self.i2c_hex_display.setText("✗ Ошибка")
-            self.i2c_crc_display.setText("✗ Ошибка")
+            if slot.format() == FORMAT_BCD:
+                raw = writer.read_bytes(offset, BCD_RECORD_SIZE)
+                copies = [raw[c:c + BCD_VALUE_SIZE] for c in BCD_COPY_OFFSETS]
+                value = decode_bcd(copies[0])
+
+                if value is None:
+                    self.update_i2c_status(
+                        f"0x{offset:04X}: байты {copies[0].hex(' ').upper()} "
+                        f"не являются корректным BCD.", "error")
+                else:
+                    slot.set_value(value)
+                    agree = all(c == copies[0] for c in copies)
+                    self.update_i2c_status(
+                        f"0x{offset:04X}: прочитано {value:.2f} (BCD)\n"
+                        f"  копии: "
+                        f"{'  '.join(c.hex(' ').upper() for c in copies)}\n"
+                        f"  {'✓ все четыре копии совпадают' if agree else '✗ КОПИИ РАСХОДЯТСЯ'}",
+                        "success" if agree else "error")
+            else:
+                record = writer.read_record(offset)
+                slot.set_value(record['value'])
+                self.update_i2c_status(
+                    f"0x{offset:04X}: прочитано {record['value']:.2f}\n"
+                    f"  CRC сохранённый 0x{record['crc_stored']:04X}, "
+                    f"расчётный 0x{record['crc']:04X}\n"
+                    f"  {'✓ запись целая' if record['valid'] else '✗ CRC НЕ СОШЁЛСЯ'}",
+                    "success" if record['valid'] else "error")
+
+        except Exception as exc:
+            self.update_i2c_status(f"✗ Ошибка чтения: {exc}", "error")
+
+        finally:
+            writer.close_programmer()
+            slot.set_busy(False)
+
+    def i2c_write_slot(self, slot: 'RecordSlot'):
+        """Записать значение одного слота, не трогая остальные"""
+        if I2CWriter is None:
+            self.update_i2c_status(
+                "✗ i2cpy не установлена. Установите: pip install i2cpy", "error")
+            return
+
+        text = slot.value_text()
+        if not text:
+            self.update_i2c_status("✗ Введите значение в слот", "error")
+            return
+
+        try:
+            offset = slot.offset()
+        except ValueError as exc:
+            self.update_i2c_status(f"✗ Смещение: {exc}", "error")
+            return
+
+        slot.set_busy(True)
+        self.i2c_progress.setVisible(True)
+        self.i2c_progress.setValue(0)
+
+        try:
+            if slot.format() == FORMAT_BCD:
+                self.write_bcd_slot(slot, offset, text)
+            else:
+                self.write_fixed_slot(slot, offset, text)
+
+        except Exception as exc:
+            self.update_i2c_status(f"✗ Ошибка: {exc}", "error")
+
+        finally:
+            slot.set_busy(False)
+            self.i2c_progress.setValue(0)
+            self.i2c_progress.setVisible(False)
+
+    def write_fixed_slot(self, slot, offset, text):
+        """Запись слота формата fixed-point: 42 байта с CRC"""
+        writer = I2CWriter(offset=offset,
+                           chip=self.i2c_chip_combo.currentText())
+
+        def progress_callback(percent, message):
+            self.i2c_progress.setValue(percent)
+            if message:
+                self.update_i2c_status(message, "info")
+            QtWidgets.QApplication.processEvents()
+
+        result = writer.write_and_verify(text, progress_callback, debug=True,
+                                         offset=offset, exact=slot.is_exact())
+
+        if result['success']:
+            slot.set_value(result['after'])
+            message = (f"✓ 0x{offset:04X}: записано {result['after']:.2f} "
+                       f"| CRC 0x{result['crc']:04X} "
+                       f"| было {result['before']:.2f}")
+        else:
+            message = f"✗ 0x{offset:04X}: {result['message']}"
+
+        if result['debug']:
+            message += f"\n\nДЕБАГ ЛОГИ:\n{result['debug']}"
+
+        self.update_i2c_status(message, "success" if result['success'] else "error")
+
+    def write_bcd_slot(self, slot, offset, text):
+        """
+        Запись слота формата BCD: четыре копии значения внутри записи.
+
+        Правятся ровно 16 байт (4 копии × 4 байта). Заголовок, нули между
+        копиями и хвост записи не трогаются.
+        """
+        value = float(text.replace(",", "."))
+        payload = encode_bcd(value)
+
+        writer = I2CWriter(offset=offset,
+                           chip=self.i2c_chip_combo.currentText())
+        log = [f"Значение {value:.2f} → BCD {payload.hex(' ').upper()}"]
+
+        try:
+            self.i2c_progress.setValue(10)
+            writer.open_programmer()
+
+            before_raw = writer.read_bytes(offset, BCD_RECORD_SIZE)
+            before = decode_bcd(before_raw[BCD_COPY_OFFSETS[0]:
+                                           BCD_COPY_OFFSETS[0] + BCD_VALUE_SIZE])
+            log.append(f"Было: {before if before is not None else 'не BCD'}")
+
+            self.i2c_progress.setValue(35)
+            for index, copy_offset in enumerate(BCD_COPY_OFFSETS, start=1):
+                position = offset + copy_offset
+                writer.write_bytes(position, payload)
+                log.append(f"Копия {index} записана по 0x{position:04X}")
+                self.i2c_progress.setValue(35 + index * 10)
+                QtWidgets.QApplication.processEvents()
+
+            writer.close_programmer()
+            time.sleep(0.15)
+            writer.open_programmer()
+
+            self.i2c_progress.setValue(85)
+            after_raw = writer.read_bytes(offset, BCD_RECORD_SIZE)
+            copies = [after_raw[c:c + BCD_VALUE_SIZE] for c in BCD_COPY_OFFSETS]
+            ok = all(c == payload for c in copies)
+
+            log.append(f"Проверка: "
+                       f"{'  '.join(c.hex(' ').upper() for c in copies)}")
+
+            if ok:
+                slot.set_value(value)
+                log.append("✓ Все четыре копии совпали")
+                self.update_i2c_status(
+                    f"✓ 0x{offset:04X}: записано {value:.2f} (BCD, 4 копии)"
+                    f"\n\nДЕБАГ ЛОГИ:\n" + "\n".join(log), "success")
+            else:
+                log.append(f"✗ Ожидали во всех копиях {payload.hex(' ').upper()}")
+                self.update_i2c_status(
+                    f"✗ 0x{offset:04X}: проверка не пройдена"
+                    f"\n\nДЕБАГ ЛОГИ:\n" + "\n".join(log), "error")
+
+        finally:
+            writer.close_programmer()
 
     def i2c_probe_chip(self):
         """Определить схему адресации микросхемы опросом шины"""
@@ -878,11 +1397,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.update_i2c_status("✗ i2cpy не установлена. Установите: pip install i2cpy", "error")
             return
 
-        try:
-            offset = parse_offset(self.i2c_offset_input.text())
-        except ValueError as e:
-            self.update_i2c_status(f"✗ {e}", "error")
-            return
+        # Опрашиваем по смещению первого слота — там заведомо есть данные,
+        # а на содержательных байтах проверка стабильности точнее.
+        offset = DEFAULT_SLOTS[0][0]
+        if self.i2c_slots:
+            try:
+                offset = self.i2c_slots[0].offset()
+            except ValueError:
+                pass
 
         self.i2c_probe_button.setEnabled(False)
         writer = I2CWriter(offset=offset, chip=self.i2c_chip_combo.currentText())
@@ -919,54 +1441,24 @@ class MainWindow(QtWidgets.QMainWindow):
             self.i2c_probe_button.setEnabled(True)
 
     def i2c_write_and_verify(self):
-        """Запись в EEPROM с проверкой"""
+        """Записать по очереди все заполненные слоты"""
         if I2CWriter is None:
-            self.update_i2c_status("✗ i2cpy не установлена. Установите: pip install i2cpy", "error")
+            self.update_i2c_status(
+                "✗ i2cpy не установлена. Установите: pip install i2cpy", "error")
             return
 
-        value_text = self.i2c_value_input.text().strip()
-        if not value_text:
-            self.update_i2c_status("✗ Введите значение", "error")
+        pending = [slot for slot in self.i2c_slots if slot.value_text()]
+        if not pending:
+            self.update_i2c_status("✗ Ни один слот не заполнен", "error")
             return
 
         self.i2c_write_button.setEnabled(False)
-        self.i2c_progress.setVisible(True)
-        self.i2c_progress.setValue(0)
-
         try:
-            offset = parse_offset(self.i2c_offset_input.text())
-            writer = I2CWriter(offset=offset,
-                               chip=self.i2c_chip_combo.currentText())
-
-            def progress_callback(percent, text):
-                self.i2c_progress.setValue(percent)
-                if text:
-                    self.update_i2c_status(text, "info")
+            for slot in pending:
+                self.i2c_write_slot(slot)
                 QtWidgets.QApplication.processEvents()
-
-            result = writer.write_and_verify(value_text, progress_callback, debug=True)
-
-            if result['success']:
-                msg = (f"✓ Успех: записано {result['after']:.2f} | CRC: {result['crc']} | "
-                       f"Было: {result['before']:.2f}")
-                if result['debug']:
-                    msg += f"\n\nДЕБАГ ЛОГИ:\n{result['debug']}"
-                self.update_i2c_status(msg, "success")
-                self.i2c_value_input.clear()
-                self.i2c_hex_display.clear()
-                self.i2c_crc_display.clear()
-            else:
-                msg = result['message']
-                if result['debug']:
-                    msg += f"\n\nДЕБАГ ЛОГИ:\n{result['debug']}"
-                self.update_i2c_status(msg, "error")
-
-        except Exception as e:
-            self.update_i2c_status(f"✗ Ошибка: {e}", "error")
-
         finally:
             self.i2c_write_button.setEnabled(True)
-            self.i2c_progress.setVisible(False)
 
     def update_i2c_status(self, text, status_type="info"):
         """Обновляет статус I2C"""
