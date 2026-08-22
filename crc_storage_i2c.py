@@ -177,9 +177,9 @@ class I2CWriter:
 
         return value
 
-    def write_and_verify(self, value: str, progress_callback=None) -> dict:
+    def write_and_verify(self, value: str, progress_callback=None, debug=False) -> dict:
         """
-        Полный цикл записи и проверки:
+        Полный цикл записи и проверки с опциональным логированием:
         1. Открыть программатор
         2. Прочитать текущее значение
         3. Записать новое значение
@@ -196,6 +196,7 @@ class I2CWriter:
             'before': float or None,
             'after': float or None,
             'crc': int or None,
+            'debug': str (если debug=True)
         }
         """
         result = {
@@ -204,35 +205,51 @@ class I2CWriter:
             'before': None,
             'after': None,
             'crc': None,
+            'debug': '',
         }
+
+        debug_log = []
 
         def progress(percent: int, text: str = ''):
             if progress_callback:
                 progress_callback(percent, text)
 
+        def log_debug(text):
+            if debug:
+                debug_log.append(text)
+
         try:
             progress(5, "Парсинг значения...")
             parsed_value = self.parse_value(value)
+            log_debug(f"Распарсено значение: {parsed_value}")
 
             progress(20, "Открытие программатора...")
             self.open_programmer()
+            log_debug("Программатор открыт")
 
             progress(30, "Чтение текущего значения...")
             before_bytes = self.read_bytes(self.offset, VALUE_SIZE)
             result['before'] = decode_value(before_bytes)
+            log_debug(f"Текущее значение: {result['before']:.2f} (байты: {before_bytes.hex().upper()})")
 
             progress(45, "Запись нового значения...")
             block_data, crc = self.make_block(parsed_value)
+            log_debug(f"Блок создан: {len(block_data)} байт, CRC: 0x{crc:04X}")
+            log_debug(f"Данные: {block_data[:8].hex().upper()}... (первые 8 байт)")
             self.write_bytes(self.offset, block_data)
+            log_debug(f"Записано по смещению 0x{self.offset:04X}")
 
             progress(60, "Закрытие программатора...")
             self.close_programmer()
+            log_debug("Программатор закрыт")
 
             progress(65, "Ожидание цикла записи EEPROM (0.15s)...")
             time.sleep(0.15)
+            log_debug("Ожидание завершено")
 
             progress(80, "Переоткрытие программатора...")
             self.open_programmer()
+            log_debug("Программатор переоткрыт")
 
             progress(85, "Проверка записанного значения...")
             actual = None
@@ -242,27 +259,37 @@ class I2CWriter:
                     actual_value = decode_value(actual[:4])
                     actual_crc = struct.unpack(">H", actual[BLOCK_SIZE:BLOCK_SIZE+CRC_SIZE])[0]
 
+                    log_debug(f"Попытка {attempt+1}: Прочитано {actual_value:.2f}, CRC: 0x{actual_crc:04X}")
+                    log_debug(f"  Байты: {actual[:8].hex().upper()}... (первые 8 байт)")
+
                     if actual[:4] == encode_value(parsed_value):
                         result['after'] = actual_value
                         result['crc'] = actual_crc
+                        log_debug(f"✓ Проверка пройдена на попытке {attempt+1}")
                         break
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_debug(f"Попытка {attempt+1}: Ошибка чтения - {e}")
 
                 if attempt < 9:
                     time.sleep(0.05)
 
             if result['after'] is None:
+                log_debug("✗ Все 10 попыток исчерпаны, проверка не пройдена")
+                log_debug(f"Ожидали: {encode_value(parsed_value).hex().upper()}")
+                log_debug(f"Прочитали: {actual[:4].hex().upper() if actual else 'ОШИБКА ЧТЕНИЯ'}")
                 raise RuntimeError("Проверка записи не пройдена (10 попыток).")
 
             result['success'] = True
             result['message'] = f"Успех: записано {result['after']:.2f} (CRC: 0x{result['crc']:04X})"
 
         except Exception as exc:
+            log_debug(f"ИСКЛЮЧЕНИЕ: {exc}")
             result['message'] = f"Ошибка: {exc}"
 
         finally:
             progress(100, result['message'])
             self.close_programmer()
+            if debug:
+                result['debug'] = '\n'.join(debug_log)
 
         return result

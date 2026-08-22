@@ -763,17 +763,20 @@ class MainWindow(QtWidgets.QMainWindow):
         """)
         layout.addWidget(self.i2c_progress)
 
-        self.i2c_status = QtWidgets.QLabel("Готово к работе")
-        self.i2c_status.setWordWrap(True)
-        self.i2c_status.setAlignment(QtCore.Qt.AlignCenter)
+        self.i2c_status = QtWidgets.QTextEdit()
+        self.i2c_status.setText("Готово к работе")
+        self.i2c_status.setReadOnly(True)
+        self.i2c_status.setMinimumHeight(100)
+        self.i2c_status.setMaximumHeight(300)
         self.i2c_status.setStyleSheet("""
-            QLabel {
-                background-color: #161b22;
+            QTextEdit {
+                background-color: #0d1117;
                 border: 2px solid #30363d;
                 border-radius: 6px;
                 padding: 12px;
                 color: #c9d1d9;
-                font-size: 13px;
+                font-size: 12px;
+                font-family: 'Courier New', monospace;
             }
         """)
         layout.addWidget(self.i2c_status)
@@ -881,19 +884,22 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.update_i2c_status(text, "info")
                 QtWidgets.QApplication.processEvents()
 
-            result = writer.write_and_verify(value_text, progress_callback)
+            result = writer.write_and_verify(value_text, progress_callback, debug=True)
 
             if result['success']:
-                self.update_i2c_status(
-                    f"✓ Успех: записано {result['after']:.2f} | CRC: {result['crc']} | "
-                    f"Было: {result['before']:.2f}",
-                    "success"
-                )
+                msg = (f"✓ Успех: записано {result['after']:.2f} | CRC: {result['crc']} | "
+                       f"Было: {result['before']:.2f}")
+                if result['debug']:
+                    msg += f"\n\nДЕБАГ ЛОГИ:\n{result['debug']}"
+                self.update_i2c_status(msg, "success")
                 self.i2c_value_input.clear()
                 self.i2c_hex_display.clear()
                 self.i2c_crc_display.clear()
             else:
-                self.update_i2c_status(result['message'], "error")
+                msg = result['message']
+                if result['debug']:
+                    msg += f"\n\nДЕБАГ ЛОГИ:\n{result['debug']}"
+                self.update_i2c_status(msg, "error")
 
         except Exception as e:
             self.update_i2c_status(f"✗ Ошибка: {e}", "error")
@@ -907,7 +913,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.i2c_status.setText(text)
         if status_type == "success":
             style = """
-                QLabel {
+                QTextEdit {
                     background-color: #0d2818;
                     border: 2px solid #238636;
                     color: #7ee78c;
@@ -915,7 +921,7 @@ class MainWindow(QtWidgets.QMainWindow):
             """
         elif status_type == "error":
             style = """
-                QLabel {
+                QTextEdit {
                     background-color: #3d1f1a;
                     border: 2px solid #f85149;
                     color: #f85149;
@@ -923,7 +929,7 @@ class MainWindow(QtWidgets.QMainWindow):
             """
         else:
             style = """
-                QLabel {
+                QTextEdit {
                     background-color: #161b22;
                     border: 2px solid #30363d;
                     color: #c9d1d9;
@@ -932,7 +938,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.i2c_status.setStyleSheet(style + """
             border-radius: 6px;
             padding: 12px;
-            font-size: 13px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
         """)
 
     # ── Операции с дампом ─────────────────────────────────────────────
