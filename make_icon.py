@@ -24,15 +24,51 @@ from PyQt5 import QtCore, QtGui
 # представлений, мелкие рисуются отдельно и потому остаются читаемыми.
 SIZES = (16, 24, 32, 48, 64, 128, 256)
 
-# Палитра совпадает с тёмной темой приложения.
-BG_TOP = "#161B22"
-BG_BOTTOM = "#0D1117"
-BORDER = "#30363D"
-CHIP_TOP = "#58A6FF"
-CHIP_BOTTOM = "#1F6FEB"
-PIN = "#8B949E"
-MARK = "#0D1117"
-ACCENT = "#3FB950"
+# Палитры под тёмные темы приложений. Программы две, акценты у них разные,
+# и иконки должны различаться в панели задач.
+THEMES = {
+    "integra101": {
+        "bg_top": "#161B22", "bg_bottom": "#0D1117", "border": "#30363D",
+        "chip_top": "#58A6FF", "chip_bottom": "#1F6FEB",
+        "pin": "#8B949E", "mark": "#0D1117", "accent": "#3FB950",
+        "title": "integra101",
+        "subtitle": "Запись значений в EEPROM · CRC-16 CCITT",
+        "prefix": "icon",
+    },
+    "srt": {
+        "bg_top": "#151A27", "bg_bottom": "#0F1115", "border": "#2A2F3A",
+        "chip_top": "#7C8FE0", "chip_bottom": "#3A4A7A",
+        "pin": "#8B93A6", "mark": "#0F1115", "accent": "#5D74C5",
+        "title": "MERK-3F",
+        "subtitle": "Правка показаний напрямую в SPI FRAM",
+        "prefix": "icon_srt",
+    },
+}
+
+THEME = THEMES["integra101"]
+
+BG_TOP = THEME["bg_top"]
+BG_BOTTOM = THEME["bg_bottom"]
+BORDER = THEME["border"]
+CHIP_TOP = THEME["chip_top"]
+CHIP_BOTTOM = THEME["chip_bottom"]
+PIN = THEME["pin"]
+MARK = THEME["mark"]
+ACCENT = THEME["accent"]
+
+
+def use_theme(name: str):
+    """Переключить палитру перед отрисовкой"""
+    global THEME, BG_TOP, BG_BOTTOM, BORDER, CHIP_TOP, CHIP_BOTTOM, PIN, MARK, ACCENT
+    THEME = THEMES[name]
+    BG_TOP = THEME["bg_top"]
+    BG_BOTTOM = THEME["bg_bottom"]
+    BORDER = THEME["border"]
+    CHIP_TOP = THEME["chip_top"]
+    CHIP_BOTTOM = THEME["chip_bottom"]
+    PIN = THEME["pin"]
+    MARK = THEME["mark"]
+    ACCENT = THEME["accent"]
 
 
 def draw_icon(size: int) -> QtGui.QImage:
@@ -223,7 +259,7 @@ def draw_splash() -> QtGui.QImage:
     p.setFont(font)
     p.setPen(QtGui.QColor("#E6EDF3"))
     p.drawText(QtCore.QRect(0, 140, SPLASH_W, 30),
-               QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter, "integra101")
+               QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter, THEME["title"])
 
     font = QtGui.QFont()
     font.setPointSize(9)
@@ -231,10 +267,30 @@ def draw_splash() -> QtGui.QImage:
     p.setPen(QtGui.QColor("#8B949E"))
     p.drawText(QtCore.QRect(0, 168, SPLASH_W, 20),
                QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter,
-               "Запись значений в EEPROM · CRC-16 CCITT")
+               THEME["subtitle"])
 
     p.end()
     return image
+
+
+def build_theme(name: str):
+    """Нарисовать иконку и заставку для одной темы"""
+    use_theme(name)
+    prefix = THEME["prefix"]
+    splash_name = "splash.png" if prefix == "icon" else prefix + "_splash.png"
+
+    images = [draw_icon(size) for size in SIZES]
+    with open(prefix + ".ico", "wb") as f:
+        f.write(build_ico(images))
+    images[-1].save(prefix + ".png", "PNG")
+    draw_splash().save(splash_name, "PNG")
+
+    # Вывод только ASCII: скрипт запускается из .bat, а на англоязычной
+    # Windows перенаправленный stdout берёт кодировку локали (cp437/cp1252),
+    # и кириллица валится с UnicodeEncodeError.
+    print(prefix + ".ico   sizes: " + ", ".join(str(s) for s in SIZES))
+    print(prefix + ".png   256x256")
+    print("%s %dx%d, PyInstaller splash" % (splash_name, SPLASH_W, SPLASH_H))
 
 
 def main():
@@ -242,20 +298,12 @@ def main():
     if app is None:
         app = QtGui.QGuiApplication(sys.argv)
 
-    images = [draw_icon(size) for size in SIZES]
-
-    with open("icon.ico", "wb") as f:
-        f.write(build_ico(images))
-
-    images[-1].save("icon.png", "PNG")
-    draw_splash().save("splash.png", "PNG")
-
-    # Вывод только ASCII: скрипт запускается из build_windows.bat, а на
-    # англоязычной Windows перенаправленный stdout берёт кодировку локали
-    # (cp437/cp1252), и кириллица валится с UnicodeEncodeError.
-    print("icon.ico   sizes: " + ", ".join(str(s) for s in SIZES))
-    print("icon.png   256x256")
-    print("splash.png %dx%d, PyInstaller splash" % (SPLASH_W, SPLASH_H))
+    names = sys.argv[1:] or list(THEMES)
+    for name in names:
+        if name not in THEMES:
+            print("unknown theme: %s; known: %s" % (name, ", ".join(THEMES)))
+            return 1
+        build_theme(name)
     return 0
 
 

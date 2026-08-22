@@ -15,16 +15,18 @@ import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-BG_TOP = "#161B22"
-BG_BOTTOM = "#0D1117"
-BORDER = "#30363D"
-TRACK = "#21262D"
-ARC_FROM = "#1F6FEB"
-ARC_TO = "#3FB950"
-GLINT = "#79C0FF"
-TITLE = "#E6EDF3"
-SUBTITLE = "#8B949E"
-STATUS = "#58A6FF"
+DEFAULT_PALETTE = {
+    "bg_top": "#161B22",
+    "bg_bottom": "#0D1117",
+    "border": "#30363D",
+    "track": "#21262D",
+    "arc_from": "#1F6FEB",
+    "arc_to": "#3FB950",
+    "glint": "#79C0FF",
+    "title": "#E6EDF3",
+    "subtitle": "#8B949E",
+    "status": "#58A6FF",
+}
 
 PANEL_W, PANEL_H = 420, 300
 RING_D = 104
@@ -49,8 +51,20 @@ class LoadingSplash(QtWidgets.QWidget):
         splash.finish(main_window)
     """
 
-    def __init__(self, icon: QtGui.QIcon = None, parent=None):
+    def __init__(self, icon: QtGui.QIcon = None, parent=None,
+                 title: str = "integra101",
+                 subtitle: str = "Запись значений в EEPROM · CRC-16 CCITT",
+                 palette: dict = None):
         super().__init__(parent)
+
+        # Палитру можно подменить: экран используется двумя программами с
+        # разными акцентными цветами.
+        colours = dict(DEFAULT_PALETTE)
+        if palette:
+            colours.update(palette)
+        self._c = colours
+        self._title = title
+        self._subtitle = subtitle
 
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint
                             | QtCore.Qt.WindowStaysOnTopHint
@@ -188,10 +202,10 @@ class LoadingSplash(QtWidgets.QWidget):
         rect = QtCore.QRectF(0.5, 0.5, PANEL_W - 1, PANEL_H - 1)
 
         bg = QtGui.QLinearGradient(0, 0, 0, PANEL_H)
-        bg.setColorAt(0.0, QtGui.QColor(BG_TOP))
-        bg.setColorAt(1.0, QtGui.QColor(BG_BOTTOM))
+        bg.setColorAt(0.0, QtGui.QColor(self._c["bg_top"]))
+        bg.setColorAt(1.0, QtGui.QColor(self._c["bg_bottom"]))
 
-        p.setPen(QtGui.QPen(QtGui.QColor(BORDER), 1))
+        p.setPen(QtGui.QPen(QtGui.QColor(self._c["border"]), 1))
         p.setBrush(bg)
         p.drawRoundedRect(rect, 14, 14)
 
@@ -201,10 +215,10 @@ class LoadingSplash(QtWidgets.QWidget):
         radius = RING_D / 2 + 10 + pulse * 6
 
         glow = QtGui.QRadialGradient(centre, radius)
-        colour = QtGui.QColor(ARC_FROM)
+        colour = QtGui.QColor(self._c["arc_from"])
         colour.setAlpha(int(38 + pulse * 26))
         glow.setColorAt(0.55, colour)
-        colour_edge = QtGui.QColor(ARC_FROM)
+        colour_edge = QtGui.QColor(self._c["arc_from"])
         colour_edge.setAlpha(0)
         glow.setColorAt(1.0, colour_edge)
 
@@ -217,7 +231,7 @@ class LoadingSplash(QtWidgets.QWidget):
                             RING_D, RING_D)
 
         # Дорожка.
-        pen = QtGui.QPen(QtGui.QColor(TRACK), RING_W)
+        pen = QtGui.QPen(QtGui.QColor(self._c["track"]), RING_W)
         pen.setCapStyle(QtCore.Qt.RoundCap)
         p.setPen(pen)
         p.setBrush(QtCore.Qt.NoBrush)
@@ -230,10 +244,10 @@ class LoadingSplash(QtWidgets.QWidget):
             # позиция градиента 1 - t, и стопы кладутся зеркально — иначе
             # цвета идут задом наперёд.
             gradient = QtGui.QConicalGradient(centre, 90)
-            gradient.setColorAt(1.0, QtGui.QColor(ARC_FROM))
+            gradient.setColorAt(1.0, QtGui.QColor(self._c["arc_from"]))
             gradient.setColorAt(max(0.0, 1.0 - self._shown),
-                                QtGui.QColor(ARC_TO))
-            gradient.setColorAt(0.0, QtGui.QColor(ARC_TO))
+                                QtGui.QColor(self._c["arc_to"]))
+            gradient.setColorAt(0.0, QtGui.QColor(self._c["arc_to"]))
 
             pen = QtGui.QPen(QtGui.QBrush(gradient), RING_W)
             pen.setCapStyle(QtCore.Qt.RoundCap)
@@ -244,7 +258,7 @@ class LoadingSplash(QtWidgets.QWidget):
         # Бегущий блик — показывает, что процесс жив, даже когда
         # прогресс какое-то время стоит на месте.
         head = self._phase * 360.0
-        glint = QtGui.QColor(GLINT)
+        glint = QtGui.QColor(self._c["glint"])
         glint.setAlpha(190)
         pen = QtGui.QPen(glint, RING_W)
         pen.setCapStyle(QtCore.Qt.RoundCap)
@@ -264,24 +278,24 @@ class LoadingSplash(QtWidgets.QWidget):
         title.setPointSize(19)
         title.setBold(True)
         p.setFont(title)
-        p.setPen(QtGui.QColor(TITLE))
+        p.setPen(QtGui.QColor(self._c["title"]))
         p.drawText(QtCore.QRect(0, 184, PANEL_W, 30),
                    QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter,
-                   "integra101")
+                   self._title)
 
         sub = QtGui.QFont()
         sub.setPointSize(9)
         p.setFont(sub)
-        p.setPen(QtGui.QColor(SUBTITLE))
+        p.setPen(QtGui.QColor(self._c["subtitle"]))
         p.drawText(QtCore.QRect(0, 212, PANEL_W, 20),
                    QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter,
-                   "Запись значений в EEPROM · CRC-16 CCITT")
+                   self._subtitle)
 
         status = QtGui.QFont()
         status.setPointSize(9)
         status.setBold(True)
         p.setFont(status)
-        p.setPen(QtGui.QColor(STATUS))
+        p.setPen(QtGui.QColor(self._c["status"]))
         p.drawText(QtCore.QRect(20, 244, PANEL_W - 40, 20),
                    QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter,
                    f"{self._status}   {int(round(self._shown * 100))}%")
