@@ -133,8 +133,8 @@ def main():
     dup1 = read_record(back, T1_REC_STsrtS[1], coef)[0]
     passed &= check("дубль T1 обновлён", abs(dup1 - 1200.00) < 0.01, f"{dup1:.2f}")
     passed &= check("статус говорит об успехе",
-                    "проверка чтением пройдена" in tab.lbl_status.text(),
-                    tab.lbl_status.text().splitlines()[-1])
+                    tab.lbl_status.text() == "Записано и проверено",
+                    tab.lbl_status.text())
 
     untouched = back[0x0300:0x0400]
     passed &= check("посторонние области не тронуты",
@@ -165,8 +165,13 @@ def main():
                     len(tab2.mem.buf) == 512, str(len(tab2.mem.buf)))
     passed &= check("текущее P разобрано",
                     tab2.ed_cur_p.text() == "6384.36", tab2.ed_cur_p.text())
+    # Целостность дубля наружу больше не выводится, поэтому сверяем не
+    # текст статуса, а сами байты.
     passed &= check("дубль по 0x0100 прочитан верно",
-                    "дубль совпадает" in tab2.lbl_status.text())
+                    tab2.mem.buf[BASE_OFF:BASE_OFF + REC_LEN]
+                    == tab2.mem.buf[DUP_OFF:DUP_OFF + REC_LEN]
+                    and tab2.lbl_status.text() == "Показания прочитаны",
+                    tab2.lbl_status.text())
 
     tab2.ed_new_p.setText("7000.00")
     app.processEvents()
@@ -223,7 +228,11 @@ def main():
     passed &= check("прочитано 32768 байт", len(tab3.mem.buf) == 32768)
     passed &= check("T1 разобран", abs(tab3.in_t1.value() - 100.00) < 0.01)
     passed &= check("зеркала признаны совпадающими",
-                    "совпадают с базой: да" in tab3.lbl_status.text())
+                    all(tab3.mem.buf[m:m + MIRROR_STRIDE]
+                        == tab3.mem.buf[0:MIRROR_STRIDE]
+                        for m in (0x2000, 0x4000, 0x6000))
+                    and tab3.lbl_status.text() == "Показания прочитаны",
+                    tab3.lbl_status.text())
 
     tab3.in_t1.setValue(300.00)
     tab3.in_t2.setValue(200.00)
@@ -269,8 +278,8 @@ def main():
     writes = sum(1 for c in emu.commands if c == spi_memory.CMD_WRITE)
     passed &= check("команд записи не было", writes == 0, str(writes))
     passed &= check("статус это сообщает",
-                    "Изменений нет" in tab3.lbl_status.text(),
-                    tab3.lbl_status.text().splitlines()[0])
+                    tab3.lbl_status.text() == "Показания не изменились",
+                    tab3.lbl_status.text())
 
     # ── Запись без чтения ────────────────────────────────────────────
     print()
@@ -285,9 +294,30 @@ def main():
     fresh.apply_patch()
     passed &= check("кнопка записи выключена до чтения",
                     not fresh.mem.btn_write.isEnabled())
-    passed &= check("статус просит сначала прочитать",
-                    "Сначала прочитайте память" in fresh.lbl_status.text(),
+    passed &= check("статус просит сначала считать",
+                    fresh.lbl_status.text() == "Сначала считайте показания",
                     fresh.lbl_status.text())
+
+    # ── Внешний интерфейс не выдаёт внутреннюю кухню ─────────────────
+    print()
+    print("=" * 72)
+    print("6. В статусах нет технических подробностей")
+    print("=" * 72)
+
+    forbidden = ("CRC", "0x", "байт", "дубль", "зеркал", "коэф", "k=",
+                 "Коэф", "смещ", "патч")
+    for label, widget in (("ART", tab), ("AR", tab2), ("231-AT-01", tab3)):
+        for state in ("после чтения", "после записи"):
+            if state == "после чтения":
+                widget.mem.read_chip()
+            else:
+                (widget.apply_patch if hasattr(widget, "apply_patch")
+                 else widget.write_back)()
+            app.processEvents()
+            text = widget.lbl_status.text()
+            leaks = [w for w in forbidden if w in text]
+            passed &= check(f"{label} {state}: чисто", not leaks,
+                            f"{text!r} содержит {leaks}" if leaks else text)
 
     print()
     print("=" * 72)

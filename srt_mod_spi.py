@@ -371,23 +371,13 @@ class MemoryPanel(QtWidgets.QGroupBox):
             ident = fram.read_id()
             actual = probe_size(fram)
 
-            lines = [f"Программатор открыт, выбран {fram.title}"]
-            if ident:
-                lines.append("Идентификатор: " + ident.hex(" ").upper())
-            else:
-                lines.append("Идентификатор: микросхема его не поддерживает")
-
             if actual == fram.size:
-                lines.append(f"Объём подтверждён: {actual} байт")
+                self.report("Микросхема определена, связь есть")
             else:
-                lines.append(
-                    f"ВНИМАНИЕ: реальный объём {actual} байт вместо "
-                    f"{fram.size}. Адреса заворачиваются — выбран не тот тип."
-                )
-            self.report("\n".join(lines))
+                self.report("Выбран неверный тип микросхемы")
 
-        except SPIError as exc:
-            self.report(f"Ошибка: {exc}")
+        except SPIError:
+            self.report("Нет связи с программатором")
         finally:
             if transport is not None:
                 transport.close()
@@ -400,10 +390,10 @@ class MemoryPanel(QtWidgets.QGroupBox):
             fram, transport = self._session()
             data = fram.read_all(progress=self._progress)
             self.buf = data
-            self.report(f"Прочитано {len(data)} байт из {fram.title}")
+            self.report("Показания прочитаны")
             self.dataRead.emit(data)
-        except SPIError as exc:
-            self.report(f"Ошибка чтения: {exc}")
+        except SPIError:
+            self.report("Не удалось прочитать. Проверьте подключение")
         finally:
             if transport is not None:
                 transport.close()
@@ -415,12 +405,10 @@ class MemoryPanel(QtWidgets.QGroupBox):
         и сразу проверить чтением.
         """
         if self.buf is None:
-            self.report("Сначала прочитайте память.")
+            self.report("Сначала считайте показания")
             return False
         if len(new_data) != len(self.buf):
-            self.report(
-                f"Длина не совпадает: подготовлено {len(new_data)} байт, "
-                f"в памяти {len(self.buf)}.")
+            self.report("Не удалось записать. Считайте показания заново")
             return False
 
         self._set_busy(True)
@@ -431,26 +419,20 @@ class MemoryPanel(QtWidgets.QGroupBox):
                                          progress=self._progress)
 
             if written == 0:
-                self.report("Изменений нет — в память ничего не писалось.")
+                self.report("Показания не изменились")
                 return True
 
-            ok, bad = fram.verify(new_data)
+            ok, _ = fram.verify(new_data)
             if ok:
                 self.buf = bytes(new_data)
-                self.report(
-                    f"Записано {written} байт, проверка чтением пройдена.")
+                self.report("Записано и проверено")
                 return True
 
-            preview = ", ".join(
-                f"0x{a:04X}: ждали {e:02X}, прочитали {g:02X}"
-                for a, e, g in bad[:5])
-            self.report(
-                f"Записано {written} байт, но проверка НЕ пройдена: "
-                f"{len(bad)} расхождений.\n{preview}")
+            self.report("Запись не подтвердилась. Повторите")
             return False
 
-        except SPIError as exc:
-            self.report(f"Ошибка записи: {exc}")
+        except SPIError:
+            self.report("Не удалось записать. Проверьте подключение")
             return False
         finally:
             if transport is not None:
@@ -576,7 +558,7 @@ class srt03Tab(QtWidgets.QWidget):
         form.addWidget(QtWidgets.QLabel("T2 Q (авто):"), r, 2); form.addWidget(self.in_t2q, r, 3, 1, 3)
         root.addWidget(calc_box)
 
-        self.lbl_status = QtWidgets.QLabel("Микросхема не прочитана")
+        self.lbl_status = QtWidgets.QLabel("Показания не считаны")
         self.lbl_status.setObjectName("StatusLabel")
         self.lbl_status.setWordWrap(True)
         root.addWidget(self.lbl_status)
@@ -630,16 +612,12 @@ class srt03Tab(QtWidgets.QWidget):
         self.on_k_mode_changed()
         self.refresh_totals()
 
-        fk = self._file_k if self._file_k is not None else float("nan")
-        sk = self._sum_k if self._sum_k is not None else float("nan")
-        self.set_status(
-            f"Прочитано {len(data)} байт из {CHIPS[self.mem.chip()]['title']}\n"
-            f"CRC: T1={'OK' if ok1 else 'BAD'} | T2={'OK' if ok2 else 'BAD'} "
-            f"| TOT@0x0200={'OK' if ok3 else 'BAD'}\n"
-            f"Tot@0x0200: P={totp_f:.2f} Q={totq_f:.2f} (k={fk:.10f})\n"
-            f"Tot(СУММА): P={sum_p:.2f} Q={sum_q:.2f} (k={sk:.10f})\n"
-            f"Показываю Tot как: {self._tot_source}"
-        )
+        # Клиенту показываем только суть: прочиталось или данные битые.
+        # Разбор по записям, CRC и коэффициентам наружу не выносим.
+        if ok1 and ok2 and ok3:
+            self.set_status("Показания прочитаны")
+        else:
+            self.set_status("Данные в памяти повреждены")
 
     def on_k_mode_changed(self):
         mode = self.k_mode.currentIndex()
@@ -700,7 +678,7 @@ class srt03Tab(QtWidgets.QWidget):
 
     def apply_patch(self):
         if self.mem.buf is None:
-            self.set_status("Сначала прочитайте память.")
+            self.set_status("Сначала считайте показания")
             return
         self.mem.write_chip(self.build_buffer())
 
@@ -829,17 +807,10 @@ class srtotalsTab(QtWidgets.QWidget):
         new_l.addWidget(QtWidgets.QLabel("Q (общие реактивные):"), 0, 2); new_l.addWidget(self.ed_new_q, 0, 3)
         root.addWidget(new)
 
-        self.lbl_status = QtWidgets.QLabel("Микросхема не прочитана")
+        self.lbl_status = QtWidgets.QLabel("Показания не считаны")
         self.lbl_status.setObjectName("StatusLabel")
         self.lbl_status.setWordWrap(True)
         root.addWidget(self.lbl_status)
-
-        hint = QtWidgets.QLabel(
-            "Формат: P 0..3, Q 8..11, CRC 16, дубль +0x100. "
-            "CRC = 0xF0 XOR 16 байт данных.")
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color:#aab1c2;")
-        root.addWidget(hint)
 
         root.addStretch(1)
 
@@ -897,9 +868,7 @@ class srtotalsTab(QtWidgets.QWidget):
 
     def on_data_read(self, data: bytes):
         if len(data) < DUP_OFF + REC_LEN:
-            self.set_status(
-                f"Прочитано {len(data)} байт, а нужно минимум "
-                f"{DUP_OFF + REC_LEN}: дубль лежит по 0x0100.")
+            self.set_status("Выбран неверный тип микросхемы")
             return
 
         parsed = parse_record(data, BASE_OFF)
@@ -916,7 +885,7 @@ class srtotalsTab(QtWidgets.QWidget):
     def refresh_view(self):
         data = self.mem.buf
         if data is None:
-            self.set_status("Микросхема не прочитана")
+            self.set_status("Показания не считаны")
             self.ed_cur_p.clear(); self.ed_cur_q.clear()
             return
 
@@ -930,21 +899,16 @@ class srtotalsTab(QtWidgets.QWidget):
 
         parsed_dup = parse_record(data, DUP_OFF)
         same = data[BASE_OFF:BASE_OFF + REC_LEN] == data[DUP_OFF:DUP_OFF + REC_LEN]
-        fk = self._file_k if self._file_k is not None else float("nan")
 
-        self.set_status(
-            f"{CHIPS[self.mem.chip()]['title']} — прочитано {len(data)} байт\n"
-            f"CRC(0x0000): {'OK' if parsed.ok else 'FAIL'} "
-            f"(в памяти=0x{parsed.crc_file:02X}, расчёт=0x{parsed.crc_calc:02X})\n"
-            f"Коэф: {coef} | CRC(0x0100): {'OK' if parsed_dup.ok else 'FAIL'}; "
-            f"дубль {'совпадает' if same else 'НЕ совпадает'}\n"
-            f"k={fk:.10f}"
-        )
+        if parsed.ok and parsed_dup.ok and same:
+            self.set_status("Показания прочитаны")
+        else:
+            self.set_status("Данные в памяти повреждены")
         self.update_auto_q()
 
     def write_back(self):
         if self.mem.buf is None:
-            self.set_status("Сначала прочитайте память.")
+            self.set_status("Сначала считайте показания")
             return
 
         new_p = self._parse_float(self.ed_new_p.text())
@@ -1044,7 +1008,7 @@ class srt29Tab(QtWidgets.QWidget):
         form.addWidget(QtWidgets.QLabel("Сумма (T1+T2, авто):"), 1, 0); form.addWidget(self.out_sum, 1, 1, 1, 3)
         root.addWidget(calc_box)
 
-        self.lbl_status = QtWidgets.QLabel("Микросхема не прочитана")
+        self.lbl_status = QtWidgets.QLabel("Показания не считаны")
         self.lbl_status.setObjectName("StatusLabel")
         self.lbl_status.setWordWrap(True)
         root.addWidget(self.lbl_status)
@@ -1094,14 +1058,10 @@ class srt29Tab(QtWidgets.QWidget):
             if len(data) >= m + MIRROR_STRIDE
         )
 
-        self.set_status(
-            f"{CHIPS[self.mem.chip()]['title']} — прочитано {len(data)} байт\n"
-            f"CRC: T1={'OK' if ok_t1 else 'BAD'} | T2={'OK' if ok_t2 else 'BAD'} "
-            f"| SUM={'OK' if ok_s else 'BAD'}\n"
-            f"Из памяти: T1={t1_p:.2f}  T2={t2_p:.2f}  SUM={sum_p:.2f}\n"
-            f"Зеркала (0x2000/0x4000/0x6000) совпадают с базой: "
-            f"{'да' if mirrors_ok else 'НЕТ'}"
-        )
+        if ok_t1 and ok_t2 and ok_s and mirrors_ok:
+            self.set_status("Показания прочитаны")
+        else:
+            self.set_status("Данные в памяти повреждены")
 
     def build_buffer(self) -> Tuple[bytes, int]:
         data = bytearray(self.mem.buf)
@@ -1128,13 +1088,11 @@ class srt29Tab(QtWidgets.QWidget):
 
     def apply_patch(self):
         if self.mem.buf is None:
-            self.set_status("Сначала прочитайте память.")
+            self.set_status("Сначала считайте показания")
             return
 
-        buf, points = self.build_buffer()
-        if self.mem.write_chip(buf):
-            self.set_status(self.lbl_status.text()
-                            + f"\nЗаписей пропатчено: {points}")
+        buf, _ = self.build_buffer()
+        self.mem.write_chip(buf)
 
 
 # =============================
