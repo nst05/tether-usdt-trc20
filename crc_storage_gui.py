@@ -168,6 +168,13 @@ class RecordSlot(QtWidgets.QGroupBox):
 
         fmt = fmt or FORMAT_FIXED
 
+        # По вертикали слот не тянется и НЕ сжимается: иначе при десятке
+        # слотов в области прокрутки layout ужимает каждый ниже его
+        # sizeHint, и поля превращаются в нечитаемые полоски. С фиксированной
+        # высотой суммарный размер честный, а лишнее уходит в прокрутку.
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding,
+                           QtWidgets.QSizePolicy.Fixed)
+
         self.setStyleSheet("""
             QGroupBox {
                 border: 2px solid #30363d;
@@ -698,8 +705,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.load_last_file()
 
     def init_ui(self):
-        self.setWindowTitle("CRC Storage Editor — CRC-16 CCITT")
-        self.setGeometry(100, 100, 1200, 700)
+        self.setWindowTitle("integra101")
+        self.setGeometry(100, 100, 1180, 860)
         self.setStyleSheet(DARK_STYLE)
 
         # ── Главный виджет ────────────────────────────────────────────
@@ -713,16 +720,22 @@ class MainWindow(QtWidgets.QMainWindow):
         top = self.create_top_panel()
         main_layout.addLayout(top)
 
-        # ── Вкладки: значения / дамп / i2c ────────────────────────────────────
-        self.tabs = QtWidgets.QTabWidget()
-        main_layout.addWidget(self.tabs)
+        # ── Рабочая область: только I2C ───────────────────────────────
+        main_layout.addWidget(self.create_i2c_tab())
 
-        values_tab = QtWidgets.QWidget()
+        # Страницы «Значения» и «Дамп» из интерфейса убраны, но их виджеты
+        # создаются и остаются в памяти: на них завязаны разбор дампа,
+        # таблица значений и правка байт, которыми пользуется «Найти в
+        # файле». Родитель нужен обязательно — без него скрытая страница
+        # всплыла бы отдельным окном.
+        values_tab = QtWidgets.QWidget(central)
+        values_tab.hide()
         values_layout = QtWidgets.QVBoxLayout(values_tab)
         values_layout.setContentsMargins(0, 8, 0, 0)
-        self.tabs.addTab(values_tab, "Значения")
-        self.tabs.addTab(self.create_dump_tab(), "Дамп (прямая запись)")
-        self.tabs.addTab(self.create_i2c_tab(), "I2C/EEPROM 24C256")
+
+        dump_tab = self.create_dump_tab()
+        dump_tab.setParent(central)
+        dump_tab.hide()
 
         # ── Таблица значений ──────────────────────────────────────────
         self.table = QtWidgets.QTableWidget()
@@ -752,7 +765,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.setSpacing(12)
 
         # Заголовок
-        title = QtWidgets.QLabel("CRC Storage Editor")
+        title = QtWidgets.QLabel("integra101")
         title.setObjectName("Title")
         layout.addWidget(title)
 
@@ -779,7 +792,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(reload_btn)
 
         save_btn = QtWidgets.QPushButton("Сохранить на диск")
-        save_btn.setMaximumWidth(140)
+        save_btn.setMaximumWidth(170)   # 140 обрезало надпись
         save_btn.clicked.connect(self.save_file_to_disk)
         save_btn.setToolTip("Сохранить все изменения из памяти на диск")
         layout.addWidget(save_btn)
@@ -1026,7 +1039,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # ── Слоты записей ─────────────────────────────────────────────
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setMinimumHeight(260)
+        scroll.setMinimumHeight(380)
         scroll.setStyleSheet("QScrollArea { border: none; }")
 
         container = QtWidgets.QWidget()
