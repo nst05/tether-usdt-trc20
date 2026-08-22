@@ -27,7 +27,7 @@ if not defined PY (
 )
 
 for /f "tokens=*" %%v in ('%PY% --version 2^>^&1') do set "PYVER=%%v"
-echo [1/6] Python: !PYVER!
+echo [1/7] Python: !PYVER!
 
 rem Разрядность важна: под 64-битный Python нужна CH341DLLA64.dll,
 rem под 32-битный — CH341DLL.dll. Одинарных кавычек в коде быть не должно,
@@ -37,9 +37,9 @@ echo       Разрядность: !BITS! бит
 
 rem ── 2. Проверка исходников ────────────────────────────────────────
 echo.
-echo [2/6] Проверка файлов...
+echo [2/7] Проверка файлов...
 set "MISSING="
-for %%f in (crc_storage_gui.py crc_storage_i2c.py crc_storage_writer.spec pyi_rth_ch341.py) do (
+for %%f in (crc_storage_gui.py crc_storage_i2c.py crc_storage_writer.spec pyi_rth_ch341.py splash_screen.py make_icon.py) do (
     if not exist "%%f" set "MISSING=!MISSING! %%f"
 )
 if defined MISSING (
@@ -51,7 +51,7 @@ echo       Все файлы на месте.
 
 rem ── 3. Зависимости ────────────────────────────────────────────────
 echo.
-echo [3/6] Установка зависимостей...
+echo [3/7] Установка зависимостей...
 %PY% -m pip install --upgrade pip --quiet
 rem PyInstaller 6+: spec написан под его форму EXE(pyz, a.scripts, a.binaries,
 rem a.datas, ...) — в 5.x там ещё был отдельный a.zipfiles.
@@ -63,9 +63,22 @@ if errorlevel 1 (
 )
 echo       PyQt5, i2cpy, pyinstaller — готово.
 
-rem ── 4. Проверка DLL для CH341 ─────────────────────────────────────
+rem ── 4. Иконка и заставка ──────────────────────────────────────────
 echo.
-echo [4/6] Библиотека CH341...
+echo [4/7] Иконка и заставка...
+if exist icon.ico if exist splash.png (
+    echo       Уже есть, пропускаю.
+) else (
+    %PY% make_icon.py
+    if errorlevel 1 (
+        echo       [ВНИМАНИЕ] Не удалось сгенерировать иконку.
+        echo       Сборка продолжится со стандартной иконкой Windows.
+    )
+)
+
+rem ── 5. Проверка DLL для CH341 ─────────────────────────────────────
+echo.
+echo [5/7] Библиотека CH341...
 if "!BITS!"=="64" (set "DLL=CH341DLLA64.dll") else (set "DLL=CH341DLL.dll")
 
 if exist "!DLL!" (
@@ -80,9 +93,9 @@ if exist "!DLL!" (
     echo.
 )
 
-rem ── 5. Очистка и сборка ───────────────────────────────────────────
+rem ── 6. Очистка и сборка ───────────────────────────────────────────
 echo.
-echo [5/6] Компиляция...
+echo [6/7] Компиляция...
 if exist build rd /s /q build
 if exist "dist\integra101.exe" del /q "dist\integra101.exe"
 
@@ -93,9 +106,9 @@ if errorlevel 1 (
     goto :fail
 )
 
-rem ── 6. Результат ──────────────────────────────────────────────────
+rem ── 7. Результат ──────────────────────────────────────────────────
 echo.
-echo [6/6] Проверка результата...
+echo [7/7] Проверка результата...
 if not exist "dist\integra101.exe" (
     echo [ОШИБКА] exe не создан, хотя PyInstaller не сообщил об ошибке.
     goto :fail

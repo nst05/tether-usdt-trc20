@@ -15,3 +15,4 @@ crc_storage_tools.tar.gz
 build/
 dist/
 *.dll
+!icon.ico

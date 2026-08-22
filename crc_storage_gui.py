@@ -25,6 +25,11 @@ try:
 except ImportError:
     I2CWriter = None
 
+try:
+    from splash_screen import LoadingSplash
+except ImportError:
+    LoadingSplash = None
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Константы и ядро
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1996,12 +2001,77 @@ class MainWindow(QtWidgets.QMainWindow):
 #  Главная функция
 # ═══════════════════════════════════════════════════════════════════════════
 
+def resource_path(name: str) -> str:
+    """
+    Путь к файлу рядом с программой.
+
+    В сборке PyInstaller файлы распакованы во временную папку sys._MEIPASS,
+    при обычном запуске лежат рядом со скриптом.
+    """
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, name)
+
+
+def load_app_icon() -> QtGui.QIcon:
+    """Иконка приложения; пустая иконка, если файла нет"""
+    for name in ("icon.ico", "icon.png"):
+        path = resource_path(name)
+        if os.path.isfile(path):
+            return QtGui.QIcon(path)
+    return QtGui.QIcon()
+
+
+def close_pyinstaller_splash():
+    """
+    Убрать заставку PyInstaller.
+
+    Она показывается ещё до старта Python и закрывает распаковку onefile.
+    Модуль pyi_splash существует только внутри собранного exe.
+    """
+    try:
+        import pyi_splash
+    except ImportError:
+        return
+    try:
+        pyi_splash.close()
+    except Exception:
+        pass
+
+
 def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setStyle('Fusion')
 
+    icon = load_app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
+
+    splash = None
+    if LoadingSplash is not None:
+        splash = LoadingSplash(icon)
+        splash.start()
+        splash.step("Загрузка модулей...", 20)
+
+    # Заставку PyInstaller гасим только сейчас, когда уже есть что показать
+    # вместо неё, — иначе между ними мигнёт пустой экран.
+    close_pyinstaller_splash()
+
+    if splash:
+        splash.step("Проверка программатора...", 45)
+    programmer_ready = I2CWriter is not None
+
+    if splash:
+        splash.step("Загрузка интерфейса...", 70)
+
     window = MainWindow()
-    window.show()
+    if not icon.isNull():
+        window.setWindowIcon(icon)
+
+    if splash:
+        splash.step("Готово" if programmer_ready else "i2cpy не установлена", 100)
+        splash.finish(window)
+    else:
+        window.show()
 
     return app.exec_()
 
