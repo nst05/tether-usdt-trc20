@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+
+build/
+dist/
+*.spec
+
+crc_storage_tools.zip
+crc_storage_tools.tar.gz
+
+*.bak
