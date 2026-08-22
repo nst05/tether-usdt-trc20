@@ -456,11 +456,11 @@ class MainWindow(QtWidgets.QMainWindow):
         reload_btn.clicked.connect(self.reload_file)
         layout.addWidget(reload_btn)
 
-        self.save_btn = QtWidgets.QPushButton("Сохранить дамп")
-        self.save_btn.setMaximumWidth(120)
-        self.save_btn.clicked.connect(self.save_dump)
-        self.save_btn.setToolTip("Сохранить только дамп (на вкладке Значения сохранение автоматическое)")
-        layout.addWidget(self.save_btn)
+        save_btn = QtWidgets.QPushButton("Сохранить на диск")
+        save_btn.setMaximumWidth(140)
+        save_btn.clicked.connect(self.save_file_to_disk)
+        save_btn.setToolTip("Сохранить все изменения из памяти на диск")
+        layout.addWidget(save_btn)
 
         layout.addStretch()
 
@@ -968,17 +968,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.new_value_input.setFocus()
 
     def update_value(self):
-        """Обновляет и сохраняет значение сразу"""
+        """Обновляет значение в памяти и дампе (без записи на диск)"""
         if self.selected_row < 0:
             self.update_status("✗ Выберите значение в таблице")
             return
 
         if not self.new_value_input.text():
             self.update_status("✗ Введите новое значение")
-            return
-
-        if not self.filepath:
-            self.update_status("✗ Файл не загружен")
             return
 
         try:
@@ -992,33 +988,23 @@ class MainWindow(QtWidgets.QMainWindow):
 
             self.new_crc_display.setText(f"0x{new_crc:04X}")
 
-            # Обновляем значение в памяти
+            # Обновляем в памяти
             old_value = item['value']
             item['value'] = new_value
             item['crc'] = new_crc
 
-            # ── Сразу пишем на диск (только 42 байта для этого блока) ────
+            # Обновляем дамп (но не пишем на диск)
             pos = item['pos']
             self.file_data[pos:pos+BLOCK_SIZE] = block
             self.file_data[pos+BLOCK_SIZE:pos+BLOCK_SIZE+CRC_SIZE] = struct.pack('>H', new_crc)
-
-            # Резервная копия только при первой записи
-            path = Path(self.filepath)
-            backup = path.with_suffix(path.suffix + '.bak')
-            if not backup.exists():
-                backup.write_bytes(bytes(self.original_data))
-
-            # Пишем файл
-            path.write_bytes(bytes(self.file_data))
-            self.original_data = bytes(self.file_data)
 
             self.update_table()
             self.table.selectRow(self.selected_row)
             self.refresh_dump()
 
             self.update_status(
-                f"✓ {old_value:.2f} → {new_value:.2f} | "
-                f"CRC 0x{new_crc:04X} | Сохранено в {path.name}"
+                f"✓ В памяти: {old_value:.2f} → {new_value:.2f} | CRC 0x{new_crc:04X} | "
+                f"Нажми Сохранить"
             )
 
         except ValueError as e:
@@ -1028,6 +1014,36 @@ class MainWindow(QtWidgets.QMainWindow):
         """Перезагружает файл"""
         if self.filepath:
             self.load_file(self.filepath)
+
+    def save_file_to_disk(self):
+        """Сохраняет все изменения из памяти на диск"""
+        if not self.filepath:
+            self.update_status("✗ Файл не загружен")
+            return
+
+        # Проверяем, есть ли изменения
+        if bytes(self.file_data) == self.original_data:
+            self.update_status("✗ Изменений нет")
+            return
+
+        try:
+            path = Path(self.filepath)
+            backup = path.with_suffix(path.suffix + '.bak')
+
+            # Резервная копия исходного состояния
+            backup.write_bytes(bytes(self.original_data))
+
+            # Пишем на диск
+            path.write_bytes(bytes(self.file_data))
+
+            # Обновляем состояние
+            self.original_data = bytes(self.file_data)
+            self.dump_writes = []
+
+            self.update_status(f"✓ Сохранено на диск | Резервная копия: {backup.name}")
+
+        except Exception as e:
+            self.update_status(f"✗ Ошибка сохранения: {e}")
 
     def update_status(self, text):
         """Обновляет строку состояния"""
