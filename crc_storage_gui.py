@@ -11,9 +11,15 @@ import sys
 import os
 from pathlib import Path
 from datetime import datetime
+import time
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread
+
+try:
+    from crc_storage_i2c import I2CWriter
+except ImportError:
+    I2CWriter = None
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Константы и ядро
@@ -393,7 +399,7 @@ class MainWindow(QtWidgets.QMainWindow):
         top = self.create_top_panel()
         main_layout.addLayout(top)
 
-        # ── Вкладки: значения / дамп ──────────────────────────────────
+        # ── Вкладки: значения / дамп / i2c ────────────────────────────────────
         self.tabs = QtWidgets.QTabWidget()
         main_layout.addWidget(self.tabs)
 
@@ -402,6 +408,7 @@ class MainWindow(QtWidgets.QMainWindow):
         values_layout.setContentsMargins(0, 8, 0, 0)
         self.tabs.addTab(values_tab, "Значения")
         self.tabs.addTab(self.create_dump_tab(), "Дамп (прямая запись)")
+        self.tabs.addTab(self.create_i2c_tab(), "I2C/EEPROM 24C256")
 
         # ── Таблица значений ──────────────────────────────────────────
         self.table = QtWidgets.QTableWidget()
@@ -643,6 +650,290 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addLayout(actions)
 
         return tab
+
+    def create_i2c_tab(self):
+        """Вкладка I2C: запись в EEPROM 24C256 с CH341 программатором"""
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(16)
+
+        # ── Заголовок ─────────────────────────────────────────────────
+        title = QtWidgets.QLabel("Запись значения в EEPROM 24C256")
+        title.setObjectName("Title")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #58a6ff;")
+        layout.addWidget(title)
+
+        hint = QtWidgets.QLabel("Введите целую часть. Дробная часть 01–99 добавляется автоматически.\n"
+                                 "Поля HEX и CRC-16 обновляются автоматически.")
+        hint.setStyleSheet("color: #8b949e; font-size: 13px;")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        # ── Основные поля ─────────────────────────────────────────────
+        grid = QtWidgets.QGridLayout()
+        grid.setSpacing(12)
+
+        # Поле 1: Значение (редактируется)
+        grid.addWidget(QtWidgets.QLabel("1. Значение:"), 0, 0)
+        self.i2c_value_input = QtWidgets.QLineEdit()
+        self.i2c_value_input.setPlaceholderText("Например: 3456")
+        self.i2c_value_input.setMinimumHeight(48)
+        self.i2c_value_input.setStyleSheet("""
+            QLineEdit {
+                font-size: 16px;
+                font-weight: bold;
+                padding: 8px 12px;
+                border: 2px solid #30363d;
+                border-radius: 6px;
+            }
+            QLineEdit:focus {
+                border: 2px solid #58a6ff;
+            }
+        """)
+        validator = QtGui.QDoubleValidator(0.0, 42949672.95, 2, self)
+        validator.setNotation(QtGui.QDoubleValidator.StandardNotation)
+        self.i2c_value_input.setValidator(validator)
+        self.i2c_value_input.textChanged.connect(self.on_i2c_value_changed)
+        grid.addWidget(self.i2c_value_input, 0, 1)
+
+        # Поле 2: HEX (автоматически)
+        grid.addWidget(QtWidgets.QLabel("2. HEX (auto):"), 1, 0)
+        self.i2c_hex_display = QtWidgets.QLineEdit()
+        self.i2c_hex_display.setReadOnly(True)
+        self.i2c_hex_display.setMinimumHeight(48)
+        self.i2c_hex_display.setStyleSheet("""
+            QLineEdit {
+                font-size: 14px;
+                font-weight: bold;
+                padding: 8px 12px;
+                background-color: #0d1117;
+                border: 2px solid #30363d;
+                border-radius: 6px;
+                color: #58a6ff;
+            }
+        """)
+        grid.addWidget(self.i2c_hex_display, 1, 1)
+
+        # Поле 3: CRC-16 (автоматически)
+        grid.addWidget(QtWidgets.QLabel("3. CRC-16 (auto):"), 2, 0)
+        self.i2c_crc_display = QtWidgets.QLineEdit()
+        self.i2c_crc_display.setReadOnly(True)
+        self.i2c_crc_display.setMinimumHeight(48)
+        self.i2c_crc_display.setStyleSheet("""
+            QLineEdit {
+                font-size: 14px;
+                font-weight: bold;
+                padding: 8px 12px;
+                background-color: #0d1117;
+                border: 2px solid #30363d;
+                border-radius: 6px;
+                color: #f85149;
+            }
+        """)
+        grid.addWidget(self.i2c_crc_display, 2, 1)
+
+        layout.addLayout(grid)
+
+        # ── Смещение (опционально) ────────────────────────────────────
+        offset_layout = QtWidgets.QHBoxLayout()
+        offset_layout.addWidget(QtWidgets.QLabel("Смещение в EEPROM (опционально):"))
+        self.i2c_offset_input = QtWidgets.QLineEdit("0x0000")
+        self.i2c_offset_input.setMaximumWidth(150)
+        offset_layout.addWidget(self.i2c_offset_input)
+        offset_layout.addStretch()
+        layout.addLayout(offset_layout)
+
+        # ── Прогресс и статус ─────────────────────────────────────────
+        self.i2c_progress = QtWidgets.QProgressBar()
+        self.i2c_progress.setRange(0, 100)
+        self.i2c_progress.setValue(0)
+        self.i2c_progress.setVisible(False)
+        self.i2c_progress.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #30363d;
+                border-radius: 6px;
+                background-color: #161b22;
+                height: 28px;
+            }
+            QProgressBar::chunk {
+                background-color: #238636;
+                border-radius: 4px;
+            }
+        """)
+        layout.addWidget(self.i2c_progress)
+
+        self.i2c_status = QtWidgets.QLabel("Готово к работе")
+        self.i2c_status.setWordWrap(True)
+        self.i2c_status.setAlignment(QtCore.Qt.AlignCenter)
+        self.i2c_status.setStyleSheet("""
+            QLabel {
+                background-color: #161b22;
+                border: 2px solid #30363d;
+                border-radius: 6px;
+                padding: 12px;
+                color: #c9d1d9;
+                font-size: 13px;
+            }
+        """)
+        layout.addWidget(self.i2c_status)
+
+        # ── Кнопка записи ─────────────────────────────────────────────
+        self.i2c_write_button = QtWidgets.QPushButton("ЗАПИСАТЬ И ПРОВЕРИТЬ")
+        self.i2c_write_button.setMinimumHeight(56)
+        self.i2c_write_button.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                font-weight: bold;
+                background-color: #238636;
+                border: 2px solid #2ea043;
+                border-radius: 6px;
+                color: white;
+                padding: 12px;
+            }
+            QPushButton:hover {
+                background-color: #2ea043;
+            }
+            QPushButton:pressed {
+                background-color: #1f6feb;
+            }
+            QPushButton:disabled {
+                background-color: #21262d;
+                border-color: #30363d;
+                color: #6e7681;
+            }
+        """)
+        self.i2c_write_button.clicked.connect(self.i2c_write_and_verify)
+        layout.addWidget(self.i2c_write_button)
+
+        # ── Информация о i2cpy ────────────────────────────────────────
+        info_text = "✗ i2cpy не установлена" if I2CWriter is None else "✓ i2cpy установлена (CH341 программатор готов)"
+        self.i2c_info = QtWidgets.QLabel(info_text)
+        self.i2c_info.setStyleSheet("""
+            QLabel {
+                color: #f85149;
+                font-size: 12px;
+            }
+        """)
+        if I2CWriter is not None:
+            self.i2c_info.setStyleSheet("""
+                QLabel {
+                    color: #7ee78c;
+                    font-size: 12px;
+                }
+            """)
+        self.i2c_info.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(self.i2c_info)
+
+        layout.addStretch()
+
+        return tab
+
+    def on_i2c_value_changed(self):
+        """Обновляет HEX и CRC-16 при изменении значения"""
+        text = self.i2c_value_input.text().strip()
+        if not text:
+            self.i2c_hex_display.clear()
+            self.i2c_crc_display.clear()
+            return
+
+        try:
+            value = float(text.replace(",", "."))
+
+            # Вычисляем HEX
+            raw = int(round(value * SCALE))
+            if not 0 <= raw <= 0xFFFFFFFF:
+                raise ValueError("Значение вне диапазона")
+            hex_bytes = raw.to_bytes(4, "big", signed=False)
+            self.i2c_hex_display.setText(f"0x{hex_bytes.hex().upper()}")
+
+            # Вычисляем CRC-16
+            block = hex_bytes + hex_bytes + b'\x00' * 32
+            crc = crc16_ccitt(block)
+            self.i2c_crc_display.setText(f"0x{crc:04X}")
+
+        except (ValueError, struct.error):
+            self.i2c_hex_display.setText("✗ Ошибка")
+            self.i2c_crc_display.setText("✗ Ошибка")
+
+    def i2c_write_and_verify(self):
+        """Запись в EEPROM с проверкой"""
+        if I2CWriter is None:
+            self.update_i2c_status("✗ i2cpy не установлена. Установите: pip install i2cpy", "error")
+            return
+
+        value_text = self.i2c_value_input.text().strip()
+        if not value_text:
+            self.update_i2c_status("✗ Введите значение", "error")
+            return
+
+        self.i2c_write_button.setEnabled(False)
+        self.i2c_progress.setVisible(True)
+        self.i2c_progress.setValue(0)
+
+        try:
+            offset = parse_offset(self.i2c_offset_input.text())
+            writer = I2CWriter(offset=offset)
+
+            def progress_callback(percent, text):
+                self.i2c_progress.setValue(percent)
+                if text:
+                    self.update_i2c_status(text, "info")
+                QtWidgets.QApplication.processEvents()
+
+            result = writer.write_and_verify(value_text, progress_callback)
+
+            if result['success']:
+                self.update_i2c_status(
+                    f"✓ Успех: записано {result['after']:.2f} | CRC: {result['crc']} | "
+                    f"Было: {result['before']:.2f}",
+                    "success"
+                )
+                self.i2c_value_input.clear()
+                self.i2c_hex_display.clear()
+                self.i2c_crc_display.clear()
+            else:
+                self.update_i2c_status(result['message'], "error")
+
+        except Exception as e:
+            self.update_i2c_status(f"✗ Ошибка: {e}", "error")
+
+        finally:
+            self.i2c_write_button.setEnabled(True)
+            self.i2c_progress.setVisible(False)
+
+    def update_i2c_status(self, text, status_type="info"):
+        """Обновляет статус I2C"""
+        self.i2c_status.setText(text)
+        if status_type == "success":
+            style = """
+                QLabel {
+                    background-color: #0d2818;
+                    border: 2px solid #238636;
+                    color: #7ee78c;
+                }
+            """
+        elif status_type == "error":
+            style = """
+                QLabel {
+                    background-color: #3d1f1a;
+                    border: 2px solid #f85149;
+                    color: #f85149;
+                }
+            """
+        else:
+            style = """
+                QLabel {
+                    background-color: #161b22;
+                    border: 2px solid #30363d;
+                    color: #c9d1d9;
+                }
+            """
+        self.i2c_status.setStyleSheet(style + """
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 13px;
+        """)
 
     # ── Операции с дампом ─────────────────────────────────────────────
 
