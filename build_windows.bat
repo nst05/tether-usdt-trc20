@@ -4,7 +4,7 @@ setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ================================================================
-echo   Сборка CRC Storage Writer
+echo   Сборка integra101
 echo ================================================================
 echo.
 
@@ -84,7 +84,7 @@ rem ── 5. Очистка и сборка ───────────�
 echo.
 echo [5/6] Компиляция...
 if exist build rd /s /q build
-if exist "dist\CRC_Storage_Writer.exe" del /q "dist\CRC_Storage_Writer.exe"
+if exist "dist\integra101.exe" del /q "dist\integra101.exe"
 
 %PY% -m PyInstaller --noconfirm --clean crc_storage_writer.spec
 if errorlevel 1 (
@@ -96,19 +96,19 @@ if errorlevel 1 (
 rem ── 6. Результат ──────────────────────────────────────────────────
 echo.
 echo [6/6] Проверка результата...
-if not exist "dist\CRC_Storage_Writer.exe" (
+if not exist "dist\integra101.exe" (
     echo [ОШИБКА] exe не создан, хотя PyInstaller не сообщил об ошибке.
     goto :fail
 )
 
-for %%f in ("dist\CRC_Storage_Writer.exe") do set /a SIZE=%%~zf/1048576
+for %%f in ("dist\integra101.exe") do set /a SIZE=%%~zf/1048576
 
 echo.
 echo ================================================================
 echo   Готово
 echo ================================================================
 echo.
-echo   Файл:   %CD%\dist\CRC_Storage_Writer.exe
+echo   Файл:   %CD%\dist\integra101.exe
 echo   Размер: !SIZE! МБ
 echo.
 if not exist "!DLL!" (

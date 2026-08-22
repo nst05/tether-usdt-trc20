@@ -9,6 +9,8 @@
 ДОБАВЛЕНО В 2.5: СБОРКА EXE ПОД WINDOWS
 ════════════════════════════════════════════════════════════════════════════════
 
+  Имя итогового exe: integra101.exe (задаётся APP_NAME в spec)
+
   build_windows.bat        сборка в один клик, с проверками на каждом шаге
   crc_storage_writer.spec  спецификация PyInstaller
   pyi_rth_ch341.py         runtime-хук для загрузки CH341DLL
