@@ -250,9 +250,12 @@ def main():
     images[-1].save("icon.png", "PNG")
     draw_splash().save("splash.png", "PNG")
 
-    print("icon.ico   — размеры: " + ", ".join(str(s) for s in SIZES))
-    print("icon.png   — 256×256")
-    print("splash.png — %d×%d, заставка PyInstaller" % (SPLASH_W, SPLASH_H))
+    # Вывод только ASCII: скрипт запускается из build_windows.bat, а на
+    # англоязычной Windows перенаправленный stdout берёт кодировку локали
+    # (cp437/cp1252), и кириллица валится с UnicodeEncodeError.
+    print("icon.ico   sizes: " + ", ".join(str(s) for s in SIZES))
+    print("icon.png   256x256")
+    print("splash.png %dx%d, PyInstaller splash" % (SPLASH_W, SPLASH_H))
     return 0
 
 

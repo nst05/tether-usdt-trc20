@@ -1,14 +1,13 @@
 @echo off
-chcp 65001 >nul
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ================================================================
-echo   Сборка integra101
+echo   Sborka integra101
 echo ================================================================
 echo.
 
-rem ── 1. Проверка Python ────────────────────────────────────────────
+rem ---- 1. Poisk Python -------------------------------------------
 set "PY="
 py -3 --version >nul 2>&1
 if not errorlevel 1 set "PY=py -3"
@@ -19,129 +18,136 @@ if not defined PY (
 )
 
 if not defined PY (
-    echo [ОШИБКА] Python не найден.
+    echo [OSHIBKA] Python ne nayden.
     echo.
-    echo Установите Python 3.8 или новее с python.org
-    echo При установке обязательно отметьте "Add Python to PATH".
+    echo Ustanovite Python 3.8 ili novee s python.org
+    echo Pri ustanovke otmette "Add Python to PATH".
     goto :fail
 )
 
 for /f "tokens=*" %%v in ('%PY% --version 2^>^&1') do set "PYVER=%%v"
 echo [1/7] Python: !PYVER!
 
-rem Разрядность важна: под 64-битный Python нужна CH341DLLA64.dll,
-rem под 32-битный — CH341DLL.dll. Одинарных кавычек в коде быть не должно,
-rem иначе разъедется кавычкование самого for /f.
-for /f %%b in ('%PY% -c "import sys;print(64 if sys.maxsize^>2**32 else 32)"') do set "BITS=%%b"
-echo       Разрядность: !BITS! бит
+rem Razryadnost: pod 64-bitnyy Python nuzhna CH341DLLA64.dll,
+rem pod 32-bitnyy - CH341DLL.dll.
+set "BITS="
+for /f %%b in ('%PY% -c "import struct;print(struct.calcsize(chr(80))*8)"') do set "BITS=%%b"
+if not defined BITS set "BITS=64"
+echo       Razryadnost: !BITS! bit
 
-rem ── 2. Проверка исходников ────────────────────────────────────────
+rem ---- 2. Proverka fajlov ----------------------------------------
 echo.
-echo [2/7] Проверка файлов...
+echo [2/7] Proverka fajlov...
 set "MISSING="
 for %%f in (crc_storage_gui.py crc_storage_i2c.py crc_storage_writer.spec pyi_rth_ch341.py splash_screen.py make_icon.py) do (
     if not exist "%%f" set "MISSING=!MISSING! %%f"
 )
 if defined MISSING (
-    echo [ОШИБКА] Не хватает файлов:!MISSING!
-    echo Распакуйте архив целиком и запускайте .bat из той же папки.
+    echo [OSHIBKA] Ne hvataet fajlov:!MISSING!
+    echo Raspakuyte arhiv tselikom i zapuskayte .bat iz toy zhe papki.
     goto :fail
 )
-echo       Все файлы на месте.
+echo       Vse fajly na meste.
 
-rem ── 3. Зависимости ────────────────────────────────────────────────
+rem ---- 3. Zavisimosti --------------------------------------------
 echo.
-echo [3/7] Установка зависимостей...
+echo [3/7] Ustanovka zavisimostey...
 %PY% -m pip install --upgrade pip --quiet
-rem PyInstaller 6+: spec написан под его форму EXE(pyz, a.scripts, a.binaries,
-rem a.datas, ...) — в 5.x там ещё был отдельный a.zipfiles.
+rem PyInstaller 6+: spec napisan pod ego formu EXE(...).
 %PY% -m pip install --quiet PyQt5 i2cpy "pyinstaller>=6.0"
 if errorlevel 1 (
-    echo [ОШИБКА] Не удалось установить зависимости.
-    echo Проверьте подключение к интернету и права доступа.
+    echo [OSHIBKA] Ne udalos ustanovit zavisimosti.
+    echo Proverte podklyuchenie k internetu i prava dostupa.
     goto :fail
 )
-echo       PyQt5, i2cpy, pyinstaller — готово.
+echo       PyQt5, i2cpy, pyinstaller - gotovo.
 
-rem ── 4. Иконка и заставка ──────────────────────────────────────────
+rem ---- 4. Ikonka i zastavka --------------------------------------
 echo.
-echo [4/7] Иконка и заставка...
-if exist icon.ico if exist splash.png (
-    echo       Уже есть, пропускаю.
-) else (
+echo [4/7] Ikonka i zastavka...
+rem Otdelnyy flag vmesto vlozhennyh if: v cmd "if A if B (X) else (Y)"
+rem privyazyvaet else k vnutrennemu if, i pri otsutstvii icon.ico ne
+rem vypolnyaetsya ni odna vetka.
+set "NEEDGEN=1"
+if exist icon.ico if exist splash.png set "NEEDGEN="
+
+if defined NEEDGEN (
     %PY% make_icon.py
     if errorlevel 1 (
-        echo       [ВНИМАНИЕ] Не удалось сгенерировать иконку.
-        echo       Сборка продолжится со стандартной иконкой Windows.
+        echo       [VNIMANIE] Ne udalos sgenerirovat ikonku.
+        echo       Sborka prodolzhitsya so standartnoy ikonkoy Windows.
     )
+) else (
+    echo       Uzhe est, propuskayu.
 )
 
-rem ── 5. Проверка DLL для CH341 ─────────────────────────────────────
+rem ---- 5. Biblioteka CH341 ---------------------------------------
 echo.
-echo [5/7] Библиотека CH341...
+echo [5/7] Biblioteka CH341...
 if "!BITS!"=="64" (set "DLL=CH341DLLA64.dll") else (set "DLL=CH341DLL.dll")
 
 if exist "!DLL!" (
-    echo       !DLL! найдена, будет включена в сборку.
+    echo       !DLL! naydena, budet vklyuchena v sborku.
 ) else (
-    echo       [ВНИМАНИЕ] !DLL! рядом с .bat не найдена.
+    echo       [VNIMANIE] !DLL! ryadom s .bat ne naydena.
     echo.
-    echo       Сборка продолжится, но записывать в микросхему програм-
-    echo       ма сможет только если !DLL! окажется рядом с готовым
-    echo       exe или в системе. Файл идёт с драйверами программатора
-    echo       CH341 от WCH.
+    echo       Sborka prodolzhitsya, no pisat v mikroshemu programma
+    echo       smozhet tolko esli !DLL! okazhetsya ryadom s gotovym exe
+    echo       ili v sisteme. Fayl idet s drayverami programmatora
+    echo       CH341 ot WCH.
     echo.
 )
 
-rem ── 6. Очистка и сборка ───────────────────────────────────────────
+rem ---- 6. Ochistka i sborka --------------------------------------
 echo.
-echo [6/7] Компиляция...
+echo [6/7] Kompilyatsiya...
 if exist build rd /s /q build
 if exist "dist\integra101.exe" del /q "dist\integra101.exe"
 
 %PY% -m PyInstaller --noconfirm --clean crc_storage_writer.spec
 if errorlevel 1 (
     echo.
-    echo [ОШИБКА] Компиляция не удалась. Текст ошибки выше.
+    echo [OSHIBKA] Kompilyatsiya ne udalas. Tekst oshibki vyshe.
     goto :fail
 )
 
-rem ── 7. Результат ──────────────────────────────────────────────────
+rem ---- 7. Rezultat -----------------------------------------------
 echo.
-echo [7/7] Проверка результата...
+echo [7/7] Proverka rezultata...
 if not exist "dist\integra101.exe" (
-    echo [ОШИБКА] exe не создан, хотя PyInstaller не сообщил об ошибке.
+    echo [OSHIBKA] exe ne sozdan, hotya PyInstaller ne soobshchil ob oshibke.
     goto :fail
 )
 
+set "SIZE=0"
 for %%f in ("dist\integra101.exe") do set /a SIZE=%%~zf/1048576
 
 echo.
 echo ================================================================
-echo   Готово
+echo   Gotovo
 echo ================================================================
 echo.
-echo   Файл:   %CD%\dist\integra101.exe
-echo   Размер: !SIZE! МБ
+echo   Fayl:   %CD%\dist\integra101.exe
+echo   Razmer: !SIZE! MB
 echo.
 if not exist "!DLL!" (
-    echo   ВАЖНО: положите !DLL! рядом с exe, иначе запись
-    echo   в микросхему работать не будет.
+    echo   VAZHNO: polozhite !DLL! ryadom s exe, inache zapis
+    echo   v mikroshemu rabotat ne budet.
     echo.
 )
-echo   Порядок работы:
-echo     1. Запустить exe
-echo     2. Вкладка "I2C/EEPROM"
-echo     3. Нажать "Определить чип"
-echo     4. Нажать "Найти записи"
-echo     5. Ввести значение в нужный слот и нажать "Записать"
+echo   Poryadok raboty:
+echo     1. Zapustit exe
+echo     2. Vkladka "I2C/EEPROM"
+echo     3. Nazhat "Opredelit chip"
+echo     4. Nazhat "Nayti zapisi"
+echo     5. Vvesti znachenie v slot i nazhat "Zapisat"
 echo.
 goto :done
 
 :fail
 echo.
 echo ================================================================
-echo   Сборка прервана
+echo   Sborka prervana
 echo ================================================================
 echo.
 pause
