@@ -154,32 +154,36 @@ def crc32_msb(data: bytes | bytearray, initial: int = CRC_INIT) -> int:
 #
 #   "ce208"   — функция прошивки 0x3B8EC: младшие 16 бит CRC-32 MSB-first
 #               (poly 0x04C11DB7, init 0xFFFFFFFF, без финального XOR);
-#   "msp430"  — CRC-16 CCITT (poly 0x1021) с обратным порядком бит на входе и
+#   "msp432"  — CRC-16 CCITT (poly 0x1021) с обратным порядком бит на входе и
 #               начальным значением 0x68D3 — так считает аппаратный модуль CRC
-#               MSP430 в дампах вида «24C64_MKMSP430».
+#               контроллера в дампах вида «24C64_MKMSP4xx».
 #
 # Схема определяется при загрузке образа и используется как для проверки, так и
 # для записи, чтобы прибор принял изменённый дамп.
 
-MSP430_CRC_POLY = 0x1021
-MSP430_CRC_INIT = 0x68D3
+MSP432_CRC_POLY = 0x1021
+MSP432_CRC_INIT = 0x68D3
 
 _BIT_REVERSED = bytes(int(f"{value:08b}"[::-1], 2) for value in range(256))
 
 
-def crc16_msp430(data: bytes | bytearray, initial: int = MSP430_CRC_INIT) -> int:
-    """CRC-16 CCITT с обратным порядком бит на входе (модуль CRC MSP430)."""
+def crc16_msp432(data: bytes | bytearray, initial: int = MSP432_CRC_INIT) -> int:
+    """CRC-16 CCITT с обратным порядком бит на входе (аппаратный модуль CRC)."""
     reg = initial & 0xFFFF
     for value in data:
         reg ^= _BIT_REVERSED[value] << 8
         for _ in range(8):
-            reg = ((reg << 1) ^ MSP430_CRC_POLY) & 0xFFFF if reg & 0x8000 else (reg << 1) & 0xFFFF
+            reg = ((reg << 1) ^ MSP432_CRC_POLY) & 0xFFFF if reg & 0x8000 else (reg << 1) & 0xFFFF
     return reg
 
 
+# Прежнее имя оставлено, чтобы не ломать внешние скрипты.
+crc16_msp430 = crc16_msp432
+
+
 CRC_SCHEMES = {
-    "ce208": ("CE208 · CRC-32 MSB 0x04C11DB7", lambda data: crc32_msb(data) & 0xFFFF),
-    "msp430": ("MSP430 · CRC-16 CCITT 0x1021", crc16_msp430),
+    "ce208": ("V8530 · CRC-32 MSB 0x04C11DB7", lambda data: crc32_msb(data) & 0xFFFF),
+    "msp432": ("MSP432 · CRC-16 CCITT 0x1021", crc16_msp432),
 }
 DEFAULT_CRC_SCHEME = "ce208"
 _active_crc_scheme = DEFAULT_CRC_SCHEME
@@ -508,7 +512,8 @@ class RecordResult:
 
 
 class CE208State:
-    def __init__(self, small: bytes | bytearray | None = None, at25: bytes | bytearray | None = None):
+    def __init__(self, small: bytes | bytearray | None = None, at25: bytes | bytearray | None = None,
+                 crc: str = "auto"):
         self.at25 = bytearray(b"\xFF" * AT25_SIZE if at25 is None else at25)
         if len(self.at25) != AT25_SIZE:
             raise ValueError(f"AT25 должна иметь 0x{AT25_SIZE:X} байт")
@@ -521,9 +526,12 @@ class CE208State:
         self.small = memoryview(self.at25)[:SMALL_SIZE]
         self.original_at25 = bytes(self.at25)
         self.original_small = self.original_at25[:SMALL_SIZE]
-        # Схема CRC определяется по самому образу: у прошивок этой серии
-        # раскладка одна, а алгоритм контрольной суммы разный.
-        self.crc_scheme, self.crc_scheme_hits = self.detect_crc_scheme()
+        # Схема CRC: "auto" — подбор по самому образу, иначе оператор задал жёстко.
+        # У прошивок этой серии раскладка памяти одна, а алгоритм контроля разный.
+        self.crc_forced = crc if crc in CRC_SCHEMES else None
+        detected, self.crc_scheme_hits = self.detect_crc_scheme()
+        self.crc_detected = detected
+        self.crc_scheme = self.crc_forced or detected
         set_crc_scheme(self.crc_scheme)
 
     def detect_crc_scheme(self) -> tuple[str, dict[str, int]]:

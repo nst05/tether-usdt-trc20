@@ -23,6 +23,7 @@ from ce208_model import (
     at25_program_sectors,
     crc_scheme_title,
     decode_energy,
+    set_crc_scheme,
     encode_energy,
     sha256,
 )
@@ -59,9 +60,18 @@ APP_TITLE = f"{APP_NAME} — редактор памяти — {APP_VERSION}"
 
 # Короткие подписи схем контрольной суммы для правой панели.
 CRC_SCHEME_LABELS = {
-    "ce208": "CE208 CRC-32",
-    "msp430": "MSP430 CRC-16",
+    "ce208": "V8530 CRC-32",
+    "msp432": "MSP432 CRC-16",
 }
+
+# Выбор процессора прибора: от него зависит алгоритм контрольной суммы записи.
+# «Авто» — определить по самому образу, остальные — жёстко задать.
+CRC_MODES = {
+    "Авто": "auto",
+    "V8530": "ce208",
+    "MSP432": "msp432",
+}
+CRC_MODE_TITLES = {value: key for key, value in CRC_MODES.items()}
 
 # Технические строки внизу экрана загрузки (разделитель строк — «|»).
 BOOT_FOOTER = (
@@ -187,7 +197,7 @@ class DirectWriter:
 
 
 class Editor(tk.Tk):
-    def __init__(self, show_splash: bool = True) -> None:
+    def __init__(self, show_splash: bool = True, crc_mode: str = "auto") -> None:
         super().__init__()
         self.withdraw()  # окно появится после экрана загрузки
         self.title(APP_TITLE)
@@ -235,6 +245,7 @@ class Editor(tk.Tk):
             boot.note("i2cpy найдена — прямая запись доступна" if self.direct_writer.available()
                       else "i2cpy не установлена — режим работы с файлом образа")
 
+        self.crc_mode = tk.StringVar(value=CRC_MODE_TITLES.get(crc_mode, "Авто"))
         self.status_var = tk.StringVar(value="Откройте дамп 24LC64 (8 КиБ) или 25DF041B (512 КиБ)")
         self.at25_var = tk.StringVar(value="SPI: не загружен")
         self.telemetry_var = tk.StringVar(value="изменено: — · CRC —")
@@ -458,6 +469,15 @@ class Editor(tk.Tk):
             ttk.Label(table, textvariable=variable, style="Mono.TLabel", anchor="e").grid(
                 row=index, column=1, sticky="e", pady=2)
 
+        # Режим контрольной суммы: подбор по образу или жёстко заданная схема
+        mode_row = ttk.Frame(panel)
+        mode_row.pack(fill="x", pady=(10, 0))
+        ttk.Label(mode_row, text="Процессор", style="Faint.TLabel").pack(side="left")
+        mode_box = ttk.Combobox(mode_row, values=list(CRC_MODES), textvariable=self.crc_mode,
+                                width=9, state="readonly")
+        mode_box.pack(side="right")
+        mode_box.bind("<<ComboboxSelected>>", self.change_crc_mode)
+
         # Контроль целостности — доля записей с верной CRC
         ttk.Label(panel, text="КОНТРОЛЬ ЦЕЛОСТНОСТИ", style="Faint.TLabel").pack(anchor="w", pady=(16, 0))
         ttk.Separator(panel, orient="horizontal").pack(fill="x", pady=(4, 8))
@@ -478,6 +498,57 @@ class Editor(tk.Tk):
         self.sector_map.pack(anchor="w")
         ttk.Label(panel, text="серый — сектор не тронут, синий — требует стирания и записи",
                   style="Faint.TLabel", wraplength=270, justify="left").pack(anchor="w", pady=(8, 0))
+
+    def crc_scheme_arg(self) -> str:
+        """Выбранный процессор в виде ключа схемы: auto / ce208 / msp432."""
+        return CRC_MODES.get(self.crc_mode.get(), "auto")
+
+    def change_crc_mode(self, _event=None) -> None:
+        """Оператор переключил режим контроля — применяем к открытому образу."""
+        mode = self.crc_scheme_arg()
+        model = self.state_model
+        model.crc_forced = None if mode == "auto" else mode
+        model.crc_scheme = model.crc_forced or getattr(model, "crc_detected", "ce208")
+        set_crc_scheme(model.crc_scheme)
+        self.refresh_all()
+        self.status_var.set(
+            f"Процессор: {self.crc_mode.get()}; контроль записей {crc_scheme_title(model.crc_scheme)}; "
+            f"верных записей {self.crc_ok_count} из {self.crc_total_count}"
+        )
+        self.check_processor_match()
+
+    def check_processor_match(self, ask: bool = False) -> bool:
+        """Соответствует ли открытый образ выбранному процессору.
+
+        При жёстком выборе (V8530 или MSP432) образ чужого прибора не читается:
+        ни одна запись не проходит контроль. Тогда программа прямо об этом
+        сообщает и предлагает переключиться на подходящий процессор.
+        """
+        model = self.state_model
+        forced = getattr(model, "crc_forced", None)
+        hits = getattr(model, "crc_scheme_hits", {})
+        detected = getattr(model, "crc_detected", "ce208")
+        if not self.at25_loaded or not forced or not hits:
+            return True
+        if hits.get(forced, 0) or not hits.get(detected, 0):
+            return True
+
+        mine, theirs = CRC_MODE_TITLES.get(forced, forced), CRC_MODE_TITLES.get(detected, detected)
+        message = (
+            f"Открытый дамп не соответствует выбранному процессору {mine}: по его схеме "
+            f"({crc_scheme_title(forced)}) не сходится ни одна запись, а по схеме {theirs} "
+            f"({crc_scheme_title(detected)}) сходится {hits.get(detected, 0)}. "
+            f"Выберите процессор {theirs} или режим «Авто»."
+        )
+        self.warning_var.set(message)
+        self.notice.configure(style="NoteErr.TLabel")
+        self.status_var.set(f"Дамп не соответствует процессору {mine} — подходит {theirs}")
+        self.status_led.set_state("err", "НЕ ТОТ")
+        if ask and messagebox.askyesno(APP_TITLE, message + "\n\nПереключить на " + theirs + "?"):
+            self.crc_mode.set(theirs)
+            self.change_crc_mode()
+            return True
+        return False
 
     def _update_side_panel(self) -> None:
         """Пересчёт сводки: читает модель, ничего в ней не меняет."""
@@ -1054,11 +1125,12 @@ class Editor(tk.Tk):
             data = self.direct_writer.read_bytes(0, size)
             self.direct_writer.close()
             if size == SMALL_SIZE:
-                self.state_model = CE208State(small=data)
+                self.state_model = CE208State(small=data, crc=self.crc_scheme_arg())
                 self.source_kind = "24lc64"
             else:
                 # 24C16 и т.п. — грузим в small с добивкой
-                self.state_model = CE208State(small=data.ljust(SMALL_SIZE, b"\xFF")[:SMALL_SIZE])
+                self.state_model = CE208State(small=data.ljust(SMALL_SIZE, b"\xFF")[:SMALL_SIZE],
+                                              crc=self.crc_scheme_arg())
                 self.source_kind = "24lc64"
             self.at25_loaded = True
             self.at25_var.set(f"CH341: {self.direct_chip.get()} прочитан")
@@ -1149,12 +1221,12 @@ class Editor(tk.Tk):
         raw = Path(path).read_bytes()
         if len(raw) == SMALL_SIZE:
             # Внутренняя EEPROM 24LC64 — это и есть small-path (часы, тарифы, текущая энергия)
-            self.state_model = CE208State(small=raw)
+            self.state_model = CE208State(small=raw, crc=self.crc_scheme_arg())
             self.source_kind = "24lc64"
             self.at25_var.set(f"24LC64: {Path(path).name}  (8 КиБ, показания)")
             self.status_var.set("Внутренняя EEPROM 24LC64 загружена — показания в small-path")
         elif len(raw) == AT25_SIZE:
-            self.state_model = CE208State(at25=raw)
+            self.state_model = CE208State(at25=raw, crc=self.crc_scheme_arg())
             self.source_kind = "spi"
             self.at25_var.set(f"SPI 25DF041B: {Path(path).name}  (512 КиБ, архивы)")
             self.status_var.set("Внешняя SPI 25DF041B загружена")
@@ -1175,9 +1247,12 @@ class Editor(tk.Tk):
         scheme = getattr(self.state_model, "crc_scheme", "ce208")
         hits = getattr(self.state_model, "crc_scheme_hits", {})
         self.status_var.set(
-            f"{self.status_var.get()}; контроль записей: {crc_scheme_title(scheme)}"
+            f"{self.status_var.get()}; процессор {self.crc_mode.get()}, контроль записей: "
+            f"{crc_scheme_title(scheme)}"
             + (f" (сошлось {hits.get(scheme, 0)} записей)" if hits.get(scheme) else "")
         )
+        # Жёстко выбранный процессор и чужой дамп — сообщаем и предлагаем переключиться
+        self.check_processor_match(ask=True)
 
     def save_spi(self) -> None:
         if not self.at25_loaded:
@@ -1435,6 +1510,9 @@ class Editor(tk.Tk):
                 reactive = EnergyBank.empty()
                 reactive.marker = active.marker
                 reactive.cells = [round(c * k) for c in active.cells]
+                # Итог c0/c2 = сумма тарифных ячеек: прибор считает «Сумму» именно так,
+                # иначе округление даёт расхождение в единицу младшего разряда.
+                reactive.set_tariffs(reactive.cells[3:11])
                 self.state_model.write_current_energy(2, reactive)
             # 4) Счётчики времени = сейчас
             try:
@@ -1619,6 +1697,8 @@ class Editor(tk.Tk):
             reactive = EnergyBank.empty()
             reactive.marker = active.marker
             reactive.cells = [round(c * k) for c in active.cells]
+            # Итог c0/c2 = сумма тарифных ячеек (как считает прибор)
+            reactive.set_tariffs(reactive.cells[3:11])
             self.state_model.write_current_energy(2, reactive)
             self.load_current_energy()
             a0, r0 = active.cells[0], reactive.cells[0]
@@ -1855,19 +1935,25 @@ class Editor(tk.Tk):
 
 
 def main() -> None:
-    app = Editor()
-    if len(sys.argv) > 1:
-        candidate = Path(sys.argv[1])
+    # --crc=auto|ce208|msp432 — жёстко задать режим контроля (ярлыки запуска).
+    arguments = [value for value in sys.argv[1:] if not value.startswith("--")]
+    crc_mode = "auto"
+    for value in sys.argv[1:]:
+        if value.startswith("--crc"):
+            crc_mode = value.split("=", 1)[-1].strip().lower()
+    app = Editor(crc_mode=crc_mode if crc_mode in ("auto", "ce208", "msp432") else "auto")
+    if arguments:
+        candidate = Path(arguments[0])
         if candidate.exists():
             raw = candidate.read_bytes()
             if len(raw) == SMALL_SIZE:
-                app.state_model = CE208State(small=raw)
+                app.state_model = CE208State(small=raw, crc=app.crc_scheme_arg())
                 app.source_kind = "24lc64"
                 app.at25_path = candidate
                 app.at25_loaded = True
                 app.at25_var.set(f"24LC64: {candidate.name}  (8 КиБ, показания)")
             elif len(raw) == AT25_SIZE:
-                app.state_model = CE208State(at25=raw)
+                app.state_model = CE208State(at25=raw, crc=app.crc_scheme_arg())
                 app.source_kind = "spi"
                 app.at25_path = candidate
                 app.at25_loaded = True
