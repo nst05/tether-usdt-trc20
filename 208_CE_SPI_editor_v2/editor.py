@@ -431,7 +431,14 @@ class Editor(tk.Tk):
         ttk.Button(toolbar, text="Открыть дамп…", style="Primary.TButton",
                    command=self.open_at25).pack(side="left", padx=(0, 8))
         ttk.Button(toolbar, text="Сохранить как…", command=self.save_spi).pack(side="left", padx=(0, 8))
-        ttk.Button(toolbar, text="Экспорт отчёта", command=self.save_audit).pack(side="left", padx=(0, 8))
+        ttk.Button(toolbar, text="Экспорт отчёта", command=self.save_audit).pack(side="left", padx=(0, 18))
+
+        ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=(0, 18))
+        ttk.Label(toolbar, text="ПРОЦЕССОР", style="Faint.TLabel").pack(side="left", padx=(0, 8))
+        processor_box = ttk.Combobox(toolbar, values=list(CRC_MODES), textvariable=self.crc_mode,
+                                     width=12, state="readonly", font=(self.mono_font, 10))
+        processor_box.pack(side="left")
+        processor_box.bind("<<ComboboxSelected>>", self.change_crc_mode)
 
         ttk.Label(toolbar, textvariable=self.at25_var, style="Section.TLabel").pack(side="right")
         ttk.Label(toolbar, text="ИСТОЧНИК", style="Faint.TLabel").pack(side="right", padx=(0, 10))
@@ -468,15 +475,6 @@ class Editor(tk.Tk):
             ttk.Label(table, text=key, style="Faint.TLabel").grid(row=index, column=0, sticky="w", pady=2)
             ttk.Label(table, textvariable=variable, style="Mono.TLabel", anchor="e").grid(
                 row=index, column=1, sticky="e", pady=2)
-
-        # Режим контрольной суммы: подбор по образу или жёстко заданная схема
-        mode_row = ttk.Frame(panel)
-        mode_row.pack(fill="x", pady=(10, 0))
-        ttk.Label(mode_row, text="Процессор", style="Faint.TLabel").pack(side="left")
-        mode_box = ttk.Combobox(mode_row, values=list(CRC_MODES), textvariable=self.crc_mode,
-                                width=9, state="readonly")
-        mode_box.pack(side="right")
-        mode_box.bind("<<ComboboxSelected>>", self.change_crc_mode)
 
         # Контроль целостности — доля записей с верной CRC
         ttk.Label(panel, text="КОНТРОЛЬ ЦЕЛОСТНОСТИ", style="Faint.TLabel").pack(anchor="w", pady=(16, 0))
