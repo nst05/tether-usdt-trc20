@@ -54,7 +54,7 @@ except Exception as _i2c_exc:  # noqa: BLE001
     I2C_IMPORT_ERROR = f"{type(_i2c_exc).__name__}: {_i2c_exc}"
 
 
-APP_VERSION = "2.4.0"
+APP_VERSION = "2.4.1"
 # Имя программы: прибор плюс семейство контроллера, чьи дампы редактор понимает.
 APP_NAME = "208_CE V8530P · MSP432"
 APP_TITLE = f"{APP_NAME} — редактор памяти — {APP_VERSION}"
@@ -78,13 +78,13 @@ CRC_MODE_TITLES = {value: key for key, value in CRC_MODES.items()}
 BOOT_FOOTER = (
     "EEPROM 24C64 0x2000 · запись 0x44 Б · 13 ячеек u40le · 4 банка · зеркальные копии"
     " | "
-    "SPI 25DF041B 0x80000 · архивы 0/1/2/5 · журналы 0x47E70..0x49DEF (70)"
+    "Внешняя SPI 0x80000 · архивы 0/1/2/5 · журналы 0x47E70..0x49DEF (70)"
 )
 
 # Сводка восстановленной модели памяти — правая колонка экрана загрузки.
 BOOT_PARAMETERS = [
     ("Внутренняя EEPROM", "24C64 · 0x2000"),
-    ("Внешняя SPI", "25DF041B · 0x80000"),
+    ("Внешняя SPI", "512 КиБ · 0x80000"),
     ("Энергобанки", "4 × 13 × u40"),
     ("Кольцевые архивы", "типы 0/1/2/5"),
     ("Журналы событий", "70"),
@@ -238,7 +238,7 @@ class Editor(tk.Tk):
         self.state_model = CE208State()
         self.at25_path: Path | None = None
         self.at25_loaded = False
-        self.source_kind = "spi"  # "spi" (512К 25DF041B) или "24lc64" (8К внутр. EEPROM)
+        self.source_kind = "spi"  # "spi" (внешняя 512К) или "24lc64" (8К внутр. EEPROM)
         self.raw_selected = None
         self.crc_ok_count = 0
         self.crc_total_count = len(FIXED_DESCRIPTORS)
@@ -253,7 +253,7 @@ class Editor(tk.Tk):
                       else "i2cpy не установлена — режим работы с файлом образа")
 
         self.crc_mode = tk.StringVar(value=CRC_MODE_TITLES.get(crc_mode, "Авто"))
-        self.status_var = tk.StringVar(value="Откройте дамп EEPROM 24C64 (8 КиБ) или SPI 25DF041B (512 КиБ)")
+        self.status_var = tk.StringVar(value="Откройте дамп EEPROM 24C64 (8 КиБ) или внешней SPI (512 КиБ)")
         self.at25_var = tk.StringVar(value="SPI: не загружен")
         self.telemetry_var = tk.StringVar(value="изменено: — · CRC —")
         self.clock_var = tk.StringVar(value="--:--:--")
@@ -290,10 +290,10 @@ class Editor(tk.Tk):
         if getattr(self, "source_kind", "spi") == "24lc64":
             return (
                 "Загружена внутренняя EEPROM 24C64 (8 КиБ) — здесь хранятся часы, тарифы и текущие показания "
-                "(small-path). Архивы и журналы событий лежат во внешней SPI 25DF041B (512 КиБ)."
+                "(small-path). Архивы и журналы событий лежат во внешней SPI (512 КиБ)."
             )
         return (
-            "Загружена внешняя SPI 25DF041B (512 КиБ): архивы, резервные области и события. Логический small-path — "
+            "Загружена внешняя SPI (512 КиБ): архивы, резервные области и события. Логический small-path — "
             "нижние 0x2000 байт этого же BIN; текущие показания прибор обычно держит во внутренней EEPROM 24C64."
         )
 
@@ -411,7 +411,7 @@ class Editor(tk.Tk):
         titles.pack(side="left", anchor="w")
         tk.Label(titles, text=APP_NAME, background=Palette.STEEL_DEEP, foreground="#FFFFFF",
                  font=("TkDefaultFont", 15, "bold")).pack(anchor="w")
-        tk.Label(titles, text="Редактор энергонезависимой памяти · EEPROM 24C64 (8 КиБ) · SPI 25DF041B (512 КиБ) · прошивка 10.14",
+        tk.Label(titles, text="Редактор энергонезависимой памяти · EEPROM 24C64 (8 КиБ) · внешняя SPI (512 КиБ) · прошивка 10.14",
                  background=Palette.STEEL_DEEP, foreground=Palette.ON_DARK_SOFT,
                  font=("TkDefaultFont", 9)).pack(anchor="w")
 
@@ -586,7 +586,7 @@ class Editor(tk.Tk):
         model = self.state_model
         name = self.at25_path.name if self.at25_path else "не загружен"
         self.side_vars["Файл"].set(name if len(name) <= 20 else "…" + name[-19:])
-        self.side_vars["Память"].set("24C64 внутр." if self.source_kind == "24lc64" else "25DF041B внешн.")
+        self.side_vars["Память"].set("24C64 внутр." if self.source_kind == "24lc64" else "SPI внешн.")
         self.side_vars["Объём"].set(f"0x{SMALL_SIZE:04X}" if self.source_kind == "24lc64" else f"0x{AT25_SIZE:05X}")
         # Схема контрольной суммы определяется по самому образу при загрузке
         self.side_vars["Контроль"].set(CRC_SCHEME_LABELS.get(
@@ -1302,7 +1302,7 @@ class Editor(tk.Tk):
 
     def open_at25(self) -> None:
         path = filedialog.askopenfilename(
-            title="Дамп памяти: EEPROM 24C64 (8 КиБ) или SPI 25DF041B (512 КиБ)",
+            title="Дамп памяти: EEPROM 24C64 (8 КиБ) или внешняя SPI (512 КиБ)",
             filetypes=[("BIN", "*.bin"), ("Все файлы", "*.*")],
         )
         if not path:
@@ -1318,12 +1318,12 @@ class Editor(tk.Tk):
         elif len(raw) == AT25_SIZE:
             self.state_model = CE208State(at25=raw, crc=self.crc_scheme_arg())
             self.source_kind = "spi"
-            self.at25_var.set(f"SPI 25DF041B: {Path(path).name}  (512 КиБ, архивы)")
-            self.status_var.set("Внешняя SPI 25DF041B загружена")
+            self.at25_var.set(f"SPI: {Path(path).name}  (512 КиБ, архивы)")
+            self.status_var.set("Внешняя SPI (512 КиБ) загружена")
         else:
             messagebox.showerror(
                 APP_TITLE,
-                f"Нужен дамп 24C64 ({SMALL_SIZE} б) или 25DF041B ({AT25_SIZE} б); получено {len(raw)} б",
+                f"Нужен дамп 24C64 ({SMALL_SIZE} б) или внешней SPI ({AT25_SIZE} б); получено {len(raw)} б",
             )
             self._set_busy(False, "Файл не распознан — образ не загружен")
             self.status_led.set_state("err", "ОШИБКА")
@@ -1362,7 +1362,7 @@ class Editor(tk.Tk):
             self._set_busy(False, f"EEPROM 24C64 (8 КиБ) сохранена; отчёт: {audit_path.name}")
             self.activity.pulse(1.0)
             return
-        at25_path = filedialog.asksaveasfilename(title="Сохранить SPI 25DF041B", defaultextension=".bin", initialfile="CE208_25DF041B_edited.bin")
+        at25_path = filedialog.asksaveasfilename(title="Сохранить внешнюю SPI (512 КиБ)", defaultextension=".bin", initialfile="CE208_SPI_edited.bin")
         if not at25_path:
             return
         self._set_busy(True, "Запись образа SPI и построение плана прошивки…")
@@ -1712,7 +1712,7 @@ class Editor(tk.Tk):
             archive_note = (
                 f"+ снимок во все архивы ({sum(v[1] for v in ENERGY_ARCHIVES.values())*len(banks)}) и запись события"
                 if is_spi else
-                "(архивы/события — в SPI 25DF041B; тут 24C64: часы+банки+тариф+счётчики)"
+                "(архивы/события — во внешней SPI; тут 24C64: часы+банки+тариф+счётчики)"
             )
             if not messagebox.askyesno(
                 APP_TITLE,
@@ -2071,9 +2071,9 @@ def main() -> None:
                 app.source_kind = "spi"
                 app.at25_path = candidate
                 app.at25_loaded = True
-                app.at25_var.set(f"SPI 25DF041B: {candidate.name}  (512 КиБ, архивы)")
+                app.at25_var.set(f"SPI: {candidate.name}  (512 КиБ, архивы)")
             else:
-                messagebox.showerror(APP_TITLE, f"Нужен дамп 24C64 ({SMALL_SIZE} б) или 25DF041B ({AT25_SIZE} б)")
+                messagebox.showerror(APP_TITLE, f"Нужен дамп 24C64 ({SMALL_SIZE} б) или внешней SPI ({AT25_SIZE} б)")
             app.refresh_all()
     app.mainloop()
 

@@ -1,7 +1,7 @@
 """CE208 V8530P SPI-state model recovered from MCU firmware.
 
 The firmware uses two logical access paths, but their addresses are regions of
-one 512-KiB 25DF041B image.  ``small`` is a writable view of SPI 0x0000..0x1FFF.
+one 512-KiB external SPI image.  ``small`` is a writable view of SPI 0x0000..0x1FFF.
 This module never talks to hardware.
 """
 
