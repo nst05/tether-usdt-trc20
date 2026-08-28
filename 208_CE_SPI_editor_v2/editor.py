@@ -52,8 +52,10 @@ except Exception as _i2c_exc:  # noqa: BLE001
     I2C_IMPORT_ERROR = f"{type(_i2c_exc).__name__}: {_i2c_exc}"
 
 
-APP_VERSION = "2.1.0 Multi-chip"
-APP_TITLE = f"208_CE V8530P — редактор памяти — {APP_VERSION}"
+APP_VERSION = "2.2.0"
+# Имя программы: прибор плюс семейство контроллера, чьи дампы редактор понимает.
+APP_NAME = "208_CE V8530P · MSP432"
+APP_TITLE = f"{APP_NAME} — редактор памяти — {APP_VERSION}"
 
 # Короткие подписи схем контрольной суммы для правой панели.
 CRC_SCHEME_LABELS = {
@@ -208,6 +210,7 @@ class Editor(tk.Tk):
 
         boot = SplashScreen(
             self,
+            title=APP_NAME,
             version=f"версия {APP_VERSION}",
             footer=BOOT_FOOTER,
             parameters=BOOT_PARAMETERS,
@@ -379,7 +382,7 @@ class Editor(tk.Tk):
 
         titles = tk.Frame(body, background=Palette.STEEL_DEEP)
         titles.pack(side="left", anchor="w")
-        tk.Label(titles, text="208_CE V8530P", background=Palette.STEEL_DEEP, foreground="#FFFFFF",
+        tk.Label(titles, text=APP_NAME, background=Palette.STEEL_DEEP, foreground="#FFFFFF",
                  font=("TkDefaultFont", 15, "bold")).pack(anchor="w")
         tk.Label(titles, text="Редактор энергонезависимой памяти · прошивка 10.14 · SPI 25DF041B / EEPROM 24LC64",
                  background=Palette.STEEL_DEEP, foreground=Palette.ON_DARK_SOFT,
