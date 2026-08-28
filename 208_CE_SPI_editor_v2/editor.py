@@ -53,7 +53,7 @@ except Exception as _i2c_exc:  # noqa: BLE001
     I2C_IMPORT_ERROR = f"{type(_i2c_exc).__name__}: {_i2c_exc}"
 
 
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.3.0"
 # Имя программы: прибор плюс семейство контроллера, чьи дампы редактор понимает.
 APP_NAME = "208_CE V8530P · MSP432"
 APP_TITLE = f"{APP_NAME} — редактор памяти — {APP_VERSION}"
