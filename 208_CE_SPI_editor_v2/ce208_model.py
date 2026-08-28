@@ -148,9 +148,62 @@ def crc32_msb(data: bytes | bytearray, initial: int = CRC_INIT) -> int:
     return crc
 
 
+# ── Схемы контрольной суммы записи ─────────────────────────────────────────
+# Приборы этой серии встречаются с двумя прошивками, которые считают CRC записи
+# по-разному. Раскладка памяти у них одинаковая, отличается только алгоритм.
+#
+#   "ce208"   — функция прошивки 0x3B8EC: младшие 16 бит CRC-32 MSB-first
+#               (poly 0x04C11DB7, init 0xFFFFFFFF, без финального XOR);
+#   "msp430"  — CRC-16 CCITT (poly 0x1021) с обратным порядком бит на входе и
+#               начальным значением 0x68D3 — так считает аппаратный модуль CRC
+#               MSP430 в дампах вида «24C64_MKMSP430».
+#
+# Схема определяется при загрузке образа и используется как для проверки, так и
+# для записи, чтобы прибор принял изменённый дамп.
+
+MSP430_CRC_POLY = 0x1021
+MSP430_CRC_INIT = 0x68D3
+
+_BIT_REVERSED = bytes(int(f"{value:08b}"[::-1], 2) for value in range(256))
+
+
+def crc16_msp430(data: bytes | bytearray, initial: int = MSP430_CRC_INIT) -> int:
+    """CRC-16 CCITT с обратным порядком бит на входе (модуль CRC MSP430)."""
+    reg = initial & 0xFFFF
+    for value in data:
+        reg ^= _BIT_REVERSED[value] << 8
+        for _ in range(8):
+            reg = ((reg << 1) ^ MSP430_CRC_POLY) & 0xFFFF if reg & 0x8000 else (reg << 1) & 0xFFFF
+    return reg
+
+
+CRC_SCHEMES = {
+    "ce208": ("CE208 · CRC-32 MSB 0x04C11DB7", lambda data: crc32_msb(data) & 0xFFFF),
+    "msp430": ("MSP430 · CRC-16 CCITT 0x1021", crc16_msp430),
+}
+DEFAULT_CRC_SCHEME = "ce208"
+_active_crc_scheme = DEFAULT_CRC_SCHEME
+
+
+def crc_scheme() -> str:
+    """Текущая схема контрольной суммы записи."""
+    return _active_crc_scheme
+
+
+def crc_scheme_title(name: str | None = None) -> str:
+    return CRC_SCHEMES[name or _active_crc_scheme][0]
+
+
+def set_crc_scheme(name: str) -> None:
+    global _active_crc_scheme
+    if name not in CRC_SCHEMES:
+        raise ValueError(f"Неизвестная схема CRC: {name}")
+    _active_crc_scheme = name
+
+
 def record_crc(data: bytes | bytearray) -> int:
-    """Firmware function 0x3B8EC: low 16 bits of function 0x304CC."""
-    return crc32_msb(data) & 0xFFFF
+    """Контрольная сумма записи по активной схеме."""
+    return CRC_SCHEMES[_active_crc_scheme][1](data)
 
 
 def build_record(body: bytes | bytearray, total_size: int) -> bytes:
@@ -468,6 +521,37 @@ class CE208State:
         self.small = memoryview(self.at25)[:SMALL_SIZE]
         self.original_at25 = bytes(self.at25)
         self.original_small = self.original_at25[:SMALL_SIZE]
+        # Схема CRC определяется по самому образу: у прошивок этой серии
+        # раскладка одна, а алгоритм контрольной суммы разный.
+        self.crc_scheme, self.crc_scheme_hits = self.detect_crc_scheme()
+        set_crc_scheme(self.crc_scheme)
+
+    def detect_crc_scheme(self) -> tuple[str, dict[str, int]]:
+        """Подбирает схему CRC: побеждает та, по которой сходится больше записей.
+
+        Если не сходится ни одна (пустой или чужой образ), остаётся схема
+        по умолчанию — поведение для родных дампов CE208 не меняется.
+        """
+        hits: dict[str, int] = {}
+        for name, (_title, function) in CRC_SCHEMES.items():
+            count = 0
+            for descriptor in FIXED_DESCRIPTORS:
+                for path, address in (
+                    (descriptor.path, descriptor.primary),
+                    (descriptor.backup_path, descriptor.backup),
+                ):
+                    if address is None:
+                        continue
+                    store = self.at25 if path == "at25" else self.small
+                    if address + descriptor.length > len(store):
+                        continue
+                    record = bytes(store[address:address + descriptor.length])
+                    stored = struct.unpack("<H", record[-2:])[0]
+                    if function(record[:-2]) == stored:
+                        count += 1
+            hits[name] = count
+        best = max(hits, key=lambda name: hits[name])
+        return (best if hits[best] else DEFAULT_CRC_SCHEME), hits
 
     @classmethod
     def load_spi(cls, at25_path: str | Path) -> "CE208State":

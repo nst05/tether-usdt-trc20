@@ -21,6 +21,7 @@ from ce208_model import (
     EnergyBank,
     TimeCounterBlock,
     at25_program_sectors,
+    crc_scheme_title,
     decode_energy,
     encode_energy,
     sha256,
@@ -53,6 +54,12 @@ except Exception as _i2c_exc:  # noqa: BLE001
 
 APP_VERSION = "2.1.0 Multi-chip"
 APP_TITLE = f"208_CE V8530P — редактор памяти — {APP_VERSION}"
+
+# Короткие подписи схем контрольной суммы для правой панели.
+CRC_SCHEME_LABELS = {
+    "ce208": "CE208 CRC-32",
+    "msp430": "MSP430 CRC-16",
+}
 
 # Технические строки внизу экрана загрузки (разделитель строк — «|»).
 BOOT_FOOTER = (
@@ -434,6 +441,7 @@ class Editor(tk.Tk):
             ("Файл", "не загружен"),
             ("Память", "—"),
             ("Объём", "—"),
+            ("Контроль", "—"),
             ("Изменено", "0 / 0"),
             ("Часы", "—"),
             ("Тариф", "—"),
@@ -477,6 +485,9 @@ class Editor(tk.Tk):
         self.side_vars["Файл"].set(name if len(name) <= 20 else "…" + name[-19:])
         self.side_vars["Память"].set("24LC64 внутр." if self.source_kind == "24lc64" else "25DF041B внешн.")
         self.side_vars["Объём"].set(f"0x{SMALL_SIZE:04X}" if self.source_kind == "24lc64" else f"0x{AT25_SIZE:05X}")
+        # Схема контрольной суммы определяется по самому образу при загрузке
+        self.side_vars["Контроль"].set(CRC_SCHEME_LABELS.get(
+            getattr(self.state_model, "crc_scheme", "ce208"), "—"))
         try:
             small_changed, at25_changed = model.changed_counts()
         except Exception:
@@ -588,9 +599,10 @@ class Editor(tk.Tk):
         except Exception:
             small_changed = at25_changed = 0
         size = SMALL_SIZE if self.source_kind == "24lc64" else AT25_SIZE
+        scheme = CRC_SCHEME_LABELS.get(getattr(self.state_model, "crc_scheme", "ce208"), "—")
         self.telemetry_var.set(
             f"изменено: small {small_changed} Б · SPI {at25_changed} Б   │   "
-            f"CRC {self.crc_ok_count}/{self.crc_total_count}   │   "
+            f"CRC {self.crc_ok_count}/{self.crc_total_count} · {scheme}   │   "
             f"объём 0x{size:05X}   │   события {self.state_model.event_global_counter()}"
         )
         if hasattr(self, "led_source"):
@@ -1156,6 +1168,13 @@ class Editor(tk.Tk):
         self.refresh_all()
         self._set_busy(False)
         self.activity.pulse(1.0)
+        # Схема CRC подбирается по образу; она же используется при записи.
+        scheme = getattr(self.state_model, "crc_scheme", "ce208")
+        hits = getattr(self.state_model, "crc_scheme_hits", {})
+        self.status_var.set(
+            f"{self.status_var.get()}; контроль записей: {crc_scheme_title(scheme)}"
+            + (f" (сошлось {hits.get(scheme, 0)} записей)" if hits.get(scheme) else "")
+        )
 
     def save_spi(self) -> None:
         if not self.at25_loaded:
