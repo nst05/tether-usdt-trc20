@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -53,7 +54,7 @@ except Exception as _i2c_exc:  # noqa: BLE001
     I2C_IMPORT_ERROR = f"{type(_i2c_exc).__name__}: {_i2c_exc}"
 
 
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.4.0"
 # Имя программы: прибор плюс семейство контроллера, чьи дампы редактор понимает.
 APP_NAME = "208_CE V8530P · MSP432"
 APP_TITLE = f"{APP_NAME} — редактор памяти — {APP_VERSION}"
@@ -75,15 +76,15 @@ CRC_MODE_TITLES = {value: key for key, value in CRC_MODES.items()}
 
 # Технические строки внизу экрана загрузки (разделитель строк — «|»).
 BOOT_FOOTER = (
-    "CRC-32 MSB 0x04C11DB7 · запись 0x44 Б · 13 ячеек u40le · 4 банка"
+    "EEPROM 24C64 0x2000 · запись 0x44 Б · 13 ячеек u40le · 4 банка · зеркальные копии"
     " | "
-    "архивы 0/1/2/5 · журналы 0x47E70..0x49DEF (70) · зеркальные копии + CRC"
+    "SPI 25DF041B 0x80000 · архивы 0/1/2/5 · журналы 0x47E70..0x49DEF (70)"
 )
 
 # Сводка восстановленной модели памяти — правая колонка экрана загрузки.
 BOOT_PARAMETERS = [
+    ("Внутренняя EEPROM", "24C64 · 0x2000"),
     ("Внешняя SPI", "25DF041B · 0x80000"),
-    ("Внутренняя EEPROM", "24LC64 · 0x2000"),
     ("Энергобанки", "4 × 13 × u40"),
     ("Кольцевые архивы", "типы 0/1/2/5"),
     ("Журналы событий", "70"),
@@ -93,12 +94,12 @@ BOOT_PARAMETERS = [
 # ═══════════════════════════════════════════════════════════════════════════
 #  Прямая запись в I²C EEPROM через CH341 (логика из MT_Writer, адаптирована).
 #  MT_Writer писал 24C16 (блочная адресация, addrsize=8). Здесь основной чип —
-#  24LC64: 8 КБ, 16-битный адрес (addrsize=16), страница 32 байта, устр. 0x50.
+#  24C64: 8 КБ, 16-битный адрес (addrsize=16), страница 32 байта, устр. 0x50.
 # ═══════════════════════════════════════════════════════════════════════════
 
 CHIP_PROFILES = {
     # name: (size, addrsize, page, device_base, uses_block_in_addr)
-    "24LC64 (8 КБ)":  (0x2000, 16, 32, 0x50, False),
+    "24C64 (8 КБ)":   (0x2000, 16, 32, 0x50, False),
     "24C16 (2 КБ)":   (0x0800, 8, 16, 0x50, True),
 }
 
@@ -106,7 +107,7 @@ CHIP_PROFILES = {
 class DirectWriter:
     """Порт i2c-логики MT_Writer: открыть CH341, писать страницами, проверить."""
 
-    def __init__(self, profile_name: str = "24LC64 (8 КБ)"):
+    def __init__(self, profile_name: str = "24C64 (8 КБ)"):
         self.set_profile(profile_name)
         self.i2c = None
 
@@ -142,7 +143,7 @@ class DirectWriter:
         if self.block_in_addr:  # 24C16-подобная: блок в адресе устройства
             block = (address >> 8) & 0x07
             return self.dev_base | block, address & 0xFF
-        return self.dev_base, address  # 24LC64: полный адрес, addrsize=16
+        return self.dev_base, address  # 24C64: полный адрес, addrsize=16
 
     def read_bytes(self, address: int, length: int) -> bytes:
         if self.i2c is None:
@@ -197,7 +198,8 @@ class DirectWriter:
 
 
 class Editor(tk.Tk):
-    def __init__(self, show_splash: bool = True, crc_mode: str = "auto") -> None:
+    def __init__(self, show_splash: bool = True, crc_mode: str = "auto",
+                 system_frame: bool = False) -> None:
         super().__init__()
         self.withdraw()  # окно появится после экрана загрузки
         self.title(APP_TITLE)
@@ -217,6 +219,11 @@ class Editor(tk.Tk):
         self.warning_color = Palette.WARN
         self.configure(bg=self.bg_color)
         self.app_icon = set_window_icon(self)
+        # Белая системная полоса заголовка убрана: у окна собственная тёмная шапка.
+        # Вернуть системную рамку можно ключом --frame или кнопкой в шапке.
+        self.system_frame = system_frame
+        self._maximized = False
+        self._normal_geometry = None
 
         boot = SplashScreen(
             self,
@@ -240,13 +247,13 @@ class Editor(tk.Tk):
 
         if boot:
             boot.stage("Проверка программатора CH341 (i2cpy)", 26)
-        self.direct_writer = DirectWriter("24LC64 (8 КБ)")
+        self.direct_writer = DirectWriter("24C64 (8 КБ)")
         if boot:
             boot.note("i2cpy найдена — прямая запись доступна" if self.direct_writer.available()
                       else "i2cpy не установлена — режим работы с файлом образа")
 
         self.crc_mode = tk.StringVar(value=CRC_MODE_TITLES.get(crc_mode, "Авто"))
-        self.status_var = tk.StringVar(value="Откройте дамп 24LC64 (8 КиБ) или 25DF041B (512 КиБ)")
+        self.status_var = tk.StringVar(value="Откройте дамп EEPROM 24C64 (8 КиБ) или SPI 25DF041B (512 КиБ)")
         self.at25_var = tk.StringVar(value="SPI: не загружен")
         self.telemetry_var = tk.StringVar(value="изменено: — · CRC —")
         self.clock_var = tk.StringVar(value="--:--:--")
@@ -265,6 +272,15 @@ class Editor(tk.Tk):
             boot.stage("Подготовка рабочего места", 96)
             boot.finish()
 
+        if not self.system_frame:
+            self.overrideredirect(True)
+            self.bind("<Map>", self._restore_borderless, add="+")
+            # Без системной рамки окно открываем по центру экрана
+            width, height = 1480, min(1000, self.winfo_screenheight() - 80)
+            x = max(0, (self.winfo_screenwidth() - width) // 2)
+            y = max(0, (self.winfo_screenheight() - height) // 2 - 20)
+            self.geometry(f"{width}x{height}+{x}+{y}")
+
         self._tick_clock()
         self.deiconify()
         self.lift()
@@ -273,12 +289,12 @@ class Editor(tk.Tk):
     def _warning_text(self) -> str:
         if getattr(self, "source_kind", "spi") == "24lc64":
             return (
-                "Загружена внутренняя EEPROM 24LC64 (8 КиБ) — здесь хранятся часы, тарифы и текущие показания "
+                "Загружена внутренняя EEPROM 24C64 (8 КиБ) — здесь хранятся часы, тарифы и текущие показания "
                 "(small-path). Архивы и журналы событий лежат во внешней SPI 25DF041B (512 КиБ)."
             )
         return (
             "Загружена внешняя SPI 25DF041B (512 КиБ): архивы, резервные области и события. Логический small-path — "
-            "нижние 0x2000 байт этого же BIN; текущие показания прибор обычно держит во внутренней EEPROM 24LC64."
+            "нижние 0x2000 байт этого же BIN; текущие показания прибор обычно держит во внутренней EEPROM 24C64."
         )
 
     def _scrollable_tab(self, notebook: ttk.Notebook, text: str) -> ttk.Frame:
@@ -395,7 +411,7 @@ class Editor(tk.Tk):
         titles.pack(side="left", anchor="w")
         tk.Label(titles, text=APP_NAME, background=Palette.STEEL_DEEP, foreground="#FFFFFF",
                  font=("TkDefaultFont", 15, "bold")).pack(anchor="w")
-        tk.Label(titles, text="Редактор энергонезависимой памяти · прошивка 10.14 · SPI 25DF041B / EEPROM 24LC64",
+        tk.Label(titles, text="Редактор энергонезависимой памяти · EEPROM 24C64 (8 КиБ) · SPI 25DF041B (512 КиБ) · прошивка 10.14",
                  background=Palette.STEEL_DEEP, foreground=Palette.ON_DARK_SOFT,
                  font=("TkDefaultFont", 9)).pack(anchor="w")
 
@@ -409,6 +425,21 @@ class Editor(tk.Tk):
                  foreground=Palette.ACCENT_SOFT, font=(self.mono_font, 9, "bold")).pack(side="left", padx=(0, 14))
         tk.Label(top_right, textvariable=self.clock_var, background=Palette.STEEL_DEEP,
                  foreground=Palette.ON_DARK, font=(self.mono_font, 12, "bold")).pack(side="left")
+
+        # Кнопки окна вместо системных (белая полоса заголовка убрана)
+        if not self.system_frame:
+            buttons = tk.Frame(top_right, background=Palette.STEEL_DEEP)
+            buttons.pack(side="left", padx=(16, 0))
+            for text, command, danger in (("▭", self.restore_system_frame, False),
+                                          ("—", self.minimize_window, False),
+                                          ("□", self.toggle_maximize, False),
+                                          ("✕", self.destroy, True)):
+                self._window_button(buttons, text, command, danger)
+            # Перетаскивание окна за шапку, двойной щелчок — развернуть
+            for widget in (header, body, titles, logo):
+                widget.bind("<Button-1>", self._drag_start)
+                widget.bind("<B1-Motion>", self._drag_move)
+                widget.bind("<Double-Button-1>", lambda _e: self.toggle_maximize())
 
         leds = tk.Frame(right, background=Palette.STEEL_DEEP)
         leds.pack(anchor="e", pady=(6, 0))
@@ -555,7 +586,7 @@ class Editor(tk.Tk):
         model = self.state_model
         name = self.at25_path.name if self.at25_path else "не загружен"
         self.side_vars["Файл"].set(name if len(name) <= 20 else "…" + name[-19:])
-        self.side_vars["Память"].set("24LC64 внутр." if self.source_kind == "24lc64" else "25DF041B внешн.")
+        self.side_vars["Память"].set("24C64 внутр." if self.source_kind == "24lc64" else "25DF041B внешн.")
         self.side_vars["Объём"].set(f"0x{SMALL_SIZE:04X}" if self.source_kind == "24lc64" else f"0x{AT25_SIZE:05X}")
         # Схема контрольной суммы определяется по самому образу при загрузке
         self.side_vars["Контроль"].set(CRC_SCHEME_LABELS.get(
@@ -626,6 +657,65 @@ class Editor(tk.Tk):
                  foreground=Palette.ON_DARK, font=("TkDefaultFont", 9), anchor="w",
                  justify="left").pack(side="left", fill="x", expand=True)
 
+    # ── собственная полоса заголовка ───────────────────────────────────────
+
+    def _window_button(self, parent: tk.Frame, text: str, command, danger: bool) -> None:
+        """Кнопка управления окном в тёмной шапке."""
+        hover = Palette.ERR if danger else Palette.STEEL_SOFT
+        button = tk.Label(parent, text=text, background=Palette.STEEL_DEEP,
+                          foreground=Palette.ON_DARK_SOFT, font=("TkDefaultFont", 11),
+                          padx=10, pady=2, cursor="hand2")
+        button.pack(side="left")
+        button.bind("<Button-1>", lambda _e: command())
+        button.bind("<Enter>", lambda _e: button.configure(background=hover, foreground="#FFFFFF"))
+        button.bind("<Leave>", lambda _e: button.configure(background=Palette.STEEL_DEEP,
+                                                           foreground=Palette.ON_DARK_SOFT))
+
+    def _drag_start(self, event) -> None:
+        self._drag_offset = (event.x_root - self.winfo_x(), event.y_root - self.winfo_y())
+
+    def _drag_move(self, event) -> None:
+        offset = getattr(self, "_drag_offset", None)
+        if offset is None or self._maximized:
+            return
+        self.geometry(f"+{event.x_root - offset[0]}+{event.y_root - offset[1]}")
+
+    def toggle_maximize(self) -> None:
+        """Развернуть на весь экран или вернуть прежний размер."""
+        if self._maximized:
+            if self._normal_geometry:
+                self.geometry(self._normal_geometry)
+            self._maximized = False
+            return
+        self._normal_geometry = self.geometry()
+        self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight() - 48}+0+0")
+        self._maximized = True
+
+    def minimize_window(self) -> None:
+        """Свернуть окно без системной рамки (кратко возвращаем её на время)."""
+        try:
+            self.overrideredirect(False)
+            self.iconify()
+        except tk.TclError:
+            pass
+
+    def _restore_borderless(self, _event=None) -> None:
+        """После разворачивания из панели задач снова убираем системную рамку."""
+        if not self.system_frame and self.state() == "normal":
+            try:
+                self.overrideredirect(True)
+            except tk.TclError:
+                pass
+
+    def restore_system_frame(self) -> None:
+        """Вернуть обычную системную рамку окна (если так удобнее)."""
+        self.system_frame = True
+        try:
+            self.overrideredirect(False)
+        except tk.TclError:
+            pass
+        self.status_var.set("Возвращена системная рамка окна. Запуск без неё: обычный, с ней — ключ --frame")
+
     # ── живые индикаторы ───────────────────────────────────────────────────
 
     def _stage(self, bar, text: str, percent: float | None = None, style_name: str | None = None) -> None:
@@ -679,7 +769,7 @@ class Editor(tk.Tk):
         )
         if hasattr(self, "led_source"):
             if self.at25_loaded:
-                self.led_source.set_state("ok", "24LC64 8К" if self.source_kind == "24lc64" else "SPI 512К")
+                self.led_source.set_state("ok", "24C64 8К" if self.source_kind == "24lc64" else "SPI 512К")
             else:
                 self.led_source.set_state("off", "ОБРАЗ НЕТ")
         if hasattr(self, "led_crc"):
@@ -1034,7 +1124,7 @@ class Editor(tk.Tk):
         row = ttk.Frame(self.direct_tab)
         row.pack(fill="x", pady=(0, 8))
         ttk.Label(row, text="Микросхема:", font=('TkDefaultFont', 10)).pack(side="left", padx=(0, 6))
-        self.direct_chip = tk.StringVar(value="24LC64 (8 КБ)")
+        self.direct_chip = tk.StringVar(value="24C64 (8 КБ)")
         ttk.Combobox(row, values=list(CHIP_PROFILES.keys()), textvariable=self.direct_chip,
                      width=18, state="readonly").pack(side="left", padx=(0, 16))
         ttk.Label(row, text="I²C 0x50 · CH341", style='Info.TLabel').pack(side="left")
@@ -1068,8 +1158,10 @@ class Editor(tk.Tk):
         ttk.Checkbutton(self.direct_tab, text="Авто-реактивная (слот 2) = активная (слот 0) × K",
                         variable=self.reactive_auto).pack(anchor="w", pady=(0, 4))
         ttk.Label(self.direct_tab, textvariable=self.energy_sum, style="Sum.TLabel").pack(anchor="w", pady=(4, 6))
-        ttk.Checkbutton(self.direct_tab, text="Также сохранить .bin (имя из тарифов+сумма)",
-                        variable=self.opt_save_bin).pack(anchor="w", pady=(0, 8))
+        ttk.Label(self.direct_tab,
+                  text="Перед прошивкой копия образа сохраняется во временную папку "
+                       "(%TEMP%\\CE208_Editor) автоматически, без запроса — на случай отката.",
+                  style="Info.TLabel", wraplength=940, justify="left").pack(anchor="w", pady=(0, 8))
 
         # ГЛАВНАЯ кнопка — всё то же + прямая запись
         big = ttk.Frame(self.direct_tab)
@@ -1210,7 +1302,7 @@ class Editor(tk.Tk):
 
     def open_at25(self) -> None:
         path = filedialog.askopenfilename(
-            title="Дамп памяти: 24LC64 (8 КиБ) или 25DF041B (512 КиБ)",
+            title="Дамп памяти: EEPROM 24C64 (8 КиБ) или SPI 25DF041B (512 КиБ)",
             filetypes=[("BIN", "*.bin"), ("Все файлы", "*.*")],
         )
         if not path:
@@ -1218,11 +1310,11 @@ class Editor(tk.Tk):
         self._set_busy(True, f"Чтение файла {Path(path).name}…")
         raw = Path(path).read_bytes()
         if len(raw) == SMALL_SIZE:
-            # Внутренняя EEPROM 24LC64 — это и есть small-path (часы, тарифы, текущая энергия)
+            # Внутренняя EEPROM 24C64 — это и есть small-path (часы, тарифы, текущая энергия)
             self.state_model = CE208State(small=raw, crc=self.crc_scheme_arg())
             self.source_kind = "24lc64"
-            self.at25_var.set(f"24LC64: {Path(path).name}  (8 КиБ, показания)")
-            self.status_var.set("Внутренняя EEPROM 24LC64 загружена — показания в small-path")
+            self.at25_var.set(f"24C64: {Path(path).name}  (8 КиБ, показания)")
+            self.status_var.set("Внутренняя EEPROM 24C64 загружена — показания в small-path")
         elif len(raw) == AT25_SIZE:
             self.state_model = CE208State(at25=raw, crc=self.crc_scheme_arg())
             self.source_kind = "spi"
@@ -1231,7 +1323,7 @@ class Editor(tk.Tk):
         else:
             messagebox.showerror(
                 APP_TITLE,
-                f"Нужен дамп 24LC64 ({SMALL_SIZE} б) или 25DF041B ({AT25_SIZE} б); получено {len(raw)} б",
+                f"Нужен дамп 24C64 ({SMALL_SIZE} б) или 25DF041B ({AT25_SIZE} б); получено {len(raw)} б",
             )
             self._set_busy(False, "Файл не распознан — образ не загружен")
             self.status_led.set_state("err", "ОШИБКА")
@@ -1258,16 +1350,16 @@ class Editor(tk.Tk):
                 return
         if self.source_kind == "24lc64":
             out_path = filedialog.asksaveasfilename(
-                title="Сохранить 24LC64 (8 КиБ)", defaultextension=".bin", initialfile="CE208_24LC64_edited.bin"
+                title="Сохранить EEPROM 24C64 (8 КиБ)", defaultextension=".bin", initialfile="CE208_24C64_edited.bin"
             )
             if not out_path:
                 return
             # Пишем только 8-КБ область (внутренняя EEPROM)
-            self._set_busy(True, "Запись файла образа 24LC64…")
+            self._set_busy(True, "Запись файла образа 24C64…")
             Path(out_path).write_bytes(bytes(self.state_model.small))
             audit_path = Path(out_path).with_suffix(".audit.json")
             self.state_model.save_audit(audit_path)
-            self._set_busy(False, f"24LC64 (8 КиБ) сохранён; отчёт: {audit_path.name}")
+            self._set_busy(False, f"EEPROM 24C64 (8 КиБ) сохранена; отчёт: {audit_path.name}")
             self.activity.pulse(1.0)
             return
         at25_path = filedialog.asksaveasfilename(title="Сохранить SPI 25DF041B", defaultextension=".bin", initialfile="CE208_25DF041B_edited.bin")
@@ -1481,6 +1573,18 @@ class Editor(tk.Tk):
         safe = "".join(c for c in name if c.isalnum() or c in "-_.")
         return safe + ext
 
+    def _temp_image_path(self) -> Path:
+        """Файл для автоматической копии образа перед прямой записью в чип.
+
+        Диалог сохранения при прошивке не нужен: копия кладётся в папку
+        CE208_Editor внутри временного каталога системы с отметкой времени,
+        чтобы всегда оставался откат.
+        """
+        folder = Path(tempfile.gettempdir()) / "CE208_Editor"
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return folder / f"{stamp}_{self._energy_filename()}"
+
     def apply_and_write(self, force_direct: bool = False, progressbar=None) -> None:
         """ЕДИНАЯ кнопка: согласованная запись под показания + сохранение .bin
         (имя из тарифов+сумма) + прямая запись в чип (по галочке или force_direct)."""
@@ -1530,15 +1634,22 @@ class Editor(tk.Tk):
 
             steps = ["часы", "активная", "реактивная" if self.reactive_auto.get() else "", "счётчики"]
             saved = None
-            # 6) Сохранить .bin с умным именем
-            if self.opt_save_bin.get():
+            # 6) Сохранить .bin. При прямой записи в чип диалог не показываем:
+            #    копия уходит во временную папку сама — как страховка перед прошивкой.
+            direct = force_direct or self.opt_direct.get()
+            image = bytes(self.state_model.small) if self.source_kind == "24lc64" else self.state_model.at25
+            if direct:
+                path = self._temp_image_path()
+                Path(path).write_bytes(image)
+                self.state_model.save_audit(Path(path).with_suffix(".audit.json"))
+                saved = Path(path).name
+                self.last_temp_image = Path(path)
+                steps.append(f"копия во временной папке «{saved}»")
+            elif self.opt_save_bin.get():
                 initial = self._energy_filename()
                 path = filedialog.asksaveasfilename(title="Сохранить образ", defaultextension=".bin", initialfile=initial)
                 if path:
-                    if self.source_kind == "24lc64":
-                        Path(path).write_bytes(bytes(self.state_model.small))
-                    else:
-                        Path(path).write_bytes(self.state_model.at25)
+                    Path(path).write_bytes(image)
                     self.state_model.save_audit(Path(path).with_suffix(".audit.json"))
                     saved = Path(path).name
                     steps.append(f".bin «{saved}»")
@@ -1550,7 +1661,7 @@ class Editor(tk.Tk):
                 bar["value"] = max(0, min(100, int(lo + p * span)))
                 self.update_idletasks()
             if force_direct or self.opt_direct.get():
-                self.direct_writer.set_profile(self.direct_chip.get() if hasattr(self, "direct_chip") else "24LC64 (8 КБ)")
+                self.direct_writer.set_profile(self.direct_chip.get() if hasattr(self, "direct_chip") else "24C64 (8 КБ)")
                 if not self.direct_writer.available():
                     raise RuntimeError("Прямая запись включена, но i2cpy не установлена")
                 image = bytes(self.state_model.small)[: self.direct_writer.size]
@@ -1566,6 +1677,8 @@ class Editor(tk.Tk):
             self._set_busy(False)
             self.load_clock(); self.load_active_tariff(); self.load_current_energy()
             self.after_change("Согласовано и записано: " + ", ".join(s for s in steps if s))
+            if getattr(self, "last_temp_image", None):
+                self.status_var.set(f"{self.status_var.get()}  ·  копия: {self.last_temp_image}")
         except Exception as exc:
             try:
                 self.direct_writer.close()
@@ -1599,7 +1712,7 @@ class Editor(tk.Tk):
             archive_note = (
                 f"+ снимок во все архивы ({sum(v[1] for v in ENERGY_ARCHIVES.values())*len(banks)}) и запись события"
                 if is_spi else
-                "(архивы/события — в SPI 25DF041B; тут 24LC64: часы+банки+тариф+счётчики)"
+                "(архивы/события — в SPI 25DF041B; тут 24C64: часы+банки+тариф+счётчики)"
             )
             if not messagebox.askyesno(
                 APP_TITLE,
@@ -1632,7 +1745,7 @@ class Editor(tk.Tk):
                 except Exception:
                     pass
             else:
-                # 24LC64: только текущие банки primary+backup
+                # 24C64: только текущие банки primary+backup
                 for b in banks:
                     try:
                         energy, _ = self.state_model.read_current_energy(b)
@@ -1709,7 +1822,7 @@ class Editor(tk.Tk):
 
     def apply_current_bank_only(self) -> None:
         """Записать ТОЛЬКО текущий банк (primary+backup+CRC), без архивов SPI.
-        Правильный режим для внутренней EEPROM 24LC64."""
+        Правильный режим для внутренней EEPROM 24C64."""
         try:
             bank = int(self.energy_bank.get(), 0)
             divisor = int(self.energy_divisor.get(), 0)
@@ -1939,7 +2052,10 @@ def main() -> None:
     for value in sys.argv[1:]:
         if value.startswith("--crc"):
             crc_mode = value.split("=", 1)[-1].strip().lower()
-    app = Editor(crc_mode=crc_mode if crc_mode in ("auto", "ce208", "msp432") else "auto")
+    app = Editor(
+        crc_mode=crc_mode if crc_mode in ("auto", "ce208", "msp432") else "auto",
+        system_frame="--frame" in sys.argv,
+    )
     if arguments:
         candidate = Path(arguments[0])
         if candidate.exists():
@@ -1949,7 +2065,7 @@ def main() -> None:
                 app.source_kind = "24lc64"
                 app.at25_path = candidate
                 app.at25_loaded = True
-                app.at25_var.set(f"24LC64: {candidate.name}  (8 КиБ, показания)")
+                app.at25_var.set(f"24C64: {candidate.name}  (8 КиБ, показания)")
             elif len(raw) == AT25_SIZE:
                 app.state_model = CE208State(at25=raw, crc=app.crc_scheme_arg())
                 app.source_kind = "spi"
@@ -1957,7 +2073,7 @@ def main() -> None:
                 app.at25_loaded = True
                 app.at25_var.set(f"SPI 25DF041B: {candidate.name}  (512 КиБ, архивы)")
             else:
-                messagebox.showerror(APP_TITLE, f"Нужен дамп 24LC64 ({SMALL_SIZE} б) или 25DF041B ({AT25_SIZE} б)")
+                messagebox.showerror(APP_TITLE, f"Нужен дамп 24C64 ({SMALL_SIZE} б) или 25DF041B ({AT25_SIZE} б)")
             app.refresh_all()
     app.mainloop()
 
