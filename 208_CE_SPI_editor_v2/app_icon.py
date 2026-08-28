@@ -13,7 +13,10 @@ import sys
 import zlib
 from pathlib import Path
 
-ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+# В сборке PyInstaller (--onefile) файлы распаковываются во временный каталог,
+# путь к нему лежит в sys._MEIPASS; при обычном запуске это папка со скриптом.
+BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+ASSETS_DIR = BASE_DIR / "assets"
 ICO_PATH = ASSETS_DIR / "ce208.ico"
 PNG_PATH = ASSETS_DIR / "ce208.png"
 
