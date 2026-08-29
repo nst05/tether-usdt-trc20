@@ -54,15 +54,16 @@ except Exception as _i2c_exc:  # noqa: BLE001
     I2C_IMPORT_ERROR = f"{type(_i2c_exc).__name__}: {_i2c_exc}"
 
 
-APP_VERSION = "2.4.2"
+APP_VERSION = "2.5.0"
 # Имя программы: прибор плюс семейство контроллера, чьи дампы редактор понимает.
-APP_NAME = "208_CE V8530P · MSP432"
+APP_NAME = "208_CE V8530P · MSP432 · STM32"
 APP_TITLE = f"{APP_NAME} — редактор памяти — {APP_VERSION}"
 
 # Короткие подписи схем контрольной суммы для правой панели.
 CRC_SCHEME_LABELS = {
     "ce208": "V8530 CRC-32",
     "msp432": "MSP432 CRC-16",
+    "stm32": "STM32 CRC-16",
 }
 
 # Выбор процессора прибора: от него зависит алгоритм контрольной суммы записи.
@@ -71,6 +72,7 @@ CRC_MODES = {
     "Авто": "auto",
     "V8530": "ce208",
     "MSP432": "msp432",
+    "STM32": "stm32",
 }
 CRC_MODE_TITLES = {value: key for key, value in CRC_MODES.items()}
 
@@ -83,7 +85,7 @@ BOOT_FOOTER = (
 
 # Сводка восстановленной модели памяти — правая колонка экрана загрузки.
 BOOT_PARAMETERS = [
-    ("Внутренняя EEPROM", "24C64 · 0x2000"),
+    ("Внутренняя память", "24C64 / FM24CL64"),
     ("Внешняя SPI", "512 КиБ · 0x80000"),
     ("Энергобанки", "4 × 13 × u40"),
     ("Кольцевые архивы", "типы 0/1/2/5"),
@@ -467,7 +469,7 @@ class Editor(tk.Tk):
         ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=(0, 18))
         ttk.Label(toolbar, text="ПРОЦЕССОР", style="Faint.TLabel").pack(side="left", padx=(0, 8))
         processor_box = ttk.Combobox(toolbar, values=list(CRC_MODES), textvariable=self.crc_mode,
-                                     width=12, state="readonly", font=(self.mono_font, 10))
+                                     width=10, state="readonly", font=(self.mono_font, 10))
         processor_box.pack(side="left")
         processor_box.bind("<<ComboboxSelected>>", self.change_crc_mode)
 
@@ -619,8 +621,8 @@ class Editor(tk.Tk):
         percent = 100.0 * self.crc_ok_count / total
         absent = getattr(self, "crc_absent_count", 0)
         self.crc_caption.set(
-            f"CRC записей: {self.crc_ok_count} из {self.crc_total_count} верны"
-            + (f"  (+{absent} во внешней SPI)" if absent else "")
+            f"CRC: {self.crc_ok_count} из {self.crc_total_count} верны"
+            + (f" · +{absent} вне образа" if absent else "")
         )
         self.crc_bar.configure(style="Ok.Horizontal.TProgressbar" if self.crc_ok_count == self.crc_total_count
                                else ("Warn.Horizontal.TProgressbar" if self.crc_ok_count else "Err.Horizontal.TProgressbar"))
@@ -2067,8 +2069,9 @@ def main() -> None:
     for value in sys.argv[1:]:
         if value.startswith("--crc"):
             crc_mode = value.split("=", 1)[-1].strip().lower()
+            crc_mode = {"v8530": "ce208"}.get(crc_mode, crc_mode)
     app = Editor(
-        crc_mode=crc_mode if crc_mode in ("auto", "ce208", "msp432") else "auto",
+        crc_mode=crc_mode if crc_mode in ("auto", "ce208", "msp432", "stm32") else "auto",
         system_frame="--frame" in sys.argv,
     )
     if arguments:

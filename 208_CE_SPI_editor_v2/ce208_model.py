@@ -181,10 +181,34 @@ def crc16_msp432(data: bytes | bytearray, initial: int = MSP432_CRC_INIT) -> int
 crc16_msp430 = crc16_msp432
 
 
+def crc16_stm32(data: bytes | bytearray) -> int:
+    """Контроль записи в прошивке на STM32.
+
+    Тело обрабатывается 16-битными словами little-endian: слово складывается
+    по модулю 2 с младшими битами регистра, затем регистр 32 раза сдвигается
+    с полиномом 0x04C11DB7. Начальное значение 0xFFFFFFFF, финального XOR нет,
+    в запись сохраняются младшие 16 бит little-endian.
+    """
+    if len(data) % 2:
+        raise ValueError("Длина тела должна быть чётной")
+    crc = 0xFFFFFFFF
+    for offset in range(0, len(data), 2):
+        crc ^= int.from_bytes(data[offset:offset + 2], "little")
+        for _ in range(32):
+            crc = ((crc << 1) ^ CRC_POLY) & 0xFFFFFFFF if crc & 0x80000000 else (crc << 1) & 0xFFFFFFFF
+    return crc & 0xFFFF
+
+
 CRC_SCHEMES = {
     "ce208": ("V8530 · CRC-32 MSB 0x04C11DB7", lambda data: crc32_msb(data) & 0xFFFF),
     "msp432": ("MSP432 · CRC-16 CCITT 0x1021", crc16_msp432),
+    "stm32": ("STM32 · CRC-32 по словам, младшие 16 бит", crc16_stm32),
 }
+
+# Резервная копия записи лежит со сдвигом от основной. У прошивок V8530 и
+# MSP432 сдвиг 0x19E0, у STM32 — 0x1B98 (там же дублируется вся область
+# 0x0000..0x0467). Адреса резервных копий вычисляются по этому сдвигу.
+MIRROR_OFFSETS = {"ce208": 0x19E0, "msp432": 0x19E0, "stm32": 0x1B98}
 DEFAULT_CRC_SCHEME = "ce208"
 _active_crc_scheme = DEFAULT_CRC_SCHEME
 
@@ -537,26 +561,37 @@ class CE208State:
     def detect_crc_scheme(self) -> tuple[str, dict[str, int]]:
         """Подбирает схему CRC: побеждает та, по которой сходится больше записей.
 
-        Если не сходится ни одна (пустой или чужой образ), остаётся схема
-        по умолчанию — поведение для родных дампов CE208 не меняется.
+        Проверяются текущие энергетические банки и все статические записи
+        вместе с их резервными копиями; адрес резерва зависит от профиля.
+        Если не сходится ни одна схема (пустой или чужой образ), остаётся
+        схема по умолчанию — поведение для родных дампов V8530 не меняется.
         """
         hits: dict[str, int] = {}
         for name, (_title, function) in CRC_SCHEMES.items():
-            count = 0
+            probes: list[tuple[str, int, int]] = []
+            for bank in range(ENERGY_BANK_COUNT):
+                primary = CURRENT_ENERGY_PRIMARY + bank * ENERGY_RECORD_SIZE
+                probes.append(("small", primary, ENERGY_RECORD_SIZE))
+                probes.append(("small", self.backup_address(primary, name), ENERGY_RECORD_SIZE))
             for descriptor in FIXED_DESCRIPTORS:
-                for path, address in (
-                    (descriptor.path, descriptor.primary),
-                    (descriptor.backup_path, descriptor.backup),
-                ):
-                    if address is None:
-                        continue
-                    store = self.at25 if path == "at25" else self.small
-                    if address + descriptor.length > len(store):
-                        continue
-                    record = bytes(store[address:address + descriptor.length])
-                    stored = struct.unpack("<H", record[-2:])[0]
+                probes.append((descriptor.path, descriptor.primary, descriptor.length))
+                if descriptor.path == "small" and descriptor.backup_path == "small":
+                    probes.append(("small", self.backup_address(descriptor.primary, name), descriptor.length))
+                elif descriptor.backup is not None:
+                    probes.append((descriptor.backup_path, descriptor.backup, descriptor.length))
+
+            count = 0
+            for path, address, length in probes:
+                store = self.at25 if path == "at25" else self.small
+                if address < 0 or address + length > len(store):
+                    continue
+                record = bytes(store[address:address + length])
+                stored = struct.unpack("<H", record[-2:])[0]
+                try:
                     if function(record[:-2]) == stored:
                         count += 1
+                except ValueError:
+                    continue          # схема не принимает такую длину тела
             hits[name] = count
         best = max(hits, key=lambda name: hits[name])
         return (best if hits[best] else DEFAULT_CRC_SCHEME), hits
@@ -564,6 +599,14 @@ class CE208State:
     @classmethod
     def load_spi(cls, at25_path: str | Path) -> "CE208State":
         return cls(at25=Path(at25_path).read_bytes())
+
+    def mirror_offset(self) -> int:
+        """Сдвиг резервной копии для текущего профиля прошивки."""
+        return MIRROR_OFFSETS.get(getattr(self, "crc_scheme", DEFAULT_CRC_SCHEME), 0x19E0)
+
+    def backup_address(self, primary: int, scheme: str | None = None) -> int:
+        """Адрес резервной копии записи, начинающейся по адресу primary."""
+        return primary + MIRROR_OFFSETS.get(scheme or getattr(self, "crc_scheme", DEFAULT_CRC_SCHEME), 0x19E0)
 
     def storage(self, path: str) -> bytearray | memoryview:
         if path == "small":
@@ -584,6 +627,11 @@ class CE208State:
         primary = self.inspect_record(descriptor.path, descriptor.primary, descriptor.length)
         if primary.valid:
             return primary
+        if descriptor.backup_path == "small" and descriptor.path == "small":
+            # Зеркало small-области вычисляется по сдвигу профиля прошивки
+            address = self.backup_address(descriptor.primary)
+            if address + descriptor.length <= SMALL_SIZE:
+                return self.inspect_record("small", address, descriptor.length)
         if descriptor.backup_path is None or descriptor.backup is None:
             return primary
         return self.inspect_record(descriptor.backup_path, descriptor.backup, descriptor.length)
@@ -592,7 +640,11 @@ class CE208State:
         record = build_record(body, descriptor.length)
         primary = self.storage(descriptor.path)
         primary[descriptor.primary:descriptor.primary + descriptor.length] = record
-        if write_backup and descriptor.backup_path is not None and descriptor.backup is not None:
+        if write_backup and descriptor.backup_path == "small" and descriptor.path == "small":
+            address = self.backup_address(descriptor.primary)
+            if address + descriptor.length <= SMALL_SIZE:
+                self.small[address:address + descriptor.length] = record
+        elif write_backup and descriptor.backup_path is not None and descriptor.backup is not None:
             backup = self.storage(descriptor.backup_path)
             backup[descriptor.backup:descriptor.backup + descriptor.length] = record
         return record
@@ -647,7 +699,8 @@ class CE208State:
     def current_energy_address(self, bank: int, backup: bool = False) -> int:
         if not 0 <= bank < ENERGY_BANK_COUNT:
             raise ValueError("Банк энергии должен быть 0..3")
-        return (CURRENT_ENERGY_BACKUP if backup else CURRENT_ENERGY_PRIMARY) + bank * ENERGY_RECORD_SIZE
+        primary = CURRENT_ENERGY_PRIMARY + bank * ENERGY_RECORD_SIZE
+        return self.backup_address(primary) if backup else primary
 
     def read_current_energy(self, bank: int) -> tuple[EnergyBank, RecordResult]:
         primary = self.inspect_record("small", self.current_energy_address(bank), ENERGY_RECORD_SIZE)

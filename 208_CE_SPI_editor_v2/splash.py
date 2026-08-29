@@ -22,7 +22,7 @@ LOG_LINES = 5
 class SplashScreen(tk.Toplevel):
     """Тёмная приборная заставка с журналом инициализации."""
 
-    def __init__(self, master: tk.Misc, *, title: str = "208_CE V8530P · MSP432",
+    def __init__(self, master: tk.Misc, *, title: str = "208_CE V8530P · MSP432 · STM32",
                  subtitle: str = "Редактор энергонезависимой памяти прибора учёта",
                  version: str = "", footer: str = "",
                  parameters: list[tuple[str, str]] | None = None):
