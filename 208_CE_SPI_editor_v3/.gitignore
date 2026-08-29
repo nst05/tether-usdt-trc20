@@ -1,0 +1,8 @@
+# Кэш байткода Python — в репозиторий не попадает
+__pycache__/
+*.pyc
+
+# Результаты сборки PyInstaller
+build/
+dist/
+*.manifest
