@@ -54,7 +54,7 @@ except Exception as _i2c_exc:  # noqa: BLE001
     I2C_IMPORT_ERROR = f"{type(_i2c_exc).__name__}: {_i2c_exc}"
 
 
-APP_VERSION = "2.4.1"
+APP_VERSION = "2.4.2"
 # Имя программы: прибор плюс семейство контроллера, чьи дампы редактор понимает.
 APP_NAME = "208_CE V8530P · MSP432"
 APP_TITLE = f"{APP_NAME} — редактор памяти — {APP_VERSION}"
@@ -617,7 +617,11 @@ class Editor(tk.Tk):
         # Полоса контроля целостности
         total = max(1, self.crc_total_count)
         percent = 100.0 * self.crc_ok_count / total
-        self.crc_caption.set(f"CRC записей: {self.crc_ok_count} из {self.crc_total_count} верны")
+        absent = getattr(self, "crc_absent_count", 0)
+        self.crc_caption.set(
+            f"CRC записей: {self.crc_ok_count} из {self.crc_total_count} верны"
+            + (f"  (+{absent} во внешней SPI)" if absent else "")
+        )
         self.crc_bar.configure(style="Ok.Horizontal.TProgressbar" if self.crc_ok_count == self.crc_total_count
                                else ("Warn.Horizontal.TProgressbar" if self.crc_ok_count else "Err.Horizontal.TProgressbar"))
         self.crc_bar["value"] = percent
@@ -1083,6 +1087,7 @@ class Editor(tk.Tk):
         self.record_tree.tag_configure("odd", background=Palette.GRID)
         self.record_tree.tag_configure("ok", foreground=Palette.INK)
         self.record_tree.tag_configure("bad", foreground=Palette.ERR)
+        self.record_tree.tag_configure("absent", foreground=Palette.INK_FAINT)
         self.record_tree.pack(side="left", fill="both", expand=True)
         tree_scroll = ttk.Scrollbar(left, orient="vertical", command=self.record_tree.yview)
         tree_scroll.pack(side="right", fill="y")
@@ -1982,22 +1987,32 @@ class Editor(tk.Tk):
         for item in self.record_tree.get_children():
             self.record_tree.delete(item)
         valid_count = 0
+        available_count = 0
+        # Открыта только внутренняя EEPROM (8 КиБ) — записи внешней SPI в файл
+        # не входят, их контроль проверять не по чему. Это не ошибка дампа.
+        only_small = self.source_kind == "24lc64"
         for index, descriptor in enumerate(FIXED_DESCRIPTORS):
-            try:
-                result = self.state_model.read_descriptor(descriptor)
-                status = "CRC OK" if result.valid else "CRC ERROR"
-                if result.valid:
-                    valid_count += 1
-            except Exception:
-                status = "ERROR"
+            in_small = descriptor.path == "small"
+            if only_small and not in_small:
+                status, tag = "нет области", "absent"
+            else:
+                available_count += 1
+                try:
+                    result = self.state_model.read_descriptor(descriptor)
+                    status = "CRC OK" if result.valid else "CRC ERROR"
+                    if result.valid:
+                        valid_count += 1
+                except Exception:
+                    status = "ERROR"
+                # Тег задаёт цвет статуса — таблица читается быстрее.
+                tag = "ok" if status == "CRC OK" else "bad"
             backup = "—" if descriptor.backup is None else f"{descriptor.backup_path}:0x{descriptor.backup:05X}"
-            # Тег задаёт чередование фона и цвет статуса — таблица читается быстрее.
-            tag = "ok" if status == "CRC OK" else "bad"
             stripe = "even" if index % 2 == 0 else "odd"
             self.record_tree.insert("", "end", iid=str(index), tags=(tag, stripe),
                                     values=(descriptor.name, descriptor.path, f"0x{descriptor.primary:05X}", backup, descriptor.length, status))
         self.crc_ok_count = valid_count
-        self.crc_total_count = len(FIXED_DESCRIPTORS)
+        self.crc_total_count = available_count
+        self.crc_absent_count = len(FIXED_DESCRIPTORS) - available_count
         self._update_telemetry()
 
     def select_raw_record(self, _event=None) -> None:
