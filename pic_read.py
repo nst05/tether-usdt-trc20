@@ -92,35 +92,11 @@ class PICReader:
             print(f"✗ Ошибка: {e}")
             return False
 
-    def erase_device(self):
-        """Стирание микроконтроллера (сотрет защиту)"""
-        print(f"\n[!] ВНИМАНИЕ: Стирание сотрет всё содержимое микроконтроллера!")
-        response = input("Вы уверены? (yes/no): ")
-
-        if response.lower() != 'yes':
-            print("Операция отменена")
-            return False
-
-        try:
-            cmd = ['pk2cmd', '-P', self.pic_model, '-E']
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            print(result.stdout)
-
-            if result.returncode == 0:
-                print("✓ Микроконтроллер успешно стран")
-                return True
-            else:
-                print("✗ Ошибка при стирании")
-                print(result.stderr)
-                return False
-        except Exception as e:
-            print(f"✗ Ошибка: {e}")
-            return False
 
     def run(self):
         """Основная программа"""
         print("=" * 60)
-        print("PIC16LF1934 Firmware Reader")
+        print("PIC16LF1934 Firmware Reader (Read-Only)")
         print("=" * 60)
 
         if not self.check_programmer():
@@ -134,18 +110,15 @@ class PICReader:
         print("Выберите операцию:")
         print("1. Считать прошивку (попытка)")
         print("2. Считать конфигурацию")
-        print("3. Стирать микроконтроллер (сотрет защиту)")
         print("0. Выход")
         print("=" * 60)
 
-        choice = input("\nВводьте номер (0-3): ").strip()
+        choice = input("\nВводьте номер (0-2): ").strip()
 
         if choice == '1':
             self.read_firmware()
         elif choice == '2':
             self.read_config()
-        elif choice == '3':
-            self.erase_device()
         elif choice == '0':
             print("Выход")
         else:
